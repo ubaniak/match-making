@@ -27,10 +27,10 @@ One module, `driveRepo`, wraps the `googleapis` library and is the only code tha
 ```text
 Boxing App/
   _admin/            Access sheet (Roles, Users, AuditLog). Backend only.
-  Data               Google Sheet with tabs Boxers, Bouts, Events, Results
+  Data               Google Sheet with tabs Athletes, Officials, Cards, Submissions, Bouts
   Files/
-    Boxers/<id>/     photos, ID documents
-    Medicals/<id>/   medical certificates (medicals:read only)
+    Athletes/<id>/   athlete photos and documents
+    Officials/<id>/  official documents and certificates
 ```
 
 Folder and sheet IDs are server settings, so the app doesn't depend on names.
@@ -39,9 +39,18 @@ Folder and sheet IDs are server settings, so the app doesn't depend on names.
 
 Google Sheets for records, plain Drive files for documents. Sheets are easy to read and fix by hand, and the Sheets API can append and update single rows.
 
-- **Records** (boxers, bouts, events, results): one tab per type, one row per record. Every row has an `id` (UUID), `updatedAt` and `updatedBy`. Columns never move; new fields go on the right.
-- **Documents** (photos, medicals): uploaded into a per-boxer folder, with the file ID saved on the boxer's row. Medical files are only served through the backend to users with `medicals:read`.
-- **Clashing edits:** the app sends the `updatedAt` it loaded with each edit. If the row has changed since, the backend rejects the save and the user reloads, so two Officials can't silently overwrite each other.
+- **Records:** one tab per type, one row per record. Every row has an `id` (UUID), `updatedAt` and `updatedBy`. Columns never move; new fields go on the right. Each tab also carries the ownership columns the RBAC scopes check:
+
+  | Tab | Ownership columns |
+  | --- | --- |
+  | Athletes | `userEmail` (the athlete's login), `coachEmail` |
+  | Officials | `userEmail` |
+  | Cards | `ownerEmail`, `public` (true when Public can see it) |
+  | Submissions | `cardId`, `kind` (`official` or `athlete`), `personId`, `submittedBy`, `status` |
+  | Bouts | `cardId`, plus the two athletes |
+
+- **Documents** (photos, certificates): uploaded into a per-athlete or per-official folder, with the file ID saved on the profile row. Files are only served through the backend, never by sharing the Drive file.
+- **Clashing edits:** the app sends the `updatedAt` it loaded with each edit. If the row has changed since, the backend rejects the save and the user reloads, so a coach and an athlete can't silently overwrite each other's edits to the same profile.
 - **Formulas:** values starting with `=` are written as plain text so user input can't become a Sheet formula.
 - **Limits:** the backend caches each tab briefly and writes in small batches. The Sheets API allows about 60 requests a minute per user by default, plenty for a club-sized app.
 
