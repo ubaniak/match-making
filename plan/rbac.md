@@ -1,21 +1,21 @@
 # RBAC plan
 
-Users sign in with Google. A small backend looks up their role and checks permissions on every request before it touches Google Drive (see [google-drive.md](google-drive.md)). The React app only hides what a user can't use; the backend is the only place permissions are enforced.
+Users sign in with Google through Supabase Auth. Roles and permissions live in Postgres tables, and row-level security (RLS) policies check them on every read and write, so the rules hold even if the React app has a bug. The React app only hides what a user can't use. Storage, schema and setup are in [supabase.md](supabase.md).
 
 ## Architecture
 
 ```text
-React app  --/api-->  Backend API  --Drive API-->  Drive folder
-    |                     |                         _admin/Access sheet
-    |  ID token           |  verifies token         Data sheet
-    v                     v                         Files/
-         Google sign-in
+React app  --supabase-js-->  Supabase
+    |                          Auth (Google sign-in)
+    |                          Postgres + RLS policies   <- roles, permissions, app data
+    |                          Storage + policies        <- photos, documents
+    |                          Edge Functions            <- the few admin-only actions
 ```
 
-- **Front end:** React (Vite). Shows or hides screens based on the signed-in user's permissions.
-- **Backend:** Node + Express (TypeScript). Holds the Google credentials and enforces RBAC.
-- **Auth:** Google sign-in. The backend verifies the Google token and issues its own session cookie.
-- **RBAC data:** roles and users stored in an admin-only Google Sheet, edited through an Admins-only screen.
+- **Front end:** React (Vite) using `@supabase/supabase-js`. Talks to Supabase directly with the public anon key; RLS decides what each request may do.
+- **No custom backend server.** Rules that need more than RLS (for example "never remove the last Admin") are database triggers. Anything that needs the secret service key runs in a Supabase Edge Function.
+- **Auth:** Google sign-in via Supabase Auth.
+- **RBAC data:** `roles`, `role_permissions` and `profiles` tables, edited through an Admins-only screen.
 
 ## Roles
 
@@ -31,115 +31,120 @@ A **card** is an event's list of bouts. The coach who creates a card owns it and
 
 ## Permissions
 
-Permissions are named `area:action`. The code defines the list; Admins decide which role gets which from the admin screen. The table is the starting default. Some permissions are scoped, and the backend checks the scope against the record:
+Permissions are named `area:action`. The list is fixed in the database schema, because each one is checked by an RLS policy; Admins decide which role gets which from the admin screen. Each grant has a scope:
 
-- **Self:** the record is the signed-in user's own (their athlete or official profile).
-- **Own:** the user created or is responsible for the record (a coach's cards and athletes).
+- **Any:** every record.
+- **Own:** records the user created or is responsible for (a coach's cards and athletes).
+- **Self:** the user's own profile record.
+
+The table is the starting default.
 
 | Permission | What it allows | Admins | Officials | Coaches | Athletes | Public |
 | --- | --- | --- | --- | --- | --- | --- |
-| `public:read` | View public pages | Yes | Yes | Yes | Yes | Yes |
-| `pages:read` | View member pages | Yes | Yes | Yes | Yes | No |
-| `cards:read` | View cards and their bouts | Yes | Yes | Yes | Yes | Public cards only |
-| `cards:create` | Create a card (creator becomes owner) | Yes | No | Yes | No | No |
-| `cards:manage` | Edit a card, accept or decline submissions, set bouts | Yes | No | Own | No | No |
-| `cards:submit-official` | Put an official's name forward for a card | Yes | Self | No | No | No |
-| `cards:submit-athlete` | Put an athlete's name forward for a card | Yes | No | Own athletes | No | No |
-| `athletes:read` | View athlete profiles | Yes | Yes | Yes | Yes | No |
-| `athletes:create` | Add an athlete | Yes | No | Yes | No | No |
-| `athletes:write` | Edit an athlete's profile | Yes | No | Own | Self | No |
-| `officials:read` | View official profiles | Yes | Yes | Yes | No | No |
-| `officials:write` | Edit an official's profile | Yes | Self | No | No | No |
-| `files:upload` | Upload documents and photos to a profile | Yes | Self | Own athletes | Self | No |
-| `users:manage` | Invite users, change their role, remove access | Yes | No | No | No | No |
-| `roles:manage` | Create roles, edit role permissions | Yes | No | No | No | No |
-| `audit:read` | See who changed what | Yes | No | No | No | No |
+| `public:read` | View public pages | Any | Any | Any | Any | Any |
+| `pages:read` | View member pages | Any | Any | Any | Any | No |
+| `cards:read` | View cards and their bouts | Any | Any | Any | Any | Public cards only |
+| `cards:create` | Create a card (creator becomes owner) | Any | No | Any | No | No |
+| `cards:manage` | Edit a card, accept or decline submissions, set bouts | Any | No | Own | No | No |
+| `cards:submit-official` | Put an official's name forward for a card | Any | Self | No | No | No |
+| `cards:submit-athlete` | Put an athlete's name forward for a card | Any | No | Own | No | No |
+| `athletes:read` | View athlete profiles | Any | Any | Any | Any | No |
+| `athletes:create` | Add an athlete | Any | No | Any | No | No |
+| `athletes:write` | Edit an athlete's profile | Any | No | Own | Self | No |
+| `officials:read` | View official profiles | Any | Any | Any | No | No |
+| `officials:write` | Edit an official's profile | Any | Self | No | No | No |
+| `files:upload` | Upload documents and photos to a profile | Any | Self | Own | Self | No |
+| `users:manage` | Invite users, change their role, remove access | Any | No | No | No | No |
+| `roles:manage` | Create roles, edit role permissions | Any | No | No | No | No |
+| `audit:read` | See who changed what | Any | No | No | No | No |
 
-- **Admins** always hold every permission. This is enforced in code, so nobody can lock themselves out by editing the Admins role.
-- **Public** covers people who aren't signed in, and signed-in Google accounts that haven't been given a role yet.
+- **Admins** always hold every permission. The `has_permission` function returns true for Admins before it looks at any grants, so nobody can lock themselves out by editing the Admins role.
+- **Public** covers visitors who aren't signed in (Supabase's `anon` role) and signed-in accounts that haven't been given a role yet.
 - Extra roles can be created later by picking permissions from the same list.
 
 ## Data model
 
-Three tabs in one Google Sheet called `Access`, inside an admin-only subfolder that only the backend can open.
-
-| Tab | Columns | Notes |
+| Table | Columns | Notes |
 | --- | --- | --- |
-| Roles | `id`, `name`, `description`, `permissions`, `system` | `permissions` is a comma-separated list like `cards:read,athletes:read`. `system = true` marks the five built-in roles so they can't be deleted. |
-| Users | `email`, `name`, `roleId`, `status`, `invitedBy`, `createdAt` | `email` is the Google account. `status` is `invited`, `active` or `disabled`. |
-| AuditLog | `timestamp`, `actorEmail`, `action`, `target`, `details` | Append-only. Every role change, user change and data write adds a row. |
+| `roles` | `id`, `name`, `description`, `is_system` | `is_system` marks the five built-in roles so they can't be deleted. |
+| `role_permissions` | `role_id`, `permission`, `scope` | `scope` is `any`, `own` or `self`. One row per grant. |
+| `profiles` | `id` (= `auth.users.id`), `email`, `name`, `role_id`, `status` | Created by a trigger on first sign-in. `status` is `active` or `disabled`. |
+| `invites` | `email`, `role_id`, `invited_by`, `created_at` | An Admin adds a row; on that person's first Google sign-in the trigger gives them this role. |
+| `audit_log` | `at`, `actor_id`, `action`, `table_name`, `record_id`, `details` | Written by triggers on every change; nobody can edit it. |
 
-Scopes are checked against ownership columns on the app's own records (see [google-drive.md](google-drive.md)):
+Ownership columns on the app's tables (full schema in [supabase.md](supabase.md)) are what the `own` and `self` scopes check:
 
-- An athlete row has `userEmail` (the athlete's own login, if they have one) and `coachEmail` (the coach who added them).
-- An official row has `userEmail`.
-- A card row has `ownerEmail`.
-- A card submission row has `submittedBy`, and its `status` (`pending`, `accepted`, `declined`) is set by the card's owner.
+- `athletes.coach_id` (the coach who added them) and `athletes.user_id` (the athlete's own login, if they have one)
+- `officials.user_id`
+- `cards.owner_id`
+- `card_submissions.submitted_by`
 
-The permission list lives in code (`permissions.ts`), because each permission has to be checked somewhere in the backend. Adding a new area of the app means adding its permissions there; deciding who gets them is done through the admin screen.
-
-One owner email is set as a server setting (`OWNER_EMAIL`). That account is always treated as an Admin, which is the way back in if the Sheet is ever edited badly.
+One owner email is set as a database setting. That account is always made an Admin on sign-in, which is the way back in if the role tables are ever edited badly.
 
 ## Sign-in
 
-1. The React app shows a "Sign in with Google" button (Google Identity Services). Public pages work without signing in.
-2. Google returns an ID token to the browser, which posts it to `POST /api/auth/google`.
-3. The backend verifies the token with `google-auth-library`: audience is the app's client ID, issuer is Google, the token hasn't expired and the email is verified.
-4. The backend looks the email up in the Users tab.
-    - Found and active: it sets a session cookie (`httpOnly`, `Secure`, `SameSite=Lax`, about 8 hours).
-    - Not found: the user is treated as Public and shown an "ask an Admin for access" message.
-    - Disabled: sign-in is refused.
-5. The React app calls `GET /api/me` and gets the user's name, role and permission list.
+1. The React app calls `supabase.auth.signInWithOAuth({ provider: 'google' })`. Public pages work without signing in.
+2. Supabase handles the Google redirect and returns a session to the app; supabase-js keeps it refreshed.
+3. On a user's first sign-in, a trigger on `auth.users` creates their `profiles` row. If their email is in `invites`, they get that role; otherwise they get Public.
+4. The app reads the user's profile and permission list (a `my_permissions()` database function) to decide what to show.
 
-The session cookie holds only the email. The role is looked up on each request from a short cache (about 60 seconds), so a role change takes effect within a minute without signing out.
+Permissions are read from the tables on every request, not stored in the login token, so a role change takes effect immediately without signing out.
 
 ## Enforcement
 
-**Backend.** Every API route declares the permission it needs:
+**Database.** One SQL function answers every permission question:
 
-```ts
-router.get('/public/cards', requirePermission('public:read'), listPublicCards);
-router.post('/cards/:id/submissions', requirePermission('cards:submit-athlete', { scope: 'ownAthlete' }), submitAthlete);
-router.put('/athletes/:id', requirePermission('athletes:write', { scope: ['own', 'self'] }), updateAthlete);
+```sql
+-- true when the signed-in user holds `perm` with a scope that covers this record
+has_permission(perm text, owner uuid default null) returns boolean
 ```
 
-`requirePermission` loads the user's role, checks the permission is in its list, and for scoped permissions checks the record's ownership columns against the user's email. Admins pass every check. A failed check returns `403` and is written to the audit log.
+It returns true for Admins; otherwise it looks up the user's role in `role_permissions` and checks the scope: `any` always passes, while `own` and `self` pass only when `owner` equals `auth.uid()`. RLS policies call it:
 
-**React.** An `AuthProvider` loads `/api/me` once and exposes the permission list.
+```sql
+create policy "edit athletes" on athletes for update using (
+  has_permission('athletes:write', coach_id)   -- coaches: own
+  or has_permission('athletes:write', user_id) -- athletes: self
+);
+```
+
+A disabled profile fails every check.
+
+**React.** An `AuthProvider` loads the session and `my_permissions()` once and exposes them.
 
 - `<Can permission="cards:manage">…</Can>` shows its children only when the user holds that permission. Use it for buttons and menu items.
 - `<RequirePermission permission="users:manage">` wraps whole routes and shows a "no access" page otherwise.
 
-A test suite runs every route against each default role and checks the result matches the matrix above, so a missed check is caught before it ships.
+A pgTAP test suite signs in as each default role and checks every table's read, insert, update and delete against the matrix above, so a missing policy is caught before it ships.
 
 ## Admin screens
 
 | Page | What an Admin can do |
 | --- | --- |
 | Users | Invite someone by Google email and pick their role; change a role; disable or re-enable an account. |
-| Roles | See a grid of every permission against every role and tick or untick boxes; create a role; delete a custom role nobody holds. |
+| Roles | See a grid of every permission against every role, set each cell to Any, Own, Self or none; create a role; delete a custom role nobody holds. |
 | Activity | Browse the audit log, filtered by person, area or date. |
 
-Safety rules: the last active Admin can't be demoted or disabled, and the Admins column in the Roles grid is locked to all permissions.
+Safety rules, enforced by triggers: the last active Admin can't be demoted or disabled, and the Admins role's grants can't be edited.
 
 ## Security checklist
 
-- [ ] Google credentials live only in the server's secret store, never in the React bundle or the repo.
-- [ ] Every API route has a `requirePermission` check, covered by the role-matrix test.
-- [ ] Public routes return only fields marked public (no contact details or documents).
-- [ ] Google ID tokens are checked for audience, issuer, expiry and a verified email.
-- [ ] Session cookies are `httpOnly`, `Secure` and `SameSite`, and write requests carry a CSRF token.
-- [ ] Every role change and data write is logged in AuditLog.
+- [ ] RLS is turned on for every table, with no table left open by default.
+- [ ] The service role key is used only inside Edge Functions, never in the React bundle or the repo.
+- [ ] Public (`anon`) policies expose only public cards and the fields public pages need, no contact details or documents.
+- [ ] Storage buckets are private, with policies matching the table rules.
+- [ ] Every policy is covered by the role-matrix test.
+- [ ] Every change is logged in `audit_log`.
 
 ## Build order
 
-1. **Google setup.** Google Cloud project, OAuth client for sign-in, the Drive identity (see [google-drive.md](google-drive.md)), the folder and the `Access` sheet with the owner as first Admin.
-2. **Backend skeleton.** Express app, Google sign-in, session cookie, `/api/me`, `permissions.ts` and `requirePermission`. Check: sign in and see your role.
-3. **Drive layer.** `driveRepo` plus the Athletes tab as the first real area. Check: a coach adds an athlete; the athlete signs in and edits only their own profile.
-4. **React shell.** Sign-in page, `AuthProvider`, `<Can>`, `<RequirePermission>`, Athletes screen. Check: as Public the edit buttons are gone and edits are refused.
-5. **Admin screens.** Users, Roles grid, Activity. Check: change a role's permissions and see that user's screen change within a minute.
-6. **Cards.** Card creation, official and athlete submissions, owner accepts or declines.
-7. **Hardening and deploy.** Role-matrix tests, audit logging, then deploy the React app and backend on one domain (for example Google Cloud Run or Render).
+1. **Supabase setup.** Create the project, turn on Google sign-in, create the role tables and `has_permission`, and add the owner email. Check: sign in and see yourself as Admin.
+2. **React shell.** Sign-in, `AuthProvider`, `<Can>`, `<RequirePermission>`. Check: a fresh Google account signs in as Public.
+3. **Athletes.** Table, policies, Athletes screen. Check: a coach adds an athlete; the athlete signs in and edits only their own profile.
+4. **Admin screens.** Users, Roles grid, Activity. Check: change a role's permissions and see that user's screen change on reload.
+5. **Officials and cards.** Official profiles, card creation, submissions, owner accepts or declines.
+6. **Files.** Storage buckets and uploads on profiles.
+7. **Hardening and deploy.** Role-matrix tests, then deploy the React app as a static site (for example Vercel or Netlify).
 
 ## Open questions
 
@@ -148,4 +153,4 @@ Safety rules: the last active Admin can't be demoted or disabled, and the Admins
 - [ ] Can a coach edit athletes added by another coach, or only their own? The default is only their own.
 - [ ] How does an athlete get linked to their profile: the coach enters the athlete's Google email when adding them, or the athlete claims the profile and the coach approves? The default is the coach enters it.
 - [ ] Can Officials see athlete profiles, and can Athletes see official profiles? The default is Officials yes, Athletes no.
-- [ ] How do new people get in: invite-only by an Admin, or sign in and wait for approval?
+- [ ] How do new people get in: invite-only by an Admin, or sign in as Public and ask for a role? The default is both: invited emails get their role at once, anyone else starts as Public.
