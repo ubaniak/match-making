@@ -67,14 +67,14 @@ export const importSpecs = {
     label: 'officials',
     singular: 'official',
     columns: ['name', 'email', 'qualifications'],
-    required: ['name'],
+    required: ['name', 'email'],
     example: [['Pat Kim', 'pat@example.com', 'Level 2 referee']],
     check(values, errors) {
       if (!values.name) errors.push('Name is missing')
-      checkEmail(values.email, errors)
+      checkEmail(values.email, errors, { required: true })
       return {
         name: values.name,
-        invite_email: (values.email ?? '').toLowerCase() || null,
+        invite_email: (values.email ?? '').toLowerCase(),
         qualifications: values.qualifications || null,
       }
     },

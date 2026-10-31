@@ -273,7 +273,7 @@ function Officials() {
     try {
       await api.addOfficial({
         name: form.name.trim(),
-        invite_email: form.email.trim().toLowerCase() || null,
+        invite_email: form.email.trim().toLowerCase(),
         qualifications: form.qualifications.trim() || null,
       })
     } catch (err) {
@@ -281,11 +281,7 @@ function Officials() {
     } finally {
       setSaving(false)
     }
-    setMessage({
-      text: form.email
-        ? `${form.name} is added. They can sign in with ${form.email} to keep their profile up to date.`
-        : `${form.name} is added.`,
-    })
+    setMessage({ text: `${form.name} is added. They can sign in with ${form.email} to keep their profile up to date.` })
     setForm(emptyOfficial)
     reload()
   }
@@ -297,7 +293,7 @@ function Officials() {
       <form onSubmit={addOfficial} className="row-form">
         <h2>Add an official</h2>
         <label>Name<input required {...field('name')} /></label>
-        <label>Email <span className="muted">(optional, lets them sign in)</span><input type="email" {...field('email')} /></label>
+        <label>Email<input type="email" required {...field('email')} /></label>
         <label>Qualifications<input {...field('qualifications')} /></label>
         <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add official'}</button>
       </form>

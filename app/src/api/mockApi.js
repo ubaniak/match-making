@@ -31,7 +31,7 @@ function seed() {
     ],
     officials: [
       { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
-      { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: null, user_id: null },
+      { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: 'rob@example.com', user_id: null },
     ],
     events: [
       {
@@ -217,6 +217,7 @@ export const mockApi = {
   },
 
   async addOfficial(official) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(official.invite_email ?? '')) throw new Error('Officials need an email address')
     const current = data()
     current.officials.push({ ...official, id: crypto.randomUUID(), user_id: null })
     write(DATA_KEY, current)
