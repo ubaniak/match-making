@@ -412,3 +412,26 @@ td.actions {
     flex-wrap: wrap;
   }
 }
+
+td.actions button.link + button.link {
+  margin-left: 0.75rem;
+}
+
+.badge.role-owner {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge.role-admin {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge.role-coach {
+  background: #dcfce7;
+  color: #166534;
+}
+
+td select {
+  padding: 0.25rem 0.4rem;
+}

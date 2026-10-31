@@ -12,9 +12,9 @@ function checkEmail(email, errors, { required = false } = {}) {
 }
 
 export const importSpecs = {
-  coaches: {
-    label: 'coaches',
-    singular: 'coach',
+  users: {
+    label: 'users',
+    singular: 'user',
     columns: ['name', 'email'],
     required: ['name', 'email'],
     example: [['Maria Lopez', 'maria@example.com']],
@@ -34,16 +34,16 @@ export const importSpecs = {
       ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'Lightweight', 'Eastside BC'],
       ['Tom Becker', '', '', '', 'Middleweight', ''],
     ],
-    check(values, errors, { coachesByEmail }) {
+    check(values, errors, { usersByEmail }) {
       if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors)
 
       let coachId = null
       const coachEmail = (values.coach_email ?? '').toLowerCase()
       if (coachEmail) {
-        const coach = coachesByEmail.get(coachEmail)
-        if (!coach) errors.push(`No coach with email ${coachEmail}`)
-        else if (!coach.id) errors.push(`Coach ${coachEmail} hasn't signed in yet, so athletes can't be assigned to them`)
+        const coach = usersByEmail.get(coachEmail)
+        if (!coach) errors.push(`No user with email ${coachEmail}`)
+        else if (!coach.id) errors.push(`${coachEmail} hasn't signed in yet, so athletes can't be assigned to them`)
         else coachId = coach.id
       }
 

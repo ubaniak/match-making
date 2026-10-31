@@ -1,10 +1,10 @@
 # Match Making app
 
-React (Vite) app on Supabase. People sign in with an emailed link, and Admins add coaches and athletes from the Admin page. See [../plan/rbac.md](../plan/rbac.md) for the roles and permissions.
+React (Vite) app on Supabase. People sign in with an emailed link, and Admins add users and athletes from the Admin page. See [../plan/rbac.md](../plan/rbac.md) for the roles and permissions.
 
 ## Demo mode
 
-Until the Supabase values are set, the app runs in demo mode: no Supabase needed, sample coaches and athletes, and only one demo admin account can sign in. Anything you add is saved in that browser only, and "Reset sample data" puts the samples back. The "Viewing as" menu in the demo banner switches to one of the sample coaches, so you can see what a coach sees on the Events page.
+Until the Supabase values are set, the app runs in demo mode: no Supabase needed, sample users and athletes, and only one demo admin account can sign in. Anything you add is saved in that browser only, and "Reset sample data" puts the samples back. The "Viewing as" menu in the demo banner switches to one of the sample users, so you can see what an event Owner, Admin, Coach or Viewer sees.
 
 The demo login defaults to `admin@matchmaking.test` / `letmein`. Change it with the `VITE_MOCK_ADMIN_EMAIL` and `VITE_MOCK_ADMIN_PASSWORD` Actions variables (or in `.env.local`). The password is built into the page's JavaScript, so anyone determined can read it; demo mode keeps casual visitors out but doesn't protect real data.
 
@@ -26,11 +26,16 @@ Once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, demo mode switche
 
 ## Who can do what
 
-- **Admins** see the Admin page. Adding a coach saves their email; when that email first signs in, it becomes a coach. If the person has already signed in, they're made a coach straight away.
+- **Site Admins** see the Admin page. Adding a user saves their email; when that email first signs in, it gets a User account. If the person has already signed in, they become a User straight away.
 - Adding an **athlete** with an email does the same with the Athletes role, and links the athlete record to that login.
 - Adding an **official** with an email works the same way with the Officials role.
-- Each tab can also **bulk add from a CSV file**. "Download template" gives the expected columns; after choosing a file you see every row with any problems (missing name, bad email or date, unknown coach, repeated email), and only the rows without problems are added. Athletes are matched to coaches by `coach_email`, and the coach must have signed in already.
-- **Events** are listed on the Events page for every signed-in member. An Admin creates an event (one day, or several days up to 31) and picks the coach who owns it. Each day has its own weigh-in time and bout start time. The owning coach can edit the event's name, venue, dates and times, and add or remove athletes (any athlete, not only their own). Only Admins can change the owner or delete an event.
+- Each tab can also **bulk add from a CSV file**. "Download template" gives the expected columns; after choosing a file you see every row with any problems (missing name, bad email or date, unknown coach, repeated email), and only the rows without problems are added. Athletes are matched to their coach by `coach_email` (any user), who must have signed in already.
+- **Events**: any User can create an event (one day, or several days up to 31) and becomes its **Owner**. Each day has its own weigh-in time and bout start time. People are added to an event with a role, and only see the events they're on:
+  - **Owner**: one per event. Everything an Admin can do, plus delete the event and hand it to someone else with "Make owner" (the old Owner stays on as an Admin).
+  - **Admin**: edit the event's details and times, add, change and remove people (not the Owner), and add or remove athletes.
+  - **Coach**: add athletes (any athlete), and remove the ones they added.
+  - **Viewer**: see the event, its schedule, athletes and people.
+  Site Admins can see and do everything on every event.
 - Anyone else who signs in gets the Public role and sees a holding page until an Admin adds them.
 
 The rules are enforced by row-level security in the database, not just hidden in the app.
