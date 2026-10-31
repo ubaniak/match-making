@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from './api'
 import { useAuth } from './auth'
 import AdminPage from './AdminPage'
+import EventsPage from './EventsPage'
 
 export default function App() {
   const { session, profile, can, loading } = useAuth()
+  const [page, setPage] = useState('events')
 
   if (loading) {
     return <main className="card"><p>Loading…</p></main>
@@ -12,23 +14,44 @@ export default function App() {
 
   if (!session) return api.mode === 'mock' ? <MockLogin /> : <Login />
 
+  const pages = [
+    can('events:read') && ['events', 'Events'],
+    can('users:manage') && ['admin', 'Admin'],
+  ].filter(Boolean)
+  const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
+
   return (
     <div className="page">
-      {api.mode === 'mock' && <DemoBanner />}
+      {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
       <header className="topbar">
         <strong>Match Making</strong>
+        {pages.length > 1 && (
+          <nav className="nav">
+            {pages.map(([key, label]) => (
+              <button key={key} className={current === key ? 'tab active' : 'tab'} onClick={() => setPage(key)}>{label}</button>
+            ))}
+          </nav>
+        )}
         <span className="who">
           {profile?.name || session.user.email}
           {profile && <span className="badge">{profile.roles?.name}</span>}
         </span>
         <button className="secondary" onClick={() => api.signOut()}>Sign out</button>
       </header>
-      {can('users:manage') ? <AdminPage /> : <Hello profile={profile} email={session.user.email} />}
+      {current === 'events' && <EventsPage key={profile?.id} profile={profile} can={can} />}
+      {current === 'admin' && <AdminPage />}
+      {!current && <Hello profile={profile} email={session.user.email} />}
     </div>
   )
 }
 
-function DemoBanner() {
+function DemoBanner({ userId }) {
+  const [coaches, setCoaches] = useState([])
+
+  useEffect(() => {
+    api.listCoaches().then((all) => setCoaches(all.filter((c) => c.id && c.state === 'Active')))
+  }, [])
+
   function reset() {
     api.resetDemoData()
     window.location.reload()
@@ -37,6 +60,15 @@ function DemoBanner() {
   return (
     <div className="demo-banner">
       Demo mode: sample data, saved only in this browser.
+      <label>
+        Viewing as{' '}
+        <select value={userId} onChange={(e) => api.viewAs(e.target.value)}>
+          <option value={api.adminId}>Demo Admin</option>
+          {coaches.map((c) => (
+            <option key={c.id} value={c.id}>{c.name} (coach)</option>
+          ))}
+        </select>
+      </label>
       <button className="link" onClick={reset}>Reset sample data</button>
     </div>
   )
