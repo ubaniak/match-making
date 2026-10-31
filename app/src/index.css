@@ -435,3 +435,17 @@ td.actions button.link + button.link {
 td select {
   padding: 0.25rem 0.4rem;
 }
+
+td .badge.category {
+  margin-left: 0;
+}
+
+.badge.category.open {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badge.category.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
