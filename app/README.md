@@ -12,17 +12,42 @@ Once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, demo mode switche
 
 ## Supabase setup
 
-1. Create a Supabase project.
-2. In the SQL Editor, run each file in [`../supabase/migrations/`](../supabase/migrations/) in name order. They create the roles, profiles, invites, athletes, officials and events tables with their access rules. (Or use the Supabase CLI: `supabase link` then `supabase db push`.)
-3. Make yourself the first Admin by running this in the SQL Editor with your own email, before you first sign in:
+Do these once, in this order. Everything is in the Supabase dashboard at https://supabase.com/dashboard except the last step, which is on GitHub.
+
+1. **Create the project.** Click New project, pick a name (e.g. `match-making`), set a database password (save it somewhere, the app doesn't need it), choose the region closest to you, and wait a minute or two for it to start.
+2. **Create the tables.** Open SQL Editor, start a new query, paste in the whole of each file below, and click Run. Run them one at a time, in this order, and check each says "Success" before moving on:
+   1. [`20261008000000_rbac_and_athletes.sql`](../supabase/migrations/20261008000000_rbac_and_athletes.sql): roles, permissions, profiles, invites, athletes
+   2. [`20261031000000_officials.sql`](../supabase/migrations/20261031000000_officials.sql): officials
+   3. [`20261031120000_events.sql`](../supabase/migrations/20261031120000_events.sql): events, event days and event athletes
+   4. [`20261031200000_event_roles.sql`](../supabase/migrations/20261031200000_event_roles.sql): turns Coaches into Users and adds per-event roles (Owner, Admin, Coach, Viewer)
+
+   Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
+3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
 
    ```sql
    insert into invites (email, role_id) values ('you@example.com', 'admin');
    ```
 
-   If you've already signed in once, use `update profiles set role_id = 'admin' where email = 'you@example.com';` instead.
-4. Under Authentication > URL Configuration, set the Site URL to `https://ubaniak.github.io/match-making/` and add `http://localhost:5173/**` to the Redirect URLs for local dev.
-5. Email sign-in is on by default (Authentication > Providers > Email). Supabase's built-in email sender only allows a few emails an hour, which is fine for testing. Before real users rely on it, add your own SMTP server under Authentication > Emails > SMTP Settings.
+   When that email first signs in, it becomes an Admin. If you've already signed in once, run this instead:
+
+   ```sql
+   update profiles set role_id = 'admin' where email = 'you@example.com';
+   ```
+4. **Turn on the email link sign-in.** Under Authentication > Sign In / Providers, check that Email is enabled (it is by default). The app sends a magic link, so no password settings matter.
+5. **Allow the GitHub Pages address.** Under Authentication > URL Configuration:
+   - Set **Site URL** to `https://ubaniak.github.io/match-making/`
+   - Under **Redirect URLs**, add `https://ubaniak.github.io/match-making/**` and, for local dev, `http://localhost:5173/**`
+
+   Without these, the link in the sign-in email sends people to `localhost` or gets rejected.
+6. **Copy the URL and key.** Click Connect at the top of the project (or go to Project Settings > API Keys and Project Settings > Data API). You need the **Project URL** (`https://<ref>.supabase.co`) and the **anon / publishable key** (`eyJ...` on the Legacy API keys tab, or `sb_publishable_...`). Either key works. Never use the `service_role` or secret key: it skips all the access rules.
+7. **Give them to GitHub.** In the repo, go to Settings > Secrets and variables > Actions, open the **Variables** tab (not Secrets), and add:
+   - `VITE_SUPABASE_URL` = the Project URL
+   - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key
+
+   They're variables rather than secrets because the key ends up in the page's JavaScript anyway; it's safe to share because row-level security protects the data. Then rebuild the site: Actions > Deploy to GitHub Pages > Run workflow on `main` (or push any commit). Demo mode switches off once the new build is live.
+8. **Sign in.** Open https://ubaniak.github.io/match-making/, enter your email, and click the link in the email. You should see the Admin tab.
+
+Supabase's built-in email sender only allows a few emails an hour, which is fine for testing. Before real users rely on it, add your own SMTP server under Authentication > Emails > SMTP Settings. If a sign-in email doesn't arrive, check spam, then Authentication > Users and the project's Auth logs.
 
 ## Who can do what
 
