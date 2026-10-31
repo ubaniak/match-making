@@ -252,7 +252,7 @@ export const mockApi = {
   },
 
   // Creates the event (owned by the current user) when there's no id. Mirrors save_event.
-  async saveEvent({ id, name, venue, startDate, endDate, days }) {
+  async saveEvent({ id, name, venue, startDate, endDate, days, ownerId }) {
     const current = data()
     const range = daysBetween(startDate, endDate)
     if (!name.trim()) throw new Error('Give the event a name')
@@ -274,8 +274,13 @@ export const mockApi = {
 
     if (!id) {
       const event = { id: crypto.randomUUID(), ...fields }
+      const me = currentUserId()
+      const owner = ownerId || me
+      if (owner !== me && !findUser(current, owner)) throw new Error('That user can\'t own events')
       current.events.push(event)
-      current.eventMembers.push({ event_id: event.id, user_id: currentUserId(), role: 'owner' })
+      current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
+      // Someone else owns it: the creator stays on as an Admin (the site admin sees everything anyway).
+      if (owner !== me && me !== ADMIN_ID) current.eventMembers.push({ event_id: event.id, user_id: me, role: 'admin' })
       write(DATA_KEY, current)
       return event.id
     }
