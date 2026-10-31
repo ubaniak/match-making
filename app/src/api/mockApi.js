@@ -20,6 +20,10 @@ const seed = {
     { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', weight_class: 'Flyweight', club: 'Eastside BC', invite_email: 'jade@example.com', user_id: null, coach_id: 'coach-1' },
     { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', weight_class: 'Middleweight', club: 'Riverside Boxing', invite_email: null, user_id: null, coach_id: 'coach-2' },
   ],
+  officials: [
+    { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
+    { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: null, user_id: null },
+  ],
 }
 
 const allPermissions = [
@@ -48,7 +52,9 @@ function write(key, value) {
 }
 
 function data() {
-  return read(DATA_KEY) ?? structuredClone(seed)
+  const stored = read(DATA_KEY) ?? structuredClone(seed)
+  stored.officials ??= structuredClone(seed.officials) // saved before officials existed
+  return stored
 }
 
 const listeners = new Set()
@@ -118,6 +124,16 @@ export const mockApi = {
   async addAthlete(athlete) {
     const current = data()
     current.athletes.push({ ...athlete, id: crypto.randomUUID(), user_id: null })
+    write(DATA_KEY, current)
+  },
+
+  async listOfficials() {
+    return [...data().officials].sort(byName)
+  },
+
+  async addOfficial(official) {
+    const current = data()
+    current.officials.push({ ...official, id: crypto.randomUUID(), user_id: null })
     write(DATA_KEY, current)
   },
 

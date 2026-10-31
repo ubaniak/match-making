@@ -72,4 +72,18 @@ export const supabaseApi = {
     const { error } = await supabase.from('athletes').insert(athlete)
     if (error) throw error
   },
+
+  async listOfficials() {
+    const { data, error } = await supabase
+      .from('officials')
+      .select('id, name, qualifications, invite_email, user_id')
+      .order('name')
+    if (error) throw error
+    return data
+  },
+
+  async addOfficial(official) {
+    const { error } = await supabase.from('officials').insert(official)
+    if (error) throw error
+  },
 }

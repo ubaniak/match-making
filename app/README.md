@@ -13,7 +13,7 @@ Once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, demo mode switche
 ## Supabase setup
 
 1. Create a Supabase project.
-2. In the SQL Editor, run [`../supabase/migrations/20261008000000_rbac_and_athletes.sql`](../supabase/migrations/20261008000000_rbac_and_athletes.sql). It creates the roles, profiles, invites and athletes tables with their access rules. (Or use the Supabase CLI: `supabase link` then `supabase db push`.)
+2. In the SQL Editor, run each file in [`../supabase/migrations/`](../supabase/migrations/) in name order. They create the roles, profiles, invites, athletes and officials tables with their access rules. (Or use the Supabase CLI: `supabase link` then `supabase db push`.)
 3. Make yourself the first Admin by running this in the SQL Editor with your own email, before you first sign in:
 
    ```sql
@@ -28,6 +28,8 @@ Once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, demo mode switche
 
 - **Admins** see the Admin page. Adding a coach saves their email; when that email first signs in, it becomes a coach. If the person has already signed in, they're made a coach straight away.
 - Adding an **athlete** with an email does the same with the Athletes role, and links the athlete record to that login.
+- Adding an **official** with an email works the same way with the Officials role.
+- Each tab can also **bulk add from a CSV file**. "Download template" gives the expected columns; after choosing a file you see every row with any problems (missing name, bad email or date, unknown coach, repeated email), and only the rows without problems are added. Athletes are matched to coaches by `coach_email`, and the coach must have signed in already.
 - Anyone else who signs in gets the Public role and sees a holding page until an Admin adds them.
 
 The rules are enforced by row-level security in the database, not just hidden in the app.

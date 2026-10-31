@@ -254,3 +254,57 @@ button.link {
 button.link:hover {
   background: none;
 }
+
+/* CSV import */
+
+.csv-import {
+  margin-top: 1rem;
+  padding: 0.75rem 1.25rem;
+  border: 1px dashed #a1a1aa;
+  border-radius: 12px;
+}
+
+.csv-import summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.csv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.file-button {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  background: #b91c1c;
+  color: #fff;
+  cursor: pointer;
+}
+
+.file-button:hover {
+  background: #991b1b;
+}
+
+.file-button input {
+  display: none;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+tr.row-error td {
+  background: rgb(220 38 38 / 0.08);
+}
+
+code {
+  font-size: 0.9em;
+}
+
+td.problems {
+  min-width: 14rem;
+}

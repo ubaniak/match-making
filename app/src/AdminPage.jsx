@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
+import CsvImport from './CsvImport'
+
+const tabs = [
+  ['coaches', 'Coaches'],
+  ['athletes', 'Athletes'],
+  ['officials', 'Officials'],
+]
 
 export default function AdminPage() {
   const [tab, setTab] = useState('coaches')
@@ -8,10 +15,13 @@ export default function AdminPage() {
     <main className="panel">
       <h1>Admin</h1>
       <nav className="tabs">
-        <button className={tab === 'coaches' ? 'tab active' : 'tab'} onClick={() => setTab('coaches')}>Coaches</button>
-        <button className={tab === 'athletes' ? 'tab active' : 'tab'} onClick={() => setTab('athletes')}>Athletes</button>
+        {tabs.map(([key, label]) => (
+          <button key={key} className={tab === key ? 'tab active' : 'tab'} onClick={() => setTab(key)}>{label}</button>
+        ))}
       </nav>
-      {tab === 'coaches' ? <Coaches /> : <Athletes />}
+      {tab === 'coaches' && <Coaches />}
+      {tab === 'athletes' && <Athletes />}
+      {tab === 'officials' && <Officials />}
     </main>
   )
 }
@@ -79,6 +89,7 @@ function Coaches() {
         <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add coach'}</button>
       </form>
       {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
+      <CsvImport kind="coaches" importRow={api.addCoach} onDone={reload} />
 
       <h2>Coaches</h2>
       {error && <p className="error">{error}</p>}
@@ -107,7 +118,7 @@ function Coaches() {
 const emptyAthlete = { name: '', email: '', coachId: '', dateOfBirth: '', weightClass: '', club: '' }
 
 function Athletes() {
-  const { coaches } = useCoaches()
+  const { coaches, reload: reloadCoaches } = useCoaches()
   const [athletes, setAthletes] = useState([])
   const [error, setError] = useState(null)
   const [form, setForm] = useState(emptyAthlete)
@@ -181,6 +192,18 @@ function Athletes() {
       {coaches.some((c) => !c.id) && (
         <p className="muted">Invited coaches appear in the coach list once they've signed in.</p>
       )}
+      <CsvImport
+        kind="athletes"
+        context={{
+          coachesByEmail: new Map(coaches.map((c) => [c.email, c])),
+          existingEmails: new Set(athletes.map((a) => a.invite_email).filter(Boolean)),
+        }}
+        importRow={api.addAthlete}
+        onDone={() => {
+          reload()
+          reloadCoaches()
+        }}
+      />
 
       <h2>Athletes</h2>
       {error && <p className="error">{error}</p>}
@@ -198,15 +221,103 @@ function Athletes() {
                 <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
                 <td>{a.weight_class || '—'}</td>
                 <td>{a.club || '—'}</td>
-                <td>
-                  {a.user_id ? (
-                    <span className="badge active">{a.invite_email || 'Linked'}</span>
-                  ) : a.invite_email ? (
-                    <span className="badge invited">{a.invite_email}</span>
-                  ) : (
-                    '—'
-                  )}
-                </td>
+                <td><LoginBadge record={a} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  )
+}
+
+// Whether a person's record is linked to a login yet.
+function LoginBadge({ record }) {
+  if (record.user_id) return <span className="badge active">{record.invite_email || 'Linked'}</span>
+  if (record.invite_email) return <span className="badge invited">{record.invite_email}</span>
+  return '—'
+}
+
+const emptyOfficial = { name: '', email: '', qualifications: '' }
+
+function Officials() {
+  const [officials, setOfficials] = useState([])
+  const [error, setError] = useState(null)
+  const [form, setForm] = useState(emptyOfficial)
+  const [message, setMessage] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const reload = useCallback(async () => {
+    try {
+      setOfficials(await api.listOfficials())
+      setError(null)
+    } catch (err) {
+      setError(err.message)
+    }
+  }, [])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  async function addOfficial(event) {
+    event.preventDefault()
+    setSaving(true)
+    setMessage(null)
+    try {
+      await api.addOfficial({
+        name: form.name.trim(),
+        invite_email: form.email.trim().toLowerCase() || null,
+        qualifications: form.qualifications.trim() || null,
+      })
+    } catch (err) {
+      return setMessage({ error: true, text: err.message })
+    } finally {
+      setSaving(false)
+    }
+    setMessage({
+      text: form.email
+        ? `${form.name} is added. They can sign in with ${form.email} to keep their profile up to date.`
+        : `${form.name} is added.`,
+    })
+    setForm(emptyOfficial)
+    reload()
+  }
+
+  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+
+  return (
+    <section>
+      <form onSubmit={addOfficial} className="row-form">
+        <h2>Add an official</h2>
+        <label>Name<input required {...field('name')} /></label>
+        <label>Email <span className="muted">(optional, lets them sign in)</span><input type="email" {...field('email')} /></label>
+        <label>Qualifications<input {...field('qualifications')} /></label>
+        <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add official'}</button>
+      </form>
+      {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
+      <CsvImport
+        kind="officials"
+        context={{ existingEmails: new Set(officials.map((o) => o.invite_email).filter(Boolean)) }}
+        importRow={api.addOfficial}
+        onDone={reload}
+      />
+
+      <h2>Officials</h2>
+      {error && <p className="error">{error}</p>}
+      {officials.length === 0 ? (
+        <p className="muted">No officials yet.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Qualifications</th><th>Login</th></tr>
+          </thead>
+          <tbody>
+            {officials.map((o) => (
+              <tr key={o.id}>
+                <td>{o.name}</td>
+                <td>{o.qualifications || '—'}</td>
+                <td><LoginBadge record={o} /></td>
               </tr>
             ))}
           </tbody>
