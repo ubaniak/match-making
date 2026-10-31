@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from './supabase'
+import { api } from './api'
 
 export default function AdminPage() {
   const [tab, setTab] = useState('coaches')
@@ -22,17 +22,12 @@ function useCoaches() {
   const [error, setError] = useState(null)
 
   const reload = useCallback(async () => {
-    const [profiles, invites] = await Promise.all([
-      supabase.from('profiles').select('id, email, name, status').eq('role_id', 'coach').order('name'),
-      supabase.from('invites').select('email, name').eq('role_id', 'coach').order('name'),
-    ])
-    const failed = profiles.error || invites.error
-    if (failed) return setError(failed.message)
-    setError(null)
-    setCoaches([
-      ...profiles.data.map((p) => ({ ...p, state: p.status === 'active' ? 'Active' : 'Disabled' })),
-      ...invites.data.map((i) => ({ ...i, id: null, state: 'Invited' })),
-    ])
+    try {
+      setCoaches(await api.listCoaches())
+      setError(null)
+    } catch (err) {
+      setError(err.message)
+    }
   }, [])
 
   useEffect(() => {
@@ -52,13 +47,14 @@ function Coaches() {
     event.preventDefault()
     setSaving(true)
     setMessage(null)
-    const { data, error } = await supabase.rpc('invite_user', {
-      p_email: form.email,
-      p_name: form.name,
-      p_role: 'coach',
-    })
-    setSaving(false)
-    if (error) return setMessage({ error: true, text: error.message })
+    let data
+    try {
+      data = await api.addCoach(form)
+    } catch (err) {
+      return setMessage({ error: true, text: err.message })
+    } finally {
+      setSaving(false)
+    }
     setMessage({
       text: data === 'updated'
         ? `${form.email} already had an account and is now a coach.`
@@ -119,13 +115,12 @@ function Athletes() {
   const [saving, setSaving] = useState(false)
 
   const reload = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('athletes')
-      .select('id, name, date_of_birth, weight_class, club, invite_email, user_id, coach:profiles!athletes_coach_id_fkey(name, email)')
-      .order('name')
-    if (error) return setError(error.message)
-    setError(null)
-    setAthletes(data)
+    try {
+      setAthletes(await api.listAthletes())
+      setError(null)
+    } catch (err) {
+      setError(err.message)
+    }
   }, [])
 
   useEffect(() => {
@@ -136,16 +131,20 @@ function Athletes() {
     event.preventDefault()
     setSaving(true)
     setMessage(null)
-    const { error } = await supabase.from('athletes').insert({
-      name: form.name.trim(),
-      invite_email: form.email.trim().toLowerCase() || null,
-      coach_id: form.coachId || null,
-      date_of_birth: form.dateOfBirth || null,
-      weight_class: form.weightClass.trim() || null,
-      club: form.club.trim() || null,
-    })
-    setSaving(false)
-    if (error) return setMessage({ error: true, text: error.message })
+    try {
+      await api.addAthlete({
+        name: form.name.trim(),
+        invite_email: form.email.trim().toLowerCase() || null,
+        coach_id: form.coachId || null,
+        date_of_birth: form.dateOfBirth || null,
+        weight_class: form.weightClass.trim() || null,
+        club: form.club.trim() || null,
+      })
+    } catch (err) {
+      return setMessage({ error: true, text: err.message })
+    } finally {
+      setSaving(false)
+    }
     setMessage({
       text: form.email
         ? `${form.name} is added. They can sign in with ${form.email} to see their profile.`
