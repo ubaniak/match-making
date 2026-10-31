@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay, formatTime, todayIso } from './dates'
 
 const roleLabels = { owner: 'Owner', admin: 'Admin', coach: 'Coach', viewer: 'Viewer' }
@@ -250,7 +251,7 @@ function EventAthletes({ event, may, profile, onChange }) {
               <option value="">{available.length ? 'Choose an athlete…' : 'Every athlete is already entered'}</option>
               {available.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {[a.name, a.weight_class, a.club].filter(Boolean).join(' · ')}
+                  {[a.name, genderLabel(a.gender), formatWeight(a.weight_kg), a.club].filter((v) => v && v !== '—').join(' · ')}
                 </option>
               ))}
             </select>
@@ -265,13 +266,15 @@ function EventAthletes({ event, may, profile, onChange }) {
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Name</th><th>Weight class</th><th>Club</th><th>Coach</th>{canAdd && <th />}</tr>
+              <tr><th>Name</th><th>Gender</th><th>Weight</th><th>Experience</th><th>Club</th><th>Coach</th>{canAdd && <th />}</tr>
             </thead>
             <tbody>
               {event.athletes.map((a) => (
                 <tr key={a.id}>
                   <td>{a.name}</td>
-                  <td>{a.weight_class || '—'}</td>
+                  <td>{genderLabel(a.gender)}</td>
+                  <td>{formatWeight(a.weight_kg)}</td>
+                  <td>{formatBouts(a.bouts)}</td>
                   <td>{a.club || '—'}</td>
                   <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
                   {canAdd && (

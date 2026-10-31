@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import CsvImport from './CsvImport'
+import { athleteProblems, formatBouts, formatWeight, genderLabel, genders } from './athletes'
 
 const tabs = [
   ['users', 'Users'],
@@ -121,7 +122,7 @@ function Users() {
   )
 }
 
-const emptyAthlete = { name: '', email: '', coachId: '', dateOfBirth: '', weightClass: '', club: '' }
+const emptyAthlete = { name: '', email: '', coachId: '', dateOfBirth: '', gender: '', weightKg: '', bouts: '', club: '' }
 
 function Athletes() {
   const { users, reload: reloadUsers } = useUsers()
@@ -146,17 +147,22 @@ function Athletes() {
 
   async function addAthlete(event) {
     event.preventDefault()
+    const athlete = {
+      name: form.name.trim(),
+      invite_email: form.email.trim().toLowerCase() || null,
+      coach_id: form.coachId || null,
+      date_of_birth: form.dateOfBirth,
+      gender: form.gender,
+      weight_kg: form.weightKg === '' ? '' : Number(form.weightKg),
+      bouts: form.bouts === '' ? '' : Number(form.bouts),
+      club: form.club.trim(),
+    }
+    const problems = athleteProblems(athlete)
+    if (problems.length) return setMessage({ error: true, text: problems.join('. ') })
     setSaving(true)
     setMessage(null)
     try {
-      await api.addAthlete({
-        name: form.name.trim(),
-        invite_email: form.email.trim().toLowerCase() || null,
-        coach_id: form.coachId || null,
-        date_of_birth: form.dateOfBirth || null,
-        weight_class: form.weightClass.trim() || null,
-        club: form.club.trim() || null,
-      })
+      await api.addAthlete(athlete)
     } catch (err) {
       return setMessage({ error: true, text: err.message })
     } finally {
@@ -189,9 +195,17 @@ function Athletes() {
             ))}
           </select>
         </label>
-        <label>Date of birth<input type="date" {...field('dateOfBirth')} /></label>
-        <label>Weight class<input {...field('weightClass')} /></label>
-        <label>Club<input {...field('club')} /></label>
+        <label>Date of birth<input type="date" required {...field('dateOfBirth')} /></label>
+        <label>
+          Gender
+          <select required {...field('gender')}>
+            <option value="">Choose…</option>
+            {genders.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>Weight (kg)<input type="number" required min="20" max="200" step="0.1" {...field('weightKg')} /></label>
+        <label>Experience (bouts)<input type="number" required min="0" max="1000" step="1" {...field('bouts')} /></label>
+        <label>Club<input required {...field('club')} /></label>
         <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add athlete'}</button>
       </form>
       {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
@@ -216,22 +230,27 @@ function Athletes() {
       {athletes.length === 0 ? (
         <p className="muted">No athletes yet.</p>
       ) : (
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Coach</th><th>Weight class</th><th>Club</th><th>Login</th></tr>
-          </thead>
-          <tbody>
-            {athletes.map((a) => (
-              <tr key={a.id}>
-                <td>{a.name}</td>
-                <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
-                <td>{a.weight_class || '—'}</td>
-                <td>{a.club || '—'}</td>
-                <td><LoginBadge record={a} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Born</th><th>Gender</th><th>Weight</th><th>Experience</th><th>Club</th><th>Coach</th><th>Login</th></tr>
+            </thead>
+            <tbody>
+              {athletes.map((a) => (
+                <tr key={a.id}>
+                  <td>{a.name}</td>
+                  <td>{a.date_of_birth || '—'}</td>
+                  <td>{genderLabel(a.gender)}</td>
+                  <td>{formatWeight(a.weight_kg)}</td>
+                  <td>{formatBouts(a.bouts)}</td>
+                  <td>{a.club || '—'}</td>
+                  <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
+                  <td><LoginBadge record={a} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   )

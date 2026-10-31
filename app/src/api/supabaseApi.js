@@ -76,7 +76,7 @@ export const supabaseApi = {
   async listAthletes() {
     const { data, error } = await supabase
       .from('athletes')
-      .select('id, name, date_of_birth, weight_class, club, invite_email, user_id, coach:profiles!athletes_coach_id_fkey(name, email)')
+      .select('id, name, date_of_birth, gender, weight_kg, bouts, club, invite_email, user_id, coach:profiles!athletes_coach_id_fkey(name, email)')
       .order('name')
     if (error) throw error
     return data
@@ -114,7 +114,7 @@ export const supabaseApi = {
     const { data, error } = await supabase
       .from('events')
       .select(`${eventColumns},
-        event_athletes(added_by, athlete:athletes(id, name, weight_class, club, coach_id, coach:profiles!athletes_coach_id_fkey(name, email)))`)
+        event_athletes(added_by, athlete:athletes(id, name, date_of_birth, gender, weight_kg, bouts, club, coach_id, coach:profiles!athletes_coach_id_fkey(name, email)))`)
       .eq('id', eventId)
       .maybeSingle()
     if (error) throw error

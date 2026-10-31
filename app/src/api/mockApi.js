@@ -3,6 +3,7 @@
 // The password ships inside the page's JavaScript, so this is for demos, not for protecting anything.
 // The demo admin can also preview the app as one of the sample users (see viewAs).
 
+import { athleteProblems } from '../athletes'
 import { addDays, daysBetween, todayIso } from '../dates'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
@@ -10,7 +11,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v2' // v2: coaches became users with per-event roles
+const DATA_KEY = 'mock-data-v3' // v3: athletes gained gender, weight and bouts
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -25,9 +26,9 @@ function seed() {
       { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
     ],
     athletes: [
-      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', weight_class: 'Lightweight', club: 'Eastside BC', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
-      { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', weight_class: 'Flyweight', club: 'Eastside BC', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
-      { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', weight_class: 'Middleweight', club: 'Riverside Boxing', invite_email: null, user_id: null, coach_id: 'user-2' },
+      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club: 'Eastside BC', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
+      { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', gender: 'female', weight_kg: 51, bouts: 3, club: 'Eastside BC', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
+      { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', gender: 'male', weight_kg: 74.2, bouts: 27, club: 'Riverside Boxing', invite_email: null, user_id: null, coach_id: 'user-2' },
     ],
     officials: [
       { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
@@ -207,6 +208,8 @@ export const mockApi = {
   },
 
   async addAthlete(athlete) {
+    const problems = athleteProblems(athlete)
+    if (problems.length) throw new Error(problems.join('. '))
     const current = data()
     current.athletes.push({ ...athlete, id: crypto.randomUUID(), user_id: null })
     write(DATA_KEY, current)
