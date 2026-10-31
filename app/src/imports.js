@@ -35,7 +35,7 @@ export const importSpecs = {
       ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC'],
       ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', 'Eastside BC'],
     ],
-    check(values, errors, { usersByEmail }) {
+    check(values, errors, { usersByEmail, clubsByName }) {
       checkEmail(values.email, errors)
 
       let coachId = null
@@ -55,9 +55,13 @@ export const importSpecs = {
         gender: { m: 'male', f: 'female' }[(values.gender ?? '').toLowerCase()] ?? (values.gender ?? '').toLowerCase(),
         weight_kg: values.weight_kg ?? '',
         bouts: values.bouts ?? '',
-        club: values.club ?? '',
+        club_id: null,
       }
-      errors.push(...athleteProblems(athlete))
+      // The club must already exist; match its name ignoring case.
+      const clubName = (values.club ?? '').trim()
+      const club = clubName && clubsByName?.get(clubName.toLowerCase())
+      if (club) athlete.club_id = club.id
+      errors.push(...athleteProblems(athlete).map((p) => (p === 'Club is missing' && clubName ? `No club called "${clubName}". Create it on the Clubs page first` : p)))
       return { ...athlete, weight_kg: Number(athlete.weight_kg), bouts: Number(athlete.bouts) }
     },
   },
