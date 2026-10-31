@@ -43,8 +43,8 @@ export default function EventsPage({ profile, can }) {
         <>
           <button className="link back" onClick={back}>← All events</button>
           <h1>New event</h1>
-          <p className="muted">You'll be the event's Owner. You can add Admins, Coaches and Viewers once it's created.</p>
-          <EventForm onCancel={back} onSaved={(id) => setView({ name: 'event', id })} />
+          <p className="muted">Pick the event's Owner. If it isn't you, you'll stay on the event as an Admin. Add Coaches and Viewers once it's created.</p>
+          <EventForm profile={profile} onCancel={back} onSaved={(id) => setView({ name: 'event', id })} />
         </>
       )}
       {view.name === 'event' && <EventDetail id={view.id} profile={profile} can={can} onBack={back} />}
@@ -341,13 +341,21 @@ function ExperienceCell({ category, bouts }) {
 
 const defaultTimes = { weigh_in_time: '08:00', bouts_time: '12:00' }
 
-function EventForm({ event, onCancel, onSaved }) {
+function EventForm({ event, profile, onCancel, onSaved }) {
+  const isNew = !event
   const [form, setForm] = useState({
     name: event?.name ?? '',
     venue: event?.venue ?? '',
     startDate: event?.start_date ?? '',
     endDate: event?.end_date ?? '',
+    ownerId: profile?.id ?? '',
   })
+  // Who can own a new event: anyone who has signed in.
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    if (isNew) api.listUsers().then((all) => setUsers(all.filter((u) => u.id && u.state === 'Active')), () => setUsers([]))
+  }, [isNew])
   // Times typed so far, by day, so changing the dates keeps them.
   const [times, setTimes] = useState(() => Object.fromEntries((event?.days ?? []).map((d) => [d.day, d])))
   const [error, setError] = useState(null)
@@ -402,6 +410,17 @@ function EventForm({ event, onCancel, onSaved }) {
         <h2>Details</h2>
         <label>Name<input required {...field('name')} placeholder="e.g. Winter Box Cup" /></label>
         <label>Venue <span className="muted">(optional)</span><input {...field('venue')} /></label>
+        {isNew && (
+          <label>
+            Owner
+            <select required {...field('ownerId')}>
+              {users.length === 0 && profile && <option value={profile.id}>{profile.name || profile.email} (you)</option>}
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>{u.name || u.email}{u.id === profile?.id ? ' (you)' : ''}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="row-form">

@@ -123,8 +123,8 @@ export const supabaseApi = {
     return { ...tidyEvent(data), athletes, athlete_count: athletes.length }
   },
 
-  // Creates the event, owned by the signed-in user, when there's no id. Returns the event's id.
-  async saveEvent({ id, name, venue, startDate, endDate, days }) {
+  // Creates the event when there's no id, owned by ownerId (default: the signed-in user). Returns the event's id.
+  async saveEvent({ id, name, venue, startDate, endDate, days, ownerId }) {
     const { data, error } = await supabase.rpc('save_event', {
       p_id: id ?? null,
       p_name: name,
@@ -132,6 +132,7 @@ export const supabaseApi = {
       p_start_date: startDate,
       p_end_date: endDate,
       p_days: days,
+      p_owner_id: id ? null : ownerId || null,
     })
     if (error) throw error
     return data
