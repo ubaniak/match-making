@@ -1,19 +1,28 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date,
-  days:event_days(day, weigh_in_time, bouts_time),
+const eventColumns = `id, name, venue, start_date, end_date, status, poster_path,
+  days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
-// Postgres returns times as '09:00:00' and days unordered.
-function tidyEvent(event) {
-  return {
-    ...event,
-    days: [...event.days]
-      .sort((a, b) => a.day.localeCompare(b.day))
-      .map((d) => ({ ...d, weigh_in_time: d.weigh_in_time.slice(0, 5), bouts_time: d.bouts_time.slice(0, 5) })),
-  }
+const POSTERS = 'event-posters'
+const hhmm = (time) => time?.slice(0, 5) ?? ''
+
+// Postgres returns times as '09:00:00' and rows unordered.
+function tidyDays(days) {
+  return [...days]
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .map((d) => ({
+      day: d.day,
+      weigh_in_start: hhmm(d.weigh_in_start),
+      weigh_in_end: hhmm(d.weigh_in_end),
+      sessions: [...(d.sessions ?? [])]
+        .map((s) => ({ starts_at: hhmm(s.starts_at), label: s.label ?? '' }))
+        .sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
+    }))
 }
+
+const tidyEvent = (event) => ({ ...event, days: tidyDays(event.days) })
 
 export const supabaseApi = {
   mode: 'supabase',
@@ -123,19 +132,80 @@ export const supabaseApi = {
     return { ...tidyEvent(data), athletes, athlete_count: athletes.length }
   },
 
-  // Creates the event when there's no id, owned by ownerId (default: the signed-in user). Returns the event's id.
-  async saveEvent({ id, name, venue, startDate, endDate, days, ownerId }) {
-    const { data, error } = await supabase.rpc('save_event', {
-      p_id: id ?? null,
+  // Site Admins only. The event starts as Requested. Returns its id.
+  async createEvent({ name, venue, startDate, endDate, ownerId }) {
+    const { data, error } = await supabase.rpc('create_event', {
       p_name: name,
       p_venue: venue,
       p_start_date: startDate,
       p_end_date: endDate,
-      p_days: days,
-      p_owner_id: id ? null : ownerId || null,
+      p_owner_id: ownerId,
     })
     if (error) throw error
     return data
+  },
+
+  async updateEventDetails(eventId, { name, venue, startDate, endDate }) {
+    const { data, error } = await supabase
+      .from('events')
+      .update({ name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate })
+      .eq('id', eventId)
+      .select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('You can\'t edit this event')
+  },
+
+  // days: [{ day, weigh_in_start, weigh_in_end, sessions: [{ starts_at, label }] }], one per day with bouts.
+  async saveEventTimes(eventId, days) {
+    const { error } = await supabase.rpc('save_event_times', { p_event_id: eventId, p_days: days })
+    if (error) throw error
+  },
+
+  // 'active' (approve), 'done' or 'cancelled'. Site Admins only.
+  async setEventStatus(eventId, status) {
+    const { error } = await supabase.rpc('set_event_status', { p_event_id: eventId, p_status: status })
+    if (error) throw error
+  },
+
+  // Emails the Owner "You have Requested an event". Needs the send-event-email Edge Function.
+  async emailEventOwner(eventId) {
+    const { error } = await supabase.functions.invoke('send-event-email', { body: { event_id: eventId } })
+    if (error) {
+      let message = error.message
+      try {
+        message = (await error.context.json()).error || message
+      } catch {
+        // keep the generic message
+      }
+      throw new Error(message)
+    }
+  },
+
+  posterUrl(path) {
+    return path ? supabase.storage.from(POSTERS).getPublicUrl(path).data.publicUrl : null
+  },
+
+  async uploadPoster(eventId, file, oldPath) {
+    const extension = (file.name.split('.').pop() || 'img').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const path = `${eventId}/${Date.now()}.${extension}`
+    const upload = await supabase.storage.from(POSTERS).upload(path, file, { contentType: file.type })
+    if (upload.error) throw upload.error
+    const { error } = await supabase.from('events').update({ poster_path: path }).eq('id', eventId)
+    if (error) throw error
+    if (oldPath) await supabase.storage.from(POSTERS).remove([oldPath])
+  },
+
+  async removePoster(eventId, path) {
+    const { error } = await supabase.from('events').update({ poster_path: null }).eq('id', eventId)
+    if (error) throw error
+    if (path) await supabase.storage.from(POSTERS).remove([path])
+  },
+
+  // Upcoming Active events, for the public page. Works without signing in.
+  async listPublicEvents() {
+    const { data, error } = await supabase.rpc('list_public_events')
+    if (error) throw error
+    return data.map((e) => ({ ...e, days: tidyDays(e.days) }))
   },
 
   async deleteEvent(eventId) {
@@ -143,7 +213,7 @@ export const supabaseApi = {
     if (error) throw error
   },
 
-  // Add someone to an event, or change their role. Ownership moves only through transferEventOwnership.
+  // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.
   async setEventMember(eventId, userId, role) {
     const { error } = await supabase
       .from('event_members')
@@ -156,6 +226,7 @@ export const supabaseApi = {
     if (error) throw error
   },
 
+  // Site Admins only. The old Owner stays on as a Viewer.
   async transferEventOwnership(eventId, userId) {
     const { error } = await supabase.rpc('transfer_event_ownership', { p_event_id: eventId, p_user_id: userId })
     if (error) throw error

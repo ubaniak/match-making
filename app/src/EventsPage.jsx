@@ -2,29 +2,38 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { categorise, compareByCategory } from './categories'
-import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay, formatTime, todayIso } from './dates'
+import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay } from './dates'
+import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 
-const roleLabels = { owner: 'Owner', admin: 'Admin', coach: 'Coach', viewer: 'Viewer' }
+const roleLabels = { owner: 'Owner', coach: 'Coach', viewer: 'Viewer' }
 
-// What each event role can do. Site Admins count as Owner everywhere.
-const rights = {
-  owner: { edit: true, members: true, athletes: true, removeAnyAthlete: true, transfer: true, remove: true },
-  admin: { edit: true, members: true, athletes: true, removeAnyAthlete: true },
-  coach: { athletes: true },
-  viewer: {},
-}
-
-function myEventRole(event, profile, can) {
-  if (can('users:manage')) return 'owner'
-  return event.members.find((m) => m.user_id === profile?.id)?.role ?? null
-}
-
+const myRole = (event, profile) => event.members.find((m) => m.user_id === profile?.id)?.role ?? null
 const ownerOf = (event) => event.members.find((m) => m.role === 'owner')?.user
 const personName = (user) => (user ? user.name || user.email : '—')
+const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
 
-// Events: any user can create one and becomes its Owner. People are added to an event
-// as Admin, Coach or Viewer, and only see the events they belong to.
+// What the signed-in user can do on an event (plan/events.md, "Who can do what").
+function rightsFor(event, profile, siteAdmin) {
+  const role = myRole(event, profile)
+  const editable = isEditableStatus(event)
+  const open = isOpen(event)
+  const owner = role === 'owner'
+  return {
+    role,
+    siteAdmin,
+    edit: siteAdmin || (owner && editable),
+    members: siteAdmin || (owner && editable),
+    addMembers: open && (siteAdmin || owner),
+    addAthletes: open && (siteAdmin || owner || role === 'coach'),
+    removeAnyAthlete: siteAdmin || (owner && editable),
+    removeOwnAthletes: open && role === 'coach',
+  }
+}
+
+// Events: site Admins create them and pick the Owner. The Owner fills in the poster and
+// day times; a site Admin approves, cancels or closes the event.
 export default function EventsPage({ profile, can }) {
+  const siteAdmin = can('users:manage')
   const [view, setView] = useState({ name: 'list' })
   const back = () => setView({ name: 'list' })
 
@@ -32,9 +41,8 @@ export default function EventsPage({ profile, can }) {
     <main className="panel">
       {view.name === 'list' && (
         <EventList
-          canCreate={can('events:create')}
+          siteAdmin={siteAdmin}
           profile={profile}
-          can={can}
           onOpen={(id) => setView({ name: 'event', id })}
           onCreate={() => setView({ name: 'new' })}
         />
@@ -43,16 +51,21 @@ export default function EventsPage({ profile, can }) {
         <>
           <button className="link back" onClick={back}>← All events</button>
           <h1>New event</h1>
-          <p className="muted">Pick the event's Owner. If it isn't you, you'll stay on the event as an Admin. Add Coaches and Viewers once it's created.</p>
-          <EventForm profile={profile} onCancel={back} onSaved={(id) => setView({ name: 'event', id })} />
+          <p className="muted">
+            The event starts as Requested. Its Owner gets an email asking them to add the poster and the weigh-in and bout
+            times. Approve it whenever you're ready.
+          </p>
+          <NewEventForm onCancel={back} onCreated={(id, email) => setView({ name: 'event', id, email })} />
         </>
       )}
-      {view.name === 'event' && <EventDetail id={view.id} profile={profile} can={can} onBack={back} />}
+      {view.name === 'event' && (
+        <EventDetail id={view.id} email={view.email} profile={profile} siteAdmin={siteAdmin} onBack={back} />
+      )}
     </main>
   )
 }
 
-function EventList({ canCreate, profile, can, onOpen, onCreate }) {
+function EventList({ siteAdmin, profile, onOpen, onCreate }) {
   const [events, setEvents] = useState(null)
   const [error, setError] = useState(null)
 
@@ -60,49 +73,52 @@ function EventList({ canCreate, profile, can, onOpen, onCreate }) {
     api.listEvents().then(setEvents, (err) => setError(err.message))
   }, [])
 
-  const today = todayIso()
-  const upcoming = events?.filter((e) => e.end_date >= today) ?? []
-  const past = (events?.filter((e) => e.end_date < today) ?? []).reverse()
+  const withStatus = events?.map((e) => ({ ...e, shownStatus: effectiveStatus(e) })) ?? []
+  const requested = withStatus.filter((e) => e.shownStatus === 'requested')
+  const active = withStatus.filter((e) => e.shownStatus === 'active')
+  const finished = withStatus.filter((e) => e.shownStatus === 'done' || e.shownStatus === 'cancelled').reverse()
 
   return (
     <>
       <div className="heading-row">
         <h1>Events</h1>
-        {canCreate && <button onClick={onCreate}>New event</button>}
+        {siteAdmin && <button onClick={onCreate}>New event</button>}
+        <a className="link-button" href="#upcoming">Public page</a>
       </div>
       {error && <p className="error">{error}</p>}
       {events === null && !error && <p className="muted">Loading…</p>}
       {events?.length === 0 && (
         <p className="muted">
-          {canCreate ? 'No events yet. Create one, or ask an event\'s Owner to add you.' : 'You haven\'t been added to any events yet.'}
+          {siteAdmin ? 'No events yet. Create one and pick its Owner.' : 'You haven\'t been added to any events yet.'}
         </p>
       )}
-      {upcoming.length > 0 && <EventTable title="Upcoming" events={upcoming} profile={profile} can={can} onOpen={onOpen} />}
-      {past.length > 0 && <EventTable title="Past" events={past} profile={profile} can={can} onOpen={onOpen} />}
+      {requested.length > 0 && (
+        <EventTable title={siteAdmin ? 'Waiting for approval' : 'Requested'} events={requested} profile={profile} onOpen={onOpen} />
+      )}
+      {active.length > 0 && <EventTable title="Active" events={active} profile={profile} onOpen={onOpen} />}
+      {finished.length > 0 && <EventTable title="Done and cancelled" events={finished} profile={profile} onOpen={onOpen} />}
     </>
   )
 }
 
-function EventTable({ title, events, profile, can, onOpen }) {
+function EventTable({ title, events, profile, onOpen }) {
   return (
     <section>
       <h2>{title}</h2>
       <div className="table-scroll">
         <table>
           <thead>
-            <tr><th>Event</th><th>Dates</th><th>Venue</th><th>Owner</th><th>Your role</th><th>Athletes</th></tr>
+            <tr><th>Event</th><th>Status</th><th>Dates</th><th>Location</th><th>Owner</th><th>Your role</th><th>Athletes</th></tr>
           </thead>
           <tbody>
             {events.map((e) => (
               <tr key={e.id}>
                 <td><button className="link" onClick={() => onOpen(e.id)}>{e.name}</button></td>
-                <td>
-                  {formatDateRange(e.start_date, e.end_date)}
-                  {e.days.length > 1 && <span className="muted"> ({e.days.length} days)</span>}
-                </td>
+                <td><StatusBadge status={e.shownStatus} /></td>
+                <td>{formatDateRange(e.start_date, e.end_date)}</td>
                 <td>{e.venue || '—'}</td>
                 <td>{personName(ownerOf(e))}</td>
-                <td><RoleBadge role={e.members.find((m) => m.user_id === profile?.id)?.role ?? (can('users:manage') ? 'site-admin' : null)} /></td>
+                <td><RoleBadge role={myRole(e, profile)} /></td>
                 <td>{e.athlete_count}</td>
               </tr>
             ))}
@@ -113,10 +129,151 @@ function EventTable({ title, events, profile, can, onOpen }) {
   )
 }
 
-function EventDetail({ id, profile, can, onBack }) {
+function StatusBadge({ status }) {
+  return <span className={`badge status-${status}`}>{statusLabels[status]}</span>
+}
+
+function RoleBadge({ role }) {
+  if (!role) return '—'
+  return <span className={`badge role-${role}`}>{roleLabels[role]}</span>
+}
+
+// Active users who can be picked as an Owner.
+function useActiveUsers(enabled = true) {
+  const [users, setUsers] = useState([])
+  useEffect(() => {
+    if (enabled) api.listUsers().then((all) => setUsers(all.filter((u) => u.id && u.state === 'Active')), () => setUsers([]))
+  }, [enabled])
+  return users
+}
+
+function DateFields({ form, setField }) {
+  const datesBackwards = form.startDate && form.endDate && form.endDate < form.startDate
+  const tooLong = form.startDate && form.endDate && !datesBackwards && daysBetween(form.startDate, form.endDate).length === 0
+  const field = (key) => ({ value: form[key], onChange: (e) => setField(key, e.target.value) })
+  return (
+    <>
+      <label>Start date<input type="date" required {...field('startDate')} /></label>
+      <label>
+        End date <span className="muted">(same as start for one day)</span>
+        <input type="date" required min={form.startDate || undefined} {...field('endDate')} />
+      </label>
+      {datesBackwards && <p className="error full">The end date is before the start date.</p>}
+      {tooLong && <p className="error full">An event can be at most {MAX_EVENT_DAYS} days long.</p>}
+    </>
+  )
+}
+
+// Picking a start date fills the end date, so a one-day event needs one pick.
+function useEventFields(initial) {
+  const [form, setForm] = useState(initial)
+  function setField(key, value) {
+    setForm((current) => {
+      const next = { ...current, [key]: value }
+      if (key === 'startDate' && (!current.endDate || current.endDate === current.startDate || current.endDate < value)) {
+        next.endDate = value
+      }
+      return next
+    })
+  }
+  return [form, setField]
+}
+
+function NewEventForm({ onCancel, onCreated }) {
+  const [form, setField] = useEventFields({ name: '', venue: '', startDate: '', endDate: '', ownerId: '' })
+  const users = useActiveUsers()
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  async function save(e) {
+    e.preventDefault()
+    setError(null)
+    if (daysBetween(form.startDate, form.endDate).length === 0) return setError('Check the dates: the end date must be on or after the start date.')
+    setSaving(true)
+    let id
+    try {
+      id = await api.createEvent(form)
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+      return
+    }
+    // The event exists now; a failed email shouldn't undo that.
+    let email
+    try {
+      await api.emailEventOwner(id)
+      email = { sent: true }
+    } catch (err) {
+      email = { sent: false, reason: err.message }
+    }
+    onCreated(id, email)
+  }
+
+  const field = (key) => ({ value: form[key], onChange: (e) => setField(key, e.target.value) })
+
+  return (
+    <form onSubmit={save} className="event-form">
+      <div className="row-form">
+        <h2>Details</h2>
+        <label>Name<input required {...field('name')} placeholder="e.g. Winter Box Cup" /></label>
+        <label>Location <span className="muted">(optional)</span><input {...field('venue')} /></label>
+        <label>
+          Owner
+          <select required {...field('ownerId')}>
+            <option value="">Choose a user…</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>
+            ))}
+          </select>
+        </label>
+        <p className="muted full">Only people who have signed in at least once can own an event.</p>
+      </div>
+      <div className="row-form">
+        <h2>Dates</h2>
+        <DateFields form={form} setField={setField} />
+      </div>
+      {error && <p className="error">{error}</p>}
+      <div className="form-actions">
+        <button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create event'}</button>
+        <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+// After creating an event: did the Owner's email go out? If not, offer the Admin's email app.
+function EmailNotice({ event, email, onDismiss }) {
+  if (!email) return null
+  const owner = ownerOf(event)
+  if (email.sent) {
+    return (
+      <p className="notice">
+        We emailed {personName(owner)} "You have Requested an event". <button className="link" onClick={onDismiss}>Dismiss</button>
+      </p>
+    )
+  }
+  const body = [
+    `Hi ${owner?.name || ''},`.trim(),
+    '',
+    `You have Requested an event: ${event.name} (${formatDateRange(event.start_date, event.end_date)}).`,
+    '',
+    `Sign in to add a poster and the weigh-in and bout times: ${siteUrl()}`,
+  ].join('\n')
+  const mailto = `mailto:${encodeURIComponent(owner?.email ?? '')}?subject=${encodeURIComponent('You have Requested an event')}&body=${encodeURIComponent(body)}`
+  return (
+    <p className="notice warning">
+      The email to {personName(owner)} wasn't sent automatically ({email.reason}).{' '}
+      <a href={mailto}>Send it from your email app</a> · <button className="link" onClick={onDismiss}>Dismiss</button>
+    </p>
+  )
+}
+
+function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
   const [event, setEvent] = useState(undefined)
   const [error, setError] = useState(null)
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(null) // 'details' | 'times' | null
+  const [email, setEmail] = useState(initialEmail)
+  const [busy, setBusy] = useState(false)
 
   const reload = useCallback(async () => {
     try {
@@ -131,13 +288,16 @@ function EventDetail({ id, profile, can, onBack }) {
     reload()
   }, [reload])
 
-  async function remove() {
-    if (!window.confirm(`Delete ${event.name}? Its schedule and athlete list go with it.`)) return
+  async function run(action) {
+    setBusy(true)
+    setError(null)
     try {
-      await api.deleteEvent(id)
-      onBack()
+      await action()
+      await reload()
     } catch (err) {
       setError(err.message)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -146,22 +306,39 @@ function EventDetail({ id, profile, can, onBack }) {
   if (event === undefined) return <>{backLink}{error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}</>
   if (event === null) return <>{backLink}<p>That event no longer exists.</p></>
 
-  const role = myEventRole(event, profile, can)
-  const may = rights[role] ?? {}
+  const may = rightsFor(event, profile, siteAdmin)
+  const status = effectiveStatus(event)
 
-  if (editing) {
+  function changeStatus(next, question) {
+    if (question && !window.confirm(question)) return
+    run(() => api.setEventStatus(event.id, next))
+  }
+
+  async function remove() {
+    if (!window.confirm(`Delete ${event.name} for good? Cancelling keeps a record; deleting doesn't.`)) return
+    try {
+      await api.deleteEvent(event.id)
+      onBack()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  if (editing === 'details') {
     return (
       <>
         {backLink}
         <h1>Edit {event.name}</h1>
-        <EventForm
-          event={event}
-          onCancel={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false)
-            reload()
-          }}
-        />
+        <DetailsForm event={event} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />
+      </>
+    )
+  }
+  if (editing === 'times') {
+    return (
+      <>
+        {backLink}
+        <h1>Times for {event.name}</h1>
+        <TimesForm event={event} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />
       </>
     )
   }
@@ -171,42 +348,313 @@ function EventDetail({ id, profile, can, onBack }) {
       {backLink}
       <div className="heading-row">
         <h1>{event.name}</h1>
-        {may.edit && <button className="secondary" onClick={() => setEditing(true)}>Edit event</button>}
-        {may.remove && <button className="secondary danger" onClick={remove}>Delete</button>}
+        <StatusBadge status={status} />
+        {may.edit && <button className="secondary" onClick={() => setEditing('details')}>Edit details</button>}
       </div>
+      <EmailNotice event={event} email={email} onDismiss={() => setEmail(null)} />
       {error && <p className="error">{error}</p>}
+
+      {siteAdmin && (status === 'requested' || status === 'active') && (
+        <div className="admin-actions">
+          {status === 'requested' && (
+            <button disabled={busy} onClick={() => changeStatus('active', `Approve ${event.name}? It goes on the public page and can take on people and athletes.`)}>
+              Approve
+            </button>
+          )}
+          <button className="secondary" disabled={busy} onClick={() => changeStatus('done', `Mark ${event.name} as Done now? This can't be undone.`)}>
+            Mark done
+          </button>
+          <button className="secondary danger" disabled={busy} onClick={() => changeStatus('cancelled', `Cancel ${event.name}? This can't be undone.`)}>
+            Cancel event
+          </button>
+        </div>
+      )}
+      {status === 'requested' && !siteAdmin && (
+        <p className="muted">A site Admin will approve this event. Meanwhile, add the poster and the day times below.</p>
+      )}
+      {may.role === 'owner' && !siteAdmin && isEditableStatus(event) && (
+        <p className="muted">Need this event cancelled? Ask a site Admin.</p>
+      )}
+
       <dl className="facts">
         <div><dt>Dates</dt><dd>{formatDateRange(event.start_date, event.end_date)}</dd></div>
-        <div><dt>Venue</dt><dd>{event.venue || '—'}</dd></div>
+        <div><dt>Location</dt><dd>{event.venue || '—'}</dd></div>
         <div><dt>Owner</dt><dd>{personName(ownerOf(event))}</dd></div>
-        <div><dt>Your role</dt><dd><RoleBadge role={event.members.find((m) => m.user_id === profile?.id)?.role ?? 'site-admin'} /></dd></div>
+        <div><dt>Your role</dt><dd>{siteAdmin ? <span className="badge">Site admin</span> : <RoleBadge role={may.role} />}</dd></div>
       </dl>
+      {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
 
-      <h2>Schedule</h2>
-      <table>
-        <thead>
-          <tr><th>Day</th><th>Weigh-in</th><th>Bouts start</th></tr>
-        </thead>
-        <tbody>
-          {event.days.map((d) => (
-            <tr key={d.day}>
-              <td>{formatDay(d.day)}</td>
-              <td>{formatTime(d.weigh_in_time)}</td>
-              <td>{formatTime(d.bouts_time)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
+      <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
+      <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
       <EventAthletes event={event} may={may} profile={profile} onChange={reload} />
       <EventMembers event={event} may={may} onChange={reload} />
+
+      {siteAdmin && (
+        <p><button className="link danger" onClick={remove}>Delete this event</button></p>
+      )}
     </>
   )
 }
 
+function ChangeOwner({ event, busy, run }) {
+  const users = useActiveUsers()
+  const current = ownerOf(event)
+  const [choice, setChoice] = useState('')
+  const candidates = users.filter((u) => u.id !== current?.id)
+
+  function save(e) {
+    e.preventDefault()
+    const user = users.find((u) => u.id === choice)
+    if (!user || !window.confirm(`Make ${personName(user)} the Owner of ${event.name}? ${personName(current)} stays on as a Viewer.`)) return
+    run(async () => {
+      await api.transferEventOwnership(event.id, choice)
+      setChoice('')
+    })
+  }
+
+  return (
+    <form onSubmit={save} className="row-form compact">
+      <label>
+        Change owner
+        <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+          <option value="">Choose a user…</option>
+          {candidates.map((u) => (
+            <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>
+          ))}
+        </select>
+      </label>
+      <button type="submit" className="secondary" disabled={busy || !choice}>Change</button>
+    </form>
+  )
+}
+
+function DetailsForm({ event, onCancel, onSaved }) {
+  const [form, setField] = useEventFields({ name: event.name, venue: event.venue ?? '', startDate: event.start_date, endDate: event.end_date })
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const lostDays = event.days.filter((d) => d.day < form.startDate || d.day > form.endDate)
+
+  async function save(e) {
+    e.preventDefault()
+    setError(null)
+    if (daysBetween(form.startDate, form.endDate).length === 0) return setError('Check the dates: the end date must be on or after the start date.')
+    if (lostDays.length && !window.confirm(`The new dates drop the times for ${lostDays.map((d) => formatDay(d.day)).join(', ')}. Continue?`)) return
+    setSaving(true)
+    try {
+      await api.updateEventDetails(event.id, form)
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
+  const field = (key) => ({ value: form[key], onChange: (e) => setField(key, e.target.value) })
+
+  return (
+    <form onSubmit={save} className="event-form">
+      <div className="row-form">
+        <h2>Details</h2>
+        <label>Name<input required {...field('name')} /></label>
+        <label>Location <span className="muted">(optional)</span><input {...field('venue')} /></label>
+      </div>
+      <div className="row-form">
+        <h2>Dates</h2>
+        <DateFields form={form} setField={setField} />
+      </div>
+      {error && <p className="error">{error}</p>}
+      <div className="form-actions">
+        <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+        <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
+function Poster({ event, canEdit, run, busy }) {
+  const url = api.posterUrl(event.poster_path)
+  if (!url && !canEdit) return null
+
+  function upload(e) {
+    const file = e.target.files[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) return window.alert('Pick an image file (PNG, JPG, WebP or GIF).')
+    if (file.size > 5 * 1024 * 1024) return window.alert('Posters must be under 5 MB.')
+    run(() => api.uploadPoster(event.id, file, event.poster_path))
+  }
+
+  return (
+    <section>
+      <h2>Poster</h2>
+      {url ? <img className="poster" src={url} alt={`Poster for ${event.name}`} /> : <p className="muted">No poster yet. It's optional.</p>}
+      {canEdit && (
+        <div className="form-actions">
+          <label className={`file-button${busy ? ' disabled' : ''}`}>
+            {url ? 'Replace poster' : 'Upload poster'}
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={upload} disabled={busy} hidden />
+          </label>
+          {url && (
+            <button className="secondary" disabled={busy} onClick={() => run(() => api.removePoster(event.id, event.poster_path))}>
+              Remove
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function Schedule({ event, canEdit, onEdit }) {
+  const days = daysBetween(event.start_date, event.end_date)
+  const byDay = Object.fromEntries(event.days.map((d) => [d.day, d]))
+  return (
+    <section>
+      <div className="heading-row">
+        <h2>Day times</h2>
+        {canEdit && <button className="secondary" onClick={onEdit}>{event.days.length ? 'Edit times' : 'Add times'}</button>}
+      </div>
+      {event.days.length === 0 ? (
+        <p className="muted">No times yet. Each day with bouts needs a weigh-in and at least one bout session.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr><th>Day</th><th>Weigh-in</th><th>Bout sessions</th></tr>
+          </thead>
+          <tbody>
+            {days.map((day) => {
+              const d = byDay[day]
+              return (
+                <tr key={day}>
+                  <td>{formatDay(day)}</td>
+                  <td>{d ? `${d.weigh_in_start}–${d.weigh_in_end}` : <span className="muted">No bouts</span>}</td>
+                  <td>{d ? d.sessions.map((s) => (s.label ? `${s.label} ${s.starts_at}` : s.starts_at)).join(', ') : ''}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
+  )
+}
+
+const newDay = (day) => ({ day, bouts: true, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions: [{ starts_at: '13:00', label: '' }] })
+
+// One weigh-in and one or more bout sessions per day with bouts. The rules are checked as you type.
+function TimesForm({ event, onCancel, onSaved }) {
+  const [days, setDays] = useState(() => {
+    const saved = Object.fromEntries(event.days.map((d) => [d.day, d]))
+    const firstTime = event.days.length === 0
+    return daysBetween(event.start_date, event.end_date).map((day) =>
+      saved[day]
+        ? { ...saved[day], bouts: true, sessions: saved[day].sessions.map((s) => ({ ...s })) }
+        : { ...newDay(day), bouts: firstTime },
+    )
+  })
+  const [error, setError] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const problems = days.map((d) => (d.bouts ? dayProblems(d) : { weighIn: [], sessions: [] }))
+  const blocked = problems.some(hasProblems)
+
+  function update(index, change) {
+    setDays((current) => current.map((d, i) => (i === index ? { ...d, ...change(d) } : d)))
+  }
+  const setSession = (index, s, key, value) =>
+    update(index, (d) => ({ sessions: d.sessions.map((session, j) => (j === s ? { ...session, [key]: value } : session)) }))
+
+  async function save(e) {
+    e.preventDefault()
+    setError(null)
+    if (blocked) return setError('Fix the highlighted times first.')
+    setSaving(true)
+    try {
+      await api.saveEventTimes(
+        event.id,
+        days.filter((d) => d.bouts).map(({ day, weigh_in_start, weigh_in_end, sessions }) => ({ day, weigh_in_start, weigh_in_end, sessions })),
+      )
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="event-form">
+      <p className="muted">
+        Each day with bouts has one weigh-in and one or more bout sessions. The weigh-in lasts at least 2 hours and ends at least
+        3 hours before that day's first bout.
+      </p>
+      {days.map((d, i) => (
+        <div className="row-form day-times" key={d.day}>
+          <h2>{formatDay(d.day)}</h2>
+          <label className="checkbox full">
+            <input type="checkbox" checked={d.bouts} onChange={(e) => update(i, () => ({ bouts: e.target.checked }))} />
+            Bouts on this day
+          </label>
+          {d.bouts && (
+            <>
+              <label>
+                Weigh-in starts
+                <input type="time" required value={d.weigh_in_start} onChange={(e) => update(i, () => ({ weigh_in_start: e.target.value }))} />
+              </label>
+              <label>
+                Weigh-in ends
+                <input type="time" required value={d.weigh_in_end} onChange={(e) => update(i, () => ({ weigh_in_end: e.target.value }))} />
+              </label>
+              {problems[i].weighIn.map((p) => <p key={p} className="error full">{p}</p>)}
+              <div className="full">
+                <table className="schedule">
+                  <thead>
+                    <tr><th>Bout session <span className="muted">(name optional)</span></th><th>Starts</th><th /></tr>
+                  </thead>
+                  <tbody>
+                    {d.sessions.map((s, j) => (
+                      <tr key={j}>
+                        <td>
+                          <input value={s.label} maxLength={40} placeholder={j === 0 ? 'e.g. Afternoon' : 'e.g. Evening'}
+                            onChange={(e) => setSession(i, j, 'label', e.target.value)} aria-label={`Session ${j + 1} name`} />
+                        </td>
+                        <td>
+                          <input type="time" required value={s.starts_at}
+                            onChange={(e) => setSession(i, j, 'starts_at', e.target.value)} aria-label={`Session ${j + 1} start`} />
+                        </td>
+                        <td className="actions">
+                          {d.sessions.length > 1 && (
+                            <button type="button" className="link" onClick={() => update(i, (day) => ({ sessions: day.sessions.filter((_, k) => k !== j) }))}>
+                              Remove
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button type="button" className="link"
+                  onClick={() => update(i, (day) => ({ sessions: [...day.sessions, { starts_at: '', label: '' }] }))}>
+                  + Add a session
+                </button>
+              </div>
+              {problems[i].sessions.map((p) => <p key={p} className="error full">{p}</p>)}
+            </>
+          )}
+        </div>
+      ))}
+      {error && <p className="error">{error}</p>}
+      <div className="form-actions">
+        <button type="submit" disabled={saving || blocked}>{saving ? 'Saving…' : 'Save times'}</button>
+        <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
+      </div>
+    </form>
+  )
+}
+
 function EventAthletes({ event, may, profile, onChange }) {
-  const canAdd = Boolean(may.athletes)
-  const canRemove = (athlete) => may.removeAnyAthlete || (may.athletes && athlete.added_by === profile?.id)
+  const canAdd = may.addAthletes
+  const canRemove = (athlete) => may.removeAnyAthlete || (may.removeOwnAthletes && athlete.added_by === profile?.id)
+  const showActions = may.removeAnyAthlete || may.removeOwnAthletes
   const [allAthletes, setAllAthletes] = useState([])
   const [choice, setChoice] = useState('')
   const [error, setError] = useState(null)
@@ -249,6 +697,7 @@ function EventAthletes({ event, may, profile, onChange }) {
   return (
     <section>
       <h2>Athletes ({event.athletes.length})</h2>
+      {effectiveStatus(event) === 'requested' && <p className="muted">Athletes can be entered once the event is approved.</p>}
       {canAdd && (
         <form onSubmit={add} className="row-form">
           <label>
@@ -277,7 +726,7 @@ function EventAthletes({ event, may, profile, onChange }) {
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Name</th><th>Age group</th><th>Gender</th><th>Weight class</th><th>Experience</th><th>Club</th><th>Coach</th>{canAdd && <th />}</tr>
+              <tr><th>Name</th><th>Age group</th><th>Gender</th><th>Weight class</th><th>Experience</th><th>Club</th><th>Coach</th>{showActions && <th />}</tr>
             </thead>
             <tbody>
               {athletes.map((a) => (
@@ -289,7 +738,7 @@ function EventAthletes({ event, may, profile, onChange }) {
                   <td><ExperienceCell category={a.categories.experience} bouts={a.bouts} /></td>
                   <td>{a.club || '—'}</td>
                   <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
-                  {canAdd && (
+                  {showActions && (
                     <td className="actions">
                       {canRemove(a) && (
                         <button className="link" disabled={busy} onClick={() => run(() => api.removeEventAthlete(event.id, a.id))}>
@@ -339,150 +788,18 @@ function ExperienceCell({ category, bouts }) {
   )
 }
 
-const defaultTimes = { weigh_in_time: '08:00', bouts_time: '12:00' }
 
-function EventForm({ event, profile, onCancel, onSaved }) {
-  const isNew = !event
-  const [form, setForm] = useState({
-    name: event?.name ?? '',
-    venue: event?.venue ?? '',
-    startDate: event?.start_date ?? '',
-    endDate: event?.end_date ?? '',
-    ownerId: profile?.id ?? '',
-  })
-  // Who can own a new event: anyone who has signed in.
-  const [users, setUsers] = useState([])
-
-  useEffect(() => {
-    if (isNew) api.listUsers().then((all) => setUsers(all.filter((u) => u.id && u.state === 'Active')), () => setUsers([]))
-  }, [isNew])
-  // Times typed so far, by day, so changing the dates keeps them.
-  const [times, setTimes] = useState(() => Object.fromEntries((event?.days ?? []).map((d) => [d.day, d])))
-  const [error, setError] = useState(null)
-  const [saving, setSaving] = useState(false)
-
-  const days = daysBetween(form.startDate, form.endDate)
-  const datesBackwards = form.startDate && form.endDate && form.endDate < form.startDate
-  const tooLong = form.startDate && form.endDate && !datesBackwards && days.length === 0
-
-  // A new day starts with the times of the day before it.
-  const schedule = []
-  for (const day of days) {
-    const previous = schedule.at(-1)
-    schedule.push({ day, ...(times[day] ?? (previous ? { weigh_in_time: previous.weigh_in_time, bouts_time: previous.bouts_time } : defaultTimes)) })
-  }
-
-  function setField(key, value) {
-    setForm((current) => {
-      const next = { ...current, [key]: value }
-      // Picking a start date fills the end date, so a one-day event needs one pick.
-      if (key === 'startDate' && (!current.endDate || current.endDate === current.startDate || current.endDate < value)) {
-        next.endDate = value
-      }
-      return next
-    })
-  }
-
-  function setTime(day, key, value) {
-    const row = schedule.find((d) => d.day === day)
-    setTimes((current) => ({ ...current, [day]: { ...row, [key]: value } }))
-  }
-
-  async function save(e) {
-    e.preventDefault()
-    setError(null)
-    if (days.length === 0) return setError('Check the dates: the end date must be on or after the start date.')
-    setSaving(true)
-    try {
-      const id = await api.saveEvent({ id: event?.id, ...form, days: schedule })
-      onSaved(id)
-    } catch (err) {
-      setError(err.message)
-      setSaving(false)
-    }
-  }
-
-  const field = (key) => ({ value: form[key], onChange: (e) => setField(key, e.target.value) })
-
-  return (
-    <form onSubmit={save} className="event-form">
-      <div className="row-form">
-        <h2>Details</h2>
-        <label>Name<input required {...field('name')} placeholder="e.g. Winter Box Cup" /></label>
-        <label>Venue <span className="muted">(optional)</span><input {...field('venue')} /></label>
-        {isNew && (
-          <label>
-            Owner
-            <select required {...field('ownerId')}>
-              {users.length === 0 && profile && <option value={profile.id}>{profile.name || profile.email} (you)</option>}
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>{u.name || u.email}{u.id === profile?.id ? ' (you)' : ''}</option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
-
-      <div className="row-form">
-        <h2>Dates</h2>
-        <label>Start date<input type="date" required {...field('startDate')} /></label>
-        <label>
-          End date <span className="muted">(same as start for one day)</span>
-          <input type="date" required min={form.startDate || undefined} {...field('endDate')} />
-        </label>
-        {datesBackwards && <p className="error full">The end date is before the start date.</p>}
-        {tooLong && <p className="error full">An event can be at most {MAX_EVENT_DAYS} days long.</p>}
-      </div>
-
-      {schedule.length > 0 && (
-        <div className="row-form">
-          <h2>Times {schedule.length > 1 && <span className="muted">for each of the {schedule.length} days</span>}</h2>
-          <table className="schedule">
-            <thead>
-              <tr><th>Day</th><th>Weigh-in</th><th>Bouts start</th></tr>
-            </thead>
-            <tbody>
-              {schedule.map((d) => (
-                <tr key={d.day}>
-                  <td>{formatDay(d.day)}</td>
-                  <td><input type="time" required value={d.weigh_in_time} onChange={(e) => setTime(d.day, 'weigh_in_time', e.target.value)} aria-label={`Weigh-in on ${formatDay(d.day)}`} /></td>
-                  <td><input type="time" required value={d.bouts_time} onChange={(e) => setTime(d.day, 'bouts_time', e.target.value)} aria-label={`Bouts on ${formatDay(d.day)}`} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {error && <p className="error">{error}</p>}
-      <div className="form-actions">
-        <button type="submit" disabled={saving}>{saving ? 'Saving…' : event ? 'Save changes' : 'Create event'}</button>
-        <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
-      </div>
-    </form>
-  )
-}
-
-function RoleBadge({ role }) {
-  if (!role) return '—'
-  if (role === 'site-admin') return <span className="badge">Site admin</span>
-  return <span className={`badge role-${role}`}>{roleLabels[role]}</span>
-}
-
-// Who's on the event and in what role. Owners and Admins manage it; ownership moves with "Make owner".
+// Who's on the event: the Owner, plus Coaches and Viewers once the event is Active.
+// Only a site Admin changes the Owner (see ChangeOwner).
 function EventMembers({ event, may, onChange }) {
-  const [users, setUsers] = useState([])
+  const users = useActiveUsers(may.addMembers)
   const [form, setForm] = useState({ userId: '', role: 'coach' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    if (may.members) api.listUsers().then(setUsers, (err) => setError(err.message))
-  }, [may.members])
-
   const memberIds = new Set(event.members.map((m) => m.user_id))
-  const addable = users.filter((u) => u.id && u.state === 'Active' && !memberIds.has(u.id))
-  const order = ['owner', 'admin', 'coach', 'viewer']
+  const addable = users.filter((u) => !memberIds.has(u.id))
+  const order = ['owner', 'coach', 'viewer']
   const members = [...event.members].sort(
     (a, b) => order.indexOf(a.role) - order.indexOf(b.role) || personName(a.user).localeCompare(personName(b.user)),
   )
@@ -509,18 +826,14 @@ function EventMembers({ event, may, onChange }) {
     })
   }
 
-  function makeOwner(member) {
-    if (!window.confirm(`Make ${personName(member.user)} the Owner of ${event.name}? You'll stay on as an Admin.`)) return
-    run(() => api.transferEventOwnership(event.id, member.user_id))
-  }
-
   return (
     <section>
       <h2>People ({event.members.length})</h2>
       <p className="muted">
-        Admins edit the event and manage people. Coaches add athletes. Viewers can see the event.
+        Coaches add athletes. Viewers can see the event.
+        {effectiveStatus(event) === 'requested' && ' People can be added once the event is approved.'}
       </p>
-      {may.members && (
+      {may.addMembers && (
         <form onSubmit={add} className="row-form">
           <label>
             Add a person
@@ -534,7 +847,6 @@ function EventMembers({ event, may, onChange }) {
           <label>
             As
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              <option value="admin">Admin</option>
               <option value="coach">Coach</option>
               <option value="viewer">Viewer</option>
             </select>
@@ -561,7 +873,6 @@ function EventMembers({ event, may, onChange }) {
                       aria-label={`Role for ${personName(m.user)}`}
                       onChange={(e) => run(() => api.setEventMember(event.id, m.user_id, e.target.value))}
                     >
-                      <option value="admin">Admin</option>
                       <option value="coach">Coach</option>
                       <option value="viewer">Viewer</option>
                     </select>
@@ -572,14 +883,9 @@ function EventMembers({ event, may, onChange }) {
                 {may.members && (
                   <td className="actions">
                     {m.role !== 'owner' && (
-                      <>
-                        {may.transfer && (
-                          <button className="link" disabled={busy} onClick={() => makeOwner(m)}>Make owner</button>
-                        )}
-                        <button className="link" disabled={busy} onClick={() => run(() => api.removeEventMember(event.id, m.user_id))}>
-                          Remove
-                        </button>
-                      </>
+                      <button className="link" disabled={busy} onClick={() => run(() => api.removeEventMember(event.id, m.user_id))}>
+                        Remove
+                      </button>
                     )}
                   </td>
                 )}

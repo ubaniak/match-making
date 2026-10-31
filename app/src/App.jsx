@@ -3,10 +3,15 @@ import { api } from './api'
 import { useAuth } from './auth'
 import AdminPage from './AdminPage'
 import EventsPage from './EventsPage'
+import PublicEvents from './PublicEvents'
 
 export default function App() {
   const { session, profile, can, loading } = useAuth()
   const [page, setPage] = useState('events')
+  const hash = useHash()
+
+  // The public page needs no sign-in.
+  if (hash === '#upcoming') return <PublicEvents signedIn={Boolean(session)} />
 
   if (loading) {
     return <main className="card"><p>Loading…</p></main>
@@ -44,6 +49,18 @@ export default function App() {
     </div>
   )
 }
+
+function useHash() {
+  const [hash, setHash] = useState(window.location.hash)
+  useEffect(() => {
+    const onChange = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onChange)
+    return () => window.removeEventListener('hashchange', onChange)
+  }, [])
+  return hash
+}
+
+const publicLink = <p className="muted"><a href="#upcoming">See upcoming events</a></p>
 
 function DemoBanner({ userId }) {
   const [users, setUsers] = useState([])
@@ -120,6 +137,7 @@ function Login() {
         <button type="submit" disabled={sending}>{sending ? 'Sending…' : 'Email me a sign-in link'}</button>
       </form>
       {error && <p className="error">{error}</p>}
+      {publicLink}
     </main>
   )
 }
@@ -164,6 +182,7 @@ function MockLogin() {
         <button type="submit">Sign in</button>
       </form>
       {error && <p className="error">{error}</p>}
+      {publicLink}
     </main>
   )
 }

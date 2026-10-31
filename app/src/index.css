@@ -449,3 +449,145 @@ td .badge.category {
   background: #fef3c7;
   color: #92400e;
 }
+
+/* Event lifecycle (stage 1) */
+.badge.status-requested {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge.status-active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.status-done {
+  background: #e4e4e7;
+  color: #3f3f46;
+}
+
+.badge.status-cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.heading-row .badge {
+  font-size: 0.9rem;
+}
+
+.notice {
+  background: #dcfce7;
+  color: #166534;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+}
+
+.notice.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.notice a,
+.notice button.link {
+  color: inherit;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.link-button,
+.file-button {
+  display: inline-block;
+  padding: 0.6rem 1.2rem;
+  border: 1px solid #a1a1aa;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.file-button.disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.link.danger {
+  color: #dc2626;
+}
+
+.row-form.compact {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.row-form .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.row-form .checkbox input {
+  width: auto;
+}
+
+.poster {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: 480px;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.public-events {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.public-event {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  background: #fff;
+  padding: 1.25rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.06);
+}
+
+.public-event h2 {
+  margin: 0 0 0.25rem;
+}
+
+.public-event .poster {
+  max-width: min(100%, 240px);
+  margin: 0;
+}
+
+.public-event .when {
+  margin: 0 0 0.75rem;
+  font-weight: 500;
+}
+
+.day-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .public-event {
+    background: #27272a;
+  }
+  .notice {
+    background: #14532d;
+    color: #dcfce7;
+  }
+  .notice.warning {
+    background: #78350f;
+    color: #fef3c7;
+  }
+}
