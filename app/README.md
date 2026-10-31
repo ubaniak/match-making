@@ -2,6 +2,14 @@
 
 React (Vite) app on Supabase. People sign in with an emailed link, and Admins add coaches and athletes from the Admin page. See [../plan/rbac.md](../plan/rbac.md) for the roles and permissions.
 
+## Demo mode
+
+Until the Supabase values are set, the app runs in demo mode: no Supabase needed, sample coaches and athletes, and only one demo admin account can sign in. Anything you add is saved in that browser only, and "Reset sample data" puts the samples back.
+
+The demo login defaults to `admin@matchmaking.test` / `letmein`. Change it with the `VITE_MOCK_ADMIN_EMAIL` and `VITE_MOCK_ADMIN_PASSWORD` Actions variables (or in `.env.local`). The password is built into the page's JavaScript, so anyone determined can read it; demo mode keeps casual visitors out but doesn't protect real data.
+
+Once `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, demo mode switches off and the real email sign-in below takes over.
+
 ## Supabase setup
 
 1. Create a Supabase project.

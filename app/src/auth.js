@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { supabase } from './supabase'
+import { api } from './api'
 
-// Loads the Supabase session plus the signed-in user's profile and permissions.
+// Loads the session plus the signed-in user's profile and permissions.
 export function useAuth() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -9,15 +9,11 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      if (!data.session) setLoading(false)
+    api.getSession().then((current) => {
+      setSession(current)
+      if (!current) setLoading(false)
     })
-
-    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-    })
-    return () => data.subscription.unsubscribe()
+    return api.onAuthChange(setSession)
   }, [])
 
   const userId = session?.user.id
@@ -31,13 +27,10 @@ export function useAuth() {
 
     let cancelled = false
     setLoading(true)
-    Promise.all([
-      supabase.from('profiles').select('id, email, name, role_id, status, roles(name)').eq('id', userId).maybeSingle(),
-      supabase.rpc('my_permissions'),
-    ]).then(([profileResult, permissionsResult]) => {
+    api.loadMe(userId).then((me) => {
       if (cancelled) return
-      setProfile(profileResult.data)
-      setPermissions((permissionsResult.data ?? []).map((row) => row.permission))
+      setProfile(me.profile)
+      setPermissions(me.permissions)
       setLoading(false)
     })
     return () => {

@@ -1,43 +1,43 @@
 import { useState } from 'react'
-import { isConfigured, supabase } from './supabase'
+import { api } from './api'
 import { useAuth } from './auth'
 import AdminPage from './AdminPage'
 
 export default function App() {
-  if (!isConfigured) {
-    return (
-      <main className="card">
-        <h1>Match Making</h1>
-        <p className="error">
-          Sign-in isn't set up yet. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
-        </p>
-      </main>
-    )
-  }
-
-  return <SignedInApp />
-}
-
-function SignedInApp() {
   const { session, profile, can, loading } = useAuth()
 
   if (loading) {
     return <main className="card"><p>Loading…</p></main>
   }
 
-  if (!session) return <Login />
+  if (!session) return api.mode === 'mock' ? <MockLogin /> : <Login />
 
   return (
     <div className="page">
+      {api.mode === 'mock' && <DemoBanner />}
       <header className="topbar">
         <strong>Match Making</strong>
         <span className="who">
           {profile?.name || session.user.email}
           {profile && <span className="badge">{profile.roles?.name}</span>}
         </span>
-        <button className="secondary" onClick={() => supabase.auth.signOut()}>Sign out</button>
+        <button className="secondary" onClick={() => api.signOut()}>Sign out</button>
       </header>
       {can('users:manage') ? <AdminPage /> : <Hello profile={profile} email={session.user.email} />}
+    </div>
+  )
+}
+
+function DemoBanner() {
+  function reset() {
+    api.resetDemoData()
+    window.location.reload()
+  }
+
+  return (
+    <div className="demo-banner">
+      Demo mode: sample data, saved only in this browser.
+      <button className="link" onClick={reset}>Reset sample data</button>
     </div>
   )
 }
@@ -52,14 +52,14 @@ function Login() {
     event.preventDefault()
     setError(null)
     setSending(true)
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      // Come back to whatever URL the app is served from (local dev or GitHub Pages).
-      options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
-    })
-    setSending(false)
-    if (error) setError(error.message)
-    else setSentTo(email.trim())
+    try {
+      await api.sendMagicLink(email.trim())
+      setSentTo(email.trim())
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSending(false)
+    }
   }
 
   if (sentTo) {
@@ -86,6 +86,50 @@ function Login() {
           onChange={(event) => setEmail(event.target.value)}
         />
         <button type="submit" disabled={sending}>{sending ? 'Sending…' : 'Email me a sign-in link'}</button>
+      </form>
+      {error && <p className="error">{error}</p>}
+    </main>
+  )
+}
+
+// Demo mode: only the one special account configured for the build can sign in.
+function MockLogin() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(null)
+
+  async function signIn(event) {
+    event.preventDefault()
+    setError(null)
+    try {
+      await api.signInWithPassword(email, password)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  return (
+    <main className="card">
+      <h1>Match Making</h1>
+      <form onSubmit={signIn} className="stack">
+        <p>Demo mode. Sign in with the demo admin account.</p>
+        <input
+          type="email"
+          required
+          autoComplete="username"
+          placeholder="Email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <input
+          type="password"
+          required
+          autoComplete="current-password"
+          placeholder="Password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        <button type="submit">Sign in</button>
       </form>
       {error && <p className="error">{error}</p>}
     </main>

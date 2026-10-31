@@ -232,3 +232,25 @@ th {
     background: rgb(255 255 255 / 0.08);
   }
 }
+
+.demo-banner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 1rem;
+  font-size: 0.9rem;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+button.link {
+  background: none;
+  color: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+button.link:hover {
+  background: none;
+}
