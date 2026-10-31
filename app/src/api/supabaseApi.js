@@ -1,6 +1,20 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
+const eventColumns = `id, name, venue, start_date, end_date, owner_id,
+  owner:profiles!events_owner_id_fkey(id, name, email),
+  days:event_days(day, weigh_in_time, bouts_time)`
+
+// Postgres returns times as '09:00:00' and days unordered.
+function tidyEvent(event) {
+  return {
+    ...event,
+    days: [...event.days]
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map((d) => ({ ...d, weigh_in_time: d.weigh_in_time.slice(0, 5), bouts_time: d.bouts_time.slice(0, 5) })),
+  }
+}
+
 export const supabaseApi = {
   mode: 'supabase',
 
@@ -84,6 +98,58 @@ export const supabaseApi = {
 
   async addOfficial(official) {
     const { error } = await supabase.from('officials').insert(official)
+    if (error) throw error
+  },
+
+  async listEvents() {
+    const { data, error } = await supabase
+      .from('events')
+      .select(`${eventColumns}, event_athletes(count)`)
+      .order('start_date')
+    if (error) throw error
+    return data.map((e) => ({ ...tidyEvent(e), athlete_count: e.event_athletes[0]?.count ?? 0 }))
+  },
+
+  async getEvent(eventId) {
+    const { data, error } = await supabase
+      .from('events')
+      .select(`${eventColumns},
+        event_athletes(athlete:athletes(id, name, weight_class, club, coach_id, coach:profiles!athletes_coach_id_fkey(name, email)))`)
+      .eq('id', eventId)
+      .maybeSingle()
+    if (error) throw error
+    if (!data) return null
+    const athletes = data.event_athletes.map((ea) => ea.athlete).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+    return { ...tidyEvent(data), athletes, athlete_count: athletes.length }
+  },
+
+  // Creates the event when there's no id. Returns the event's id.
+  async saveEvent({ id, name, venue, startDate, endDate, ownerId, days }) {
+    const { data, error } = await supabase.rpc('save_event', {
+      p_id: id ?? null,
+      p_name: name,
+      p_venue: venue,
+      p_start_date: startDate,
+      p_end_date: endDate,
+      p_owner_id: ownerId,
+      p_days: days,
+    })
+    if (error) throw error
+    return data
+  },
+
+  async deleteEvent(eventId) {
+    const { error } = await supabase.from('events').delete().eq('id', eventId)
+    if (error) throw error
+  },
+
+  async addEventAthlete(eventId, athleteId) {
+    const { error } = await supabase.from('event_athletes').insert({ event_id: eventId, athlete_id: athleteId })
+    if (error && error.code !== '23505') throw error // already entered is fine
+  },
+
+  async removeEventAthlete(eventId, athleteId) {
+    const { error } = await supabase.from('event_athletes').delete().eq('event_id', eventId).eq('athlete_id', athleteId)
     if (error) throw error
   },
 }
