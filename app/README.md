@@ -4,7 +4,7 @@ React (Vite) app on Supabase. People sign in with an emailed link, and Admins ad
 
 ## Demo mode
 
-Until the Supabase values are set, the app runs in demo mode: no Supabase needed, sample users and athletes, and only one demo admin account can sign in. Anything you add is saved in that browser only, and "Reset sample data" puts the samples back. The "Viewing as" menu in the demo banner switches to one of the sample users, so you can see what an event Owner, Admin, Coach or Viewer sees.
+Until the Supabase values are set, the app runs in demo mode: no Supabase needed, sample users and athletes, and only one demo admin account can sign in. Anything you add is saved in that browser only, and "Reset sample data" puts the samples back. The "Viewing as" menu in the demo banner switches to one of the sample users, so you can see what an event Owner, Coach or Viewer sees.
 
 The demo login defaults to `admin@matchmaking.test` / `letmein`. Change it with the `VITE_MOCK_ADMIN_EMAIL` and `VITE_MOCK_ADMIN_PASSWORD` Actions variables (or in `.env.local`). The password is built into the page's JavaScript, so anyone determined can read it; demo mode keeps casual visitors out but doesn't protect real data.
 
@@ -23,6 +23,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    5. [`20261031210000_official_email_required.sql`](../supabase/migrations/20261031210000_official_email_required.sql): officials must have an email
    6. [`20261031220000_athlete_details.sql`](../supabase/migrations/20261031220000_athlete_details.sql): athletes need date of birth, gender, weight, experience (bouts) and club
    7. [`20261031230000_event_owner_on_create.sql`](../supabase/migrations/20261031230000_event_owner_on_create.sql): pick the Owner when creating an event
+   8. [`20261101000000_event_lifecycle.sql`](../supabase/migrations/20261101000000_event_lifecycle.sql): event statuses (Requested, Active, Done, Cancelled), only site Admins create events, weigh-in windows and bout sessions, posters, the public page, and no more event-level Admin
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
@@ -58,15 +59,27 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
 - Every **athlete** needs a name, date of birth, gender (male or female), weight in kg, experience (number of bouts) and club; email is optional. Adding an athlete with an email does the same with the Athletes role, and links the athlete record to that login.
 - Adding an **official** works the same way with the Officials role. Officials, like users, must have an email; only athletes can be added without one.
 - Each tab can also **bulk add from a CSV file**. "Download template" gives the expected columns; after choosing a file you see every row with any problems (missing name, bad email or date, unknown coach, repeated email), and only the rows without problems are added. Athletes are matched to their coach by `coach_email` (any user), who must have signed in already.
-- **Events**: any User can create an event (one day, or several days up to 31) and picks its **Owner**: themselves by default, or any other user, in which case the creator stays on as an Admin. Each day has its own weigh-in time and bout start time. People are added to an event with a role, and only see the events they're on:
-  - **Owner**: one per event. Everything an Admin can do, plus delete the event and hand it to someone else with "Make owner" (the old Owner stays on as an Admin).
-  - **Admin**: edit the event's details and times, add, change and remove people (not the Owner), and add or remove athletes.
-  - **Coach**: add athletes (any athlete), and remove the ones they added.
-  - **Viewer**: see the event, its schedule, athletes and people.
-  Site Admins can see and do everything on every event.
+- **Events** follow [plan/events.md](../plan/events.md):
+  - Only a **site Admin** creates an event (name, dates, optional location, Owner). It starts as **Requested** and the Owner is emailed "You have Requested an event" (see [Owner emails](#owner-emails)).
+  - The **Owner** edits the details, uploads an optional poster, and sets each day's times: one weigh-in (start and end, at least 2 hours, ending at least 3 hours before that day's first bout) and one or more bout sessions. Days can be left without bouts. The app refuses times that break the rules.
+  - A site Admin **approves** the event (Active) at any time, **cancels** it, or **marks it Done**. Events also turn Done by themselves the day after their end date. Only site Admins change the Owner; the old Owner stays on as a Viewer.
+  - Once an event is **Active**, the Owner adds **Coaches** (who enter athletes) and **Viewers**. There is no event-level Admin.
+  - The **public page** (`#upcoming`, linked from the sign-in page) lists upcoming Active events with their location, poster and times, with no sign-in. It never shows people or athletes.
 - Anyone else who signs in gets the Public role and sees a holding page until an Admin adds them.
 
 The rules are enforced by row-level security in the database, not just hidden in the app.
+
+## Owner emails
+
+When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. Until that's set up, the event page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
+
+1. Make a free account at https://resend.com and create an API key. To send to anyone, verify your own domain there; without one, Resend only delivers to your own address.
+2. In Supabase, open Edge Functions > Deploy a new function > Via editor, name it `send-event-email`, paste in [`supabase/functions/send-event-email/index.ts`](../supabase/functions/send-event-email/index.ts), and deploy. (Or `supabase functions deploy send-event-email` with the CLI.)
+3. Under Edge Functions > Secrets add `RESEND_API_KEY`, and `EMAIL_FROM` (e.g. `Match Making <events@your-domain>`) once your domain is verified.
+
+## Nightly Done job
+
+The event lifecycle migration schedules `close_finished_events()` every day at 08:05 UTC with pg_cron. If the migration printed a notice that pg_cron wasn't available, turn it on under Database > Extensions and run the `cron.schedule` line from that notice. Until then the app still shows past events as Done.
 
 ## Run locally
 

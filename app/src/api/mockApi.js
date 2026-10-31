@@ -5,13 +5,14 @@
 
 import { athleteProblems } from '../athletes'
 import { addDays, daysBetween, todayIso } from '../dates'
+import { dayProblems, effectiveStatus, hasProblems } from '../events'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
 const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v3' // v3: athletes gained gender, weight and bouts
+const DATA_KEY = 'mock-data-v4' // v4: event statuses, weigh-in windows and bout sessions
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -37,16 +38,16 @@ function seed() {
     events: [
       {
         id: 'event-1', name: 'Eastside Winter Box Cup', venue: 'Eastside Leisure Centre',
-        start_date: start, end_date: addDays(start, 1),
+        start_date: start, end_date: addDays(start, 1), status: 'active', poster_path: null,
         days: [
-          { day: start, weigh_in_time: '08:00', bouts_time: '12:00' },
-          { day: addDays(start, 1), weigh_in_time: '08:30', bouts_time: '11:00' },
+          { day: start, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions: [{ starts_at: '13:00', label: 'Afternoon' }, { starts_at: '18:30', label: 'Evening' }] },
+          { day: addDays(start, 1), weigh_in_start: '08:30', weigh_in_end: '10:30', sessions: [{ starts_at: '14:00', label: '' }] },
         ],
       },
       {
         id: 'event-2', name: 'Riverside Club Show', venue: 'Riverside Boxing Club',
-        start_date: single, end_date: single,
-        days: [{ day: single, weigh_in_time: '16:00', bouts_time: '19:00' }],
+        start_date: single, end_date: single, status: 'requested', poster_path: null,
+        days: [],
       },
     ],
     eventMembers: [
@@ -54,7 +55,6 @@ function seed() {
       { event_id: 'event-1', user_id: 'user-2', role: 'coach' },
       { event_id: 'event-1', user_id: 'user-3', role: 'viewer' },
       { event_id: 'event-2', user_id: 'user-2', role: 'owner' },
-      { event_id: 'event-2', user_id: 'user-3', role: 'admin' },
     ],
     eventAthletes: [
       { event_id: 'event-1', athlete_id: 'athlete-1', added_by: 'user-1' },
@@ -72,7 +72,7 @@ const allPermissions = [
 // Matches the Users grants in the migrations; 'own' scopes are checked in the functions below.
 const userPermissions = [
   'public:read', 'pages:read', 'cards:read', 'cards:create', 'cards:manage', 'cards:submit-athlete',
-  'athletes:read', 'athletes:create', 'athletes:write', 'officials:read', 'files:upload', 'events:create',
+  'athletes:read', 'athletes:create', 'athletes:write', 'officials:read', 'files:upload',
 ]
 
 // Storage can be blocked (private windows, strict settings); fall back to memory.
@@ -113,17 +113,37 @@ function currentUserId() {
 const adminUser = { id: ADMIN_ID, email: ADMIN_EMAIL, name: 'Demo Admin', state: 'Active' }
 const findUser = (current, id) => (id === ADMIN_ID ? adminUser : current.users.find((u) => u.id && u.id === id) ?? null)
 
-// The signed-in user's role on an event. The site admin counts as Owner everywhere.
+const isSiteAdmin = () => currentUserId() === ADMIN_ID
+
+// The signed-in user's role on an event: 'owner', 'coach', 'viewer' or null.
 function roleOn(current, eventId) {
   const userId = currentUserId()
-  if (userId === ADMIN_ID) return 'owner'
   return current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)?.role ?? null
 }
 
-function requireRole(current, eventId, roles, message) {
-  if (!current.events.some((e) => e.id === eventId)) throw new Error('That event no longer exists')
-  if (!roles.includes(roleOn(current, eventId))) throw new Error(message)
+const canSee = (current, eventId) => isSiteAdmin() || Boolean(roleOn(current, eventId))
+
+function findEvent(current, eventId) {
+  const event = current.events.find((e) => e.id === eventId)
+  if (!event) throw new Error('That event no longer exists')
+  return event
 }
+
+// Mirrors can_edit_event: site Admins always; the Owner while Requested or Active.
+function requireEditor(current, eventId) {
+  const event = findEvent(current, eventId)
+  if (isSiteAdmin()) return event
+  if (roleOn(current, eventId) !== 'owner' || !['requested', 'active'].includes(effectiveStatus(event))) {
+    throw new Error('Only the event\'s Owner or a site Admin can change it, and only while it is Requested or Active')
+  }
+  return event
+}
+
+function requireSiteAdmin(message) {
+  if (!isSiteAdmin()) throw new Error(message)
+}
+
+const label = (day) => new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`))
 
 function withMembers(current, event) {
   const members = current.eventMembers
@@ -230,7 +250,7 @@ export const mockApi = {
   async listEvents() {
     const current = data()
     return current.events
-      .filter((e) => roleOn(current, e.id))
+      .filter((e) => canSee(current, e.id))
       .map((e) => withMembers(current, e))
       .sort((a, b) => a.start_date.localeCompare(b.start_date))
   },
@@ -238,7 +258,7 @@ export const mockApi = {
   async getEvent(eventId) {
     const current = data()
     const event = current.events.find((e) => e.id === eventId)
-    if (!event || !roleOn(current, eventId)) return null
+    if (!event || !canSee(current, eventId)) return null
     const result = withMembers(current, event)
     result.athletes = current.eventAthletes
       .filter((ea) => ea.event_id === eventId)
@@ -251,82 +271,147 @@ export const mockApi = {
     return result
   },
 
-  // Creates the event (owned by the current user) when there's no id. Mirrors save_event.
-  async saveEvent({ id, name, venue, startDate, endDate, days, ownerId }) {
+  // Mirrors create_event.
+  async createEvent({ name, venue, startDate, endDate, ownerId }) {
+    requireSiteAdmin('Only a site Admin can create events')
     const current = data()
-    const range = daysBetween(startDate, endDate)
     if (!name.trim()) throw new Error('Give the event a name')
-    if (range.length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
-    if (range.some((day) => !days.find((d) => d.day === day && d.weigh_in_time && d.bouts_time))) {
-      throw new Error('Every day of the event needs a weigh-in time and a bout time')
+    if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
+    if (!ownerId || !findUser(current, ownerId)) throw new Error('Pick an Owner who has signed in at least once')
+    const event = {
+      id: crypto.randomUUID(), name: name.trim(), venue: venue.trim() || null,
+      start_date: startDate, end_date: endDate, status: 'requested', poster_path: null, days: [],
     }
-
-    const fields = {
-      name: name.trim(),
-      venue: venue.trim() || null,
-      start_date: startDate,
-      end_date: endDate,
-      days: range.map((day) => {
-        const { weigh_in_time, bouts_time } = days.find((d) => d.day === day)
-        return { day, weigh_in_time, bouts_time }
-      }),
-    }
-
-    if (!id) {
-      const event = { id: crypto.randomUUID(), ...fields }
-      const me = currentUserId()
-      const owner = ownerId || me
-      if (owner !== me && !findUser(current, owner)) throw new Error('That user can\'t own events')
-      current.events.push(event)
-      current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
-      // Someone else owns it: the creator stays on as an Admin (the site admin sees everything anyway).
-      if (owner !== me && me !== ADMIN_ID) current.eventMembers.push({ event_id: event.id, user_id: me, role: 'admin' })
-      write(DATA_KEY, current)
-      return event.id
-    }
-
-    requireRole(current, id, ['owner', 'admin'], 'Only the event\'s Owner or Admins can edit it')
-    Object.assign(current.events.find((e) => e.id === id), fields)
+    current.events.push(event)
+    current.eventMembers.push({ event_id: event.id, user_id: ownerId, role: 'owner' })
     write(DATA_KEY, current)
-    return id
+    return event.id
+  },
+
+  async updateEventDetails(eventId, { name, venue, startDate, endDate }) {
+    const current = data()
+    const event = requireEditor(current, eventId)
+    if (!name.trim()) throw new Error('Give the event a name')
+    if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
+    Object.assign(event, { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate })
+    // Days that fall outside the new dates go with them.
+    event.days = event.days.filter((d) => d.day >= startDate && d.day <= endDate)
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors save_event_times.
+  async saveEventTimes(eventId, days) {
+    const current = data()
+    const event = requireEditor(current, eventId)
+    const seen = new Set()
+    for (const d of days) {
+      if (d.day < event.start_date || d.day > event.end_date) throw new Error(`${label(d.day)} is not one of the event's days`)
+      if (seen.has(d.day)) throw new Error(`${label(d.day)} is listed twice`)
+      seen.add(d.day)
+      const problems = dayProblems(d)
+      if (hasProblems(problems)) throw new Error(`${label(d.day)}: ${[...problems.weighIn, ...problems.sessions][0]}`)
+    }
+    event.days = [...days]
+      .sort((a, b) => a.day.localeCompare(b.day))
+      .map((d) => ({
+        day: d.day, weigh_in_start: d.weigh_in_start, weigh_in_end: d.weigh_in_end,
+        sessions: d.sessions.map((s) => ({ starts_at: s.starts_at, label: s.label?.trim() ?? '' })).sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
+      }))
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors set_event_status.
+  async setEventStatus(eventId, status) {
+    requireSiteAdmin('Only a site Admin can approve, cancel or close an event')
+    const current = data()
+    const event = findEvent(current, eventId)
+    const from = effectiveStatus(event)
+    if (from === status) return
+    if (from === 'done' || from === 'cancelled') throw new Error(`This event is already ${from === 'done' ? 'Done' : 'Cancelled'}`)
+    if (!['active', 'done', 'cancelled'].includes(status) || (status === 'active' && from !== 'requested')) {
+      throw new Error('An event can\'t make that change')
+    }
+    event.status = status
+    write(DATA_KEY, current)
+  },
+
+  // Demo mode can't send email; the page offers to open the site Admin's email app instead.
+  async emailEventOwner() {
+    throw new Error('Demo mode doesn\'t send email')
+  },
+
+  // Demo posters are kept in this browser as data: URLs.
+  posterUrl(path) {
+    return path || null
+  },
+
+  async uploadPoster(eventId, file) {
+    if (file.size > 1024 * 1024) throw new Error('In demo mode posters must be under 1 MB')
+    const url = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
+    const current = data()
+    requireEditor(current, eventId).poster_path = url
+    write(DATA_KEY, current)
+  },
+
+  async removePoster(eventId) {
+    const current = data()
+    requireEditor(current, eventId).poster_path = null
+    write(DATA_KEY, current)
+  },
+
+  async listPublicEvents() {
+    const today = todayIso()
+    return data().events
+      .filter((e) => e.status === 'active' && e.end_date >= today)
+      .map(({ id, name, venue, start_date, end_date, poster_path, days }) => ({ id, name, venue, start_date, end_date, poster_path, days }))
+      .sort((a, b) => a.start_date.localeCompare(b.start_date) || a.name.localeCompare(b.name))
   },
 
   async deleteEvent(eventId) {
+    requireSiteAdmin('Only a site Admin can delete events')
     const current = data()
-    requireRole(current, eventId, ['owner'], 'Only the event\'s Owner can delete it')
     current.events = current.events.filter((e) => e.id !== eventId)
     current.eventMembers = current.eventMembers.filter((m) => m.event_id !== eventId)
     current.eventAthletes = current.eventAthletes.filter((ea) => ea.event_id !== eventId)
     write(DATA_KEY, current)
   },
 
-  // Add someone to an event, or change their role. Ownership moves only through transferEventOwnership.
+  // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.
   async setEventMember(eventId, userId, role) {
     const current = data()
-    requireRole(current, eventId, ['owner', 'admin'], 'Only the event\'s Owner or Admins can change its members')
-    if (!['admin', 'coach', 'viewer'].includes(role)) throw new Error('Use "Make owner" to change who owns an event')
+    const event = requireEditor(current, eventId)
+    if (!['coach', 'viewer'].includes(role)) throw new Error('Only a site Admin can change who owns an event')
     const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
-    if (existing?.role === 'owner') throw new Error('Use "Make owner" to change who owns an event')
+    if (existing?.role === 'owner') throw new Error('Only a site Admin can change who owns an event')
     if (existing) existing.role = role
-    else current.eventMembers.push({ event_id: eventId, user_id: userId, role })
+    else {
+      if (effectiveStatus(event) !== 'active') throw new Error('People can be added once the event is Active')
+      current.eventMembers.push({ event_id: eventId, user_id: userId, role })
+    }
     write(DATA_KEY, current)
   },
 
   async removeEventMember(eventId, userId) {
     const current = data()
-    requireRole(current, eventId, ['owner', 'admin'], 'Only the event\'s Owner or Admins can change its members')
+    requireEditor(current, eventId)
     const member = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
-    if (member?.role === 'owner') throw new Error('Use "Make owner" to change who owns an event')
+    if (member?.role === 'owner') throw new Error('Only a site Admin can change who owns an event')
     current.eventMembers = current.eventMembers.filter((m) => m !== member)
     write(DATA_KEY, current)
   },
 
-  // The old Owner stays on as an Admin.
+  // The old Owner stays on as a Viewer.
   async transferEventOwnership(eventId, userId) {
+    requireSiteAdmin('Only a site Admin can change who owns an event')
     const current = data()
-    requireRole(current, eventId, ['owner'], 'Only the event\'s Owner can hand it over')
+    findEvent(current, eventId)
     current.eventMembers.forEach((m) => {
-      if (m.event_id === eventId && m.role === 'owner') m.role = 'admin'
+      if (m.event_id === eventId && m.role === 'owner' && m.user_id !== userId) m.role = 'viewer'
     })
     const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
     if (existing) existing.role = 'owner'
@@ -336,7 +421,11 @@ export const mockApi = {
 
   async addEventAthlete(eventId, athleteId) {
     const current = data()
-    requireRole(current, eventId, ['owner', 'admin', 'coach'], 'Only the event\'s Owner, Admins and Coaches can add athletes')
+    const event = findEvent(current, eventId)
+    if (!isSiteAdmin() && !['owner', 'coach'].includes(roleOn(current, eventId))) {
+      throw new Error('Only the event\'s Owner and Coaches can add athletes')
+    }
+    if (effectiveStatus(event) !== 'active') throw new Error('Athletes can be added once the event is Active')
     if (!current.eventAthletes.some((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)) {
       current.eventAthletes.push({ event_id: eventId, athlete_id: athleteId, added_by: currentUserId() })
       write(DATA_KEY, current)
@@ -345,9 +434,11 @@ export const mockApi = {
 
   async removeEventAthlete(eventId, athleteId) {
     const current = data()
+    const event = findEvent(current, eventId)
     const entry = current.eventAthletes.find((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)
     const role = roleOn(current, eventId)
-    if (!(role === 'owner' || role === 'admin' || (role === 'coach' && entry?.added_by === currentUserId()))) {
+    const editable = ['requested', 'active'].includes(effectiveStatus(event))
+    if (!(isSiteAdmin() || (editable && (role === 'owner' || (role === 'coach' && entry?.added_by === currentUserId()))))) {
       throw new Error('Coaches can only remove the athletes they added')
     }
     current.eventAthletes = current.eventAthletes.filter((ea) => ea !== entry)
