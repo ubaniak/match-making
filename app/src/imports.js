@@ -1,7 +1,8 @@
+import { athleteProblems } from './athletes'
+
 // What each CSV import expects, and how a row is checked before anything is saved.
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 function checkEmail(email, errors, { required = false } = {}) {
   if (!email) {
@@ -28,14 +29,13 @@ export const importSpecs = {
   athletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'weight_class', 'club'],
-    required: ['name'],
+    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
+    required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'Lightweight', 'Eastside BC'],
-      ['Tom Becker', '', '', '', 'Middleweight', ''],
+      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC'],
+      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', 'Eastside BC'],
     ],
     check(values, errors, { usersByEmail }) {
-      if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors)
 
       let coachId = null
@@ -47,19 +47,18 @@ export const importSpecs = {
         else coachId = coach.id
       }
 
-      const dob = values.date_of_birth ?? ''
-      if (dob && (!DATE.test(dob) || Number.isNaN(Date.parse(dob)))) {
-        errors.push(`Date of birth "${dob}" should look like 2004-03-12`)
-      }
-
-      return {
-        name: values.name,
+      const athlete = {
+        name: values.name ?? '',
         invite_email: (values.email ?? '').toLowerCase() || null,
         coach_id: coachId,
-        date_of_birth: dob || null,
-        weight_class: values.weight_class || null,
-        club: values.club || null,
+        date_of_birth: values.date_of_birth ?? '',
+        gender: { m: 'male', f: 'female' }[(values.gender ?? '').toLowerCase()] ?? (values.gender ?? '').toLowerCase(),
+        weight_kg: values.weight_kg ?? '',
+        bouts: values.bouts ?? '',
+        club: values.club ?? '',
       }
+      errors.push(...athleteProblems(athlete))
+      return { ...athlete, weight_kg: Number(athlete.weight_kg), bouts: Number(athlete.bouts) }
     },
   },
 
