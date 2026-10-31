@@ -8,15 +8,15 @@ ideas that aren't part of the first build.
 
 | Role | Who | Scope |
 |------|-----|-------|
-| Site Admin | Users with the site `admin` role | Every event and club |
+| Site Admin | Users with the site `admin` role. They can do everything on the site. | Every event and club |
 | Event Owner | One user per event, assigned by a site Admin | Their event |
-| Event Admin | Users the Owner adds to the event | Their event |
 | Club owner | Users a site Admin assigns to a club | Their club's athletes |
 | Chief Official (CO) and Deputy | Officials added to the event; every event needs one of each | Their event |
 | Event official | Other officials added to the event (**Later**) | Their event |
 | Viewer | Anyone added as a viewer, and the public | Public page only |
 
-Athletes don't log in. Their club owner acts for them.
+There is no event-level Admin: the `admin` role on event members (PR #8) goes away, and only
+site Admins have admin powers. Athletes don't log in; their club owner acts for them.
 
 ## 1. Event setup
 
@@ -70,9 +70,9 @@ athletes are not listed. Viewers see only what is on the public page.
 
 ## 3. Entries
 
-- The event Owner and event Admins invite clubs to the event.
-- A club owner can also request to join an Active event on the club's behalf. The Owner or an
-  event Admin accepts or declines.
+- The event Owner (or a site Admin) invites clubs to the event.
+- A club owner can also request to join an Active event on the club's behalf. The Owner or a
+  site Admin accepts or declines.
 - Once a club is in, its club owners submit their own athletes. Athletes are entered straight
   away, with no approval, and don't have to fit any category.
 - A club owner can suggest an opponent for their athlete by name and club.
@@ -128,22 +128,21 @@ applies them like this:
 
 ## Who can do what
 
-| Action | Site Admin | Owner | Event Admin | Club owner | CO / Deputy |
-|--------|:-:|:-:|:-:|:-:|:-:|
-| Create, approve, cancel, close event | ✓ | | | | |
-| Edit details, times, poster | ✓ | ✓ | ✓ | | |
-| Invite clubs, accept join and late-entry requests | ✓ | ✓ | ✓ | | |
-| Submit, withdraw own athletes; suggest opponents | ✓ | | | ✓ | |
-| Match bouts, set order | ✓ | ✓ | ✓ | | |
-| Approve or reject a bout as coach | | | | ✓ (own athletes) | |
-| Official approval; unlock U17 v U19 | | | | | ✓ |
-| Record weights and medicals | | | | | ✓ |
-| Re-match after weigh-in; override coach approval | | | | | ✓ |
-| Record results | | | | | ✓ |
-| Comment on a match-up | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Action | Site Admin | Owner | Club owner | CO / Deputy |
+|--------|:-:|:-:|:-:|:-:|
+| Create, approve, cancel, close event | ✓ | | | |
+| Edit details, times, poster | ✓ | ✓ | | |
+| Invite clubs, accept join and late-entry requests | ✓ | ✓ | | |
+| Submit, withdraw own athletes; suggest opponents | ✓ | | ✓ | |
+| Match bouts, set order | ✓ | ✓ | | |
+| Approve or reject a bout as coach | ✓ | | ✓ (own athletes) | |
+| Official approval; unlock U17 v U19 | ✓ | | | ✓ |
+| Record weights and medicals | ✓ | | | ✓ |
+| Re-match after weigh-in; override coach approval | ✓ | | | ✓ |
+| Record results | ✓ | | | ✓ |
+| Comment on a match-up | ✓ | ✓ | ✓ | ✓ |
 
-An event Admin can do everything the Owner can except transfer ownership. (This was proposed and
-not contradicted; confirm before building.)
+A site Admin can do anything on the site, including every action above.
 
 ## Later
 
