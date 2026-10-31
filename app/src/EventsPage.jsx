@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
+import { categorise, compareByCategory } from './categories'
 import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay, formatTime, todayIso } from './dates'
 
 const roleLabels = { owner: 'Owner', admin: 'Admin', coach: 'Coach', viewer: 'Viewer' }
@@ -216,6 +217,11 @@ function EventAthletes({ event, may, profile, onChange }) {
   }, [canAdd])
 
   const entered = useMemo(() => new Set(event.athletes.map((a) => a.id)), [event.athletes])
+  // Each athlete's age group, weight class and experience level for this event, in division order.
+  const athletes = useMemo(
+    () => event.athletes.map((a) => ({ ...a, categories: categorise(a, event.start_date) })).sort(compareByCategory),
+    [event.athletes, event.start_date],
+  )
   const available = allAthletes.filter((a) => !entered.has(a.id))
 
   async function run(action) {
@@ -263,18 +269,24 @@ function EventAthletes({ event, may, profile, onChange }) {
       {event.athletes.length === 0 ? (
         <p className="muted">No athletes entered yet.</p>
       ) : (
+        <>
+        <p className="muted">
+          Age group is by year of birth as of {event.start_date.slice(0, 4)}. Weight class uses the athlete's current weight.
+          Novice is 10 bouts or fewer, Open is more.
+        </p>
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Name</th><th>Gender</th><th>Weight</th><th>Experience</th><th>Club</th><th>Coach</th>{canAdd && <th />}</tr>
+              <tr><th>Name</th><th>Age group</th><th>Gender</th><th>Weight class</th><th>Experience</th><th>Club</th><th>Coach</th>{canAdd && <th />}</tr>
             </thead>
             <tbody>
-              {event.athletes.map((a) => (
+              {athletes.map((a) => (
                 <tr key={a.id}>
                   <td>{a.name}</td>
+                  <td><AgeCell category={a.categories.age} /></td>
                   <td>{genderLabel(a.gender)}</td>
-                  <td>{formatWeight(a.weight_kg)}</td>
-                  <td>{formatBouts(a.bouts)}</td>
+                  <td><WeightCell category={a.categories.weight} weightKg={a.weight_kg} /></td>
+                  <td><ExperienceCell category={a.categories.experience} bouts={a.bouts} /></td>
                   <td>{a.club || '—'}</td>
                   <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
                   {canAdd && (
@@ -291,8 +303,39 @@ function EventAthletes({ event, may, profile, onChange }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </section>
+  )
+}
+
+function AgeCell({ category }) {
+  if (!category) return '—'
+  return (
+    <>
+      <span className={`badge category${category.key === 'too-young' ? ' warning' : ''}`}>{category.label}</span>
+      <span className="muted"> {category.age}</span>
+    </>
+  )
+}
+
+function WeightCell({ category, weightKg }) {
+  if (!category) return <>{formatWeight(weightKg)}{weightKg != null && <span className="muted"> (no class)</span>}</>
+  return (
+    <>
+      <span className={`badge category${category.below ? ' warning' : ''}`} title={category.name}>{category.label}</span>
+      <span className="muted"> {formatWeight(weightKg)}</span>
+    </>
+  )
+}
+
+function ExperienceCell({ category, bouts }) {
+  if (!category) return '—'
+  return (
+    <>
+      <span className={`badge category ${category.key}`}>{category.label}</span>
+      <span className="muted"> {formatBouts(bouts)}</span>
+    </>
   )
 }
 
