@@ -6,6 +6,13 @@ const eventColumns = `id, name, venue, start_date, end_date, status, poster_path
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
 const POSTERS = 'event-posters'
+
+// Athletes carry their club's name as `club` so pages can show it directly.
+const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id,
+  club_ref:clubs(name), coach:profiles!athletes_coach_id_fkey(name, email)`
+const tidyAthlete = ({ club_ref, ...athlete }) => ({ ...athlete, club: club_ref?.name ?? null })
+
+const clubMemberColumns = 'members:club_members(user_id, role, status, user:profiles!club_members_user_id_fkey(id, name, email))'
 const hhmm = (time) => time?.slice(0, 5) ?? ''
 
 // Postgres returns times as '09:00:00' and rows unordered.
@@ -85,14 +92,132 @@ export const supabaseApi = {
   async listAthletes() {
     const { data, error } = await supabase
       .from('athletes')
-      .select('id, name, date_of_birth, gender, weight_kg, bouts, club, invite_email, user_id, coach:profiles!athletes_coach_id_fkey(name, email)')
+      .select(`${athleteColumns}, invite_email, user_id`)
       .order('name')
     if (error) throw error
-    return data
+    return data.map(tidyAthlete)
   },
 
   async addAthlete(athlete) {
     const { error } = await supabase.from('athletes').insert(athlete)
+    if (error) throw error
+  },
+
+  // Club owners and site Admins. The club changes only through a transfer.
+  async updateAthlete(athleteId, fields) {
+    const { data, error } = await supabase.from('athletes').update(fields).eq('id', athleteId).select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('You can\'t edit this athlete')
+  },
+
+  // Clubs, each with its members and athlete count.
+  async listClubs() {
+    const { data, error } = await supabase
+      .from('clubs')
+      .select(`id, name, ${clubMemberColumns}, athletes(count)`)
+      .order('name')
+    if (error) throw error
+    return data.map((c) => ({ ...c, athlete_count: c.athletes[0]?.count ?? 0, athletes: undefined }))
+  },
+
+  async getClub(clubId) {
+    const [club, transfers] = await Promise.all([
+      supabase.from('clubs').select(`id, name, ${clubMemberColumns}, athletes(${athleteColumns})`).eq('id', clubId).maybeSingle(),
+      supabase
+        .from('athlete_transfers')
+        .select(`id, status, note, requested_at, decided_at, requested_by, from_club_id, to_club_id,
+          athlete:athletes(id, name),
+          from_club:clubs!athlete_transfers_from_club_id_fkey(id, name),
+          to_club:clubs!athlete_transfers_to_club_id_fkey(id, name),
+          requester:profiles!athlete_transfers_requested_by_fkey(name, email)`)
+        .or(`from_club_id.eq.${clubId},to_club_id.eq.${clubId}`)
+        .order('requested_at', { ascending: false }),
+    ])
+    const failed = club.error || transfers.error
+    if (failed) throw failed
+    if (!club.data) return null
+    return {
+      ...club.data,
+      athletes: club.data.athletes.map(tidyAthlete).sort((a, b) => a.name.localeCompare(b.name)),
+      transfers: transfers.data,
+    }
+  },
+
+  // Site Admins only. ownerIds become the club's Owners straight away.
+  async createClub({ name, ownerIds }) {
+    const { data, error } = await supabase.from('clubs').insert({ name: name.trim() }).select('id').single()
+    if (error) throw error.code === '23505' ? new Error('There is already a club with that name') : error
+    if (ownerIds.length) {
+      const members = await supabase.from('club_members').insert(ownerIds.map((user_id) => ({ club_id: data.id, user_id, role: 'owner' })))
+      if (members.error) throw members.error
+    }
+    return data.id
+  },
+
+  async renameClub(clubId, name) {
+    const { error } = await supabase.from('clubs').update({ name: name.trim() }).eq('id', clubId)
+    if (error) throw error.code === '23505' ? new Error('There is already a club with that name') : error
+  },
+
+  async deleteClub(clubId) {
+    const { error } = await supabase.from('clubs').delete().eq('id', clubId)
+    if (error) throw error.code === '23503' ? new Error('Move or remove the club\'s athletes first') : error
+  },
+
+  // A site Admin adds someone straight away; a club owner's invite waits for a site Admin.
+  async addClubMember(clubId, userId, role, { approved }) {
+    const { error } = await supabase
+      .from('club_members')
+      .insert({ club_id: clubId, user_id: userId, role, status: approved ? 'active' : 'pending' })
+    if (error) throw error.code === '23505' ? new Error('That person is already in the club or invited') : error
+  },
+
+  async approveClubMember(clubId, userId) {
+    const { error } = await supabase.from('club_members').update({ status: 'active' }).eq('club_id', clubId).eq('user_id', userId)
+    if (error) throw error
+  },
+
+  async setClubMemberRole(clubId, userId, role) {
+    const { error } = await supabase.from('club_members').update({ role }).eq('club_id', clubId).eq('user_id', userId)
+    if (error) throw error
+  },
+
+  // Also how a site Admin declines an invite.
+  async removeClubMember(clubId, userId) {
+    const { error } = await supabase.from('club_members').delete().eq('club_id', clubId).eq('user_id', userId)
+    if (error) throw error
+  },
+
+  // Site Admins: every invite waiting for approval.
+  async listPendingClubInvites() {
+    const { data, error } = await supabase
+      .from('club_members')
+      .select(`club_id, user_id, role, invited_at, club:clubs(name),
+        user:profiles!club_members_user_id_fkey(name, email), inviter:profiles!club_members_invited_by_fkey(name, email)`)
+      .eq('status', 'pending')
+      .order('invited_at')
+    if (error) throw error
+    return data
+  },
+
+  async requestTransfer(athleteId, toClubId, note) {
+    const { error } = await supabase.rpc('request_transfer', { p_athlete_id: athleteId, p_to_club_id: toClubId, p_note: note || null })
+    if (error) throw error
+  },
+
+  async decideTransfer(transferId, accept, override = false) {
+    const { error } = await supabase.rpc('decide_transfer', { p_transfer_id: transferId, p_accept: accept, p_override: override })
+    if (error) throw error
+  },
+
+  async cancelTransfer(transferId) {
+    const { error } = await supabase.rpc('cancel_transfer', { p_transfer_id: transferId })
+    if (error) throw error
+  },
+
+  // Site Admins only. override moves an athlete even while they're in an Active event.
+  async moveAthlete(athleteId, clubId, override = false) {
+    const { error } = await supabase.rpc('move_athlete', { p_athlete_id: athleteId, p_club_id: clubId, p_override: override })
     if (error) throw error
   },
 
@@ -123,12 +248,12 @@ export const supabaseApi = {
     const { data, error } = await supabase
       .from('events')
       .select(`${eventColumns},
-        event_athletes(added_by, athlete:athletes(id, name, date_of_birth, gender, weight_kg, bouts, club, coach_id, coach:profiles!athletes_coach_id_fkey(name, email)))`)
+        event_athletes(added_by, athlete:athletes(${athleteColumns}))`)
       .eq('id', eventId)
       .maybeSingle()
     if (error) throw error
     if (!data) return null
-    const athletes = data.event_athletes.filter((ea) => ea.athlete).map((ea) => ({ ...ea.athlete, added_by: ea.added_by })).sort((a, b) => a.name.localeCompare(b.name))
+    const athletes = data.event_athletes.filter((ea) => ea.athlete).map((ea) => ({ ...tidyAthlete(ea.athlete), added_by: ea.added_by })).sort((a, b) => a.name.localeCompare(b.name))
     return { ...tidyEvent(data), athletes, athlete_count: athletes.length }
   },
 

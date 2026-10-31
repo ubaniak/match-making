@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import CsvImport from './CsvImport'
-import { athleteProblems, formatBouts, formatWeight, genderLabel, genders } from './athletes'
+import AthleteForm from './AthleteForm'
+import { formatBouts, formatWeight, genderLabel } from './athletes'
 
 const tabs = [
   ['users', 'Users'],
@@ -91,7 +92,7 @@ function Users() {
       </form>
       {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
       <p className="muted">
-        Users can create events. What they can do on someone else's event (Admin, Coach or Viewer) is set on that event.
+        Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
       </p>
       <CsvImport kind="users" importRow={api.addUser} onDone={reload} />
 
@@ -122,19 +123,17 @@ function Users() {
   )
 }
 
-const emptyAthlete = { name: '', email: '', coachId: '', dateOfBirth: '', gender: '', weightKg: '', bouts: '', club: '' }
-
 function Athletes() {
   const { users, reload: reloadUsers } = useUsers()
   const [athletes, setAthletes] = useState([])
+  const [clubs, setClubs] = useState([])
   const [error, setError] = useState(null)
-  const [form, setForm] = useState(emptyAthlete)
-  const [message, setMessage] = useState(null)
-  const [saving, setSaving] = useState(false)
 
   const reload = useCallback(async () => {
     try {
-      setAthletes(await api.listAthletes())
+      const [athleteList, clubList] = await Promise.all([api.listAthletes(), api.listClubs()])
+      setAthletes(athleteList)
+      setClubs(clubList)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -145,77 +144,25 @@ function Athletes() {
     reload()
   }, [reload])
 
-  async function addAthlete(event) {
-    event.preventDefault()
-    const athlete = {
-      name: form.name.trim(),
-      invite_email: form.email.trim().toLowerCase() || null,
-      coach_id: form.coachId || null,
-      date_of_birth: form.dateOfBirth,
-      gender: form.gender,
-      weight_kg: form.weightKg === '' ? '' : Number(form.weightKg),
-      bouts: form.bouts === '' ? '' : Number(form.bouts),
-      club: form.club.trim(),
-    }
-    const problems = athleteProblems(athlete)
-    if (problems.length) return setMessage({ error: true, text: problems.join('. ') })
-    setSaving(true)
-    setMessage(null)
-    try {
-      await api.addAthlete(athlete)
-    } catch (err) {
-      return setMessage({ error: true, text: err.message })
-    } finally {
-      setSaving(false)
-    }
-    setMessage({
-      text: form.email
-        ? `${form.name} is added. They can sign in with ${form.email} to see their profile.`
-        : `${form.name} is added.`,
-    })
-    setForm(emptyAthlete)
-    reload()
-  }
-
-  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
-  const activeUsers = users.filter((u) => u.id && u.state === 'Active')
-
   return (
     <section>
-      <form onSubmit={addAthlete} className="row-form">
-        <h2>Add an athlete</h2>
-        <label>Name<input required {...field('name')} /></label>
-        <label>Email <span className="muted">(optional, lets them sign in)</span><input type="email" {...field('email')} /></label>
-        <label>
-          Coach
-          <select {...field('coachId')}>
-            <option value="">No coach</option>
-            {activeUsers.map((u) => (
-              <option key={u.id} value={u.id}>{u.name || u.email}</option>
-            ))}
-          </select>
-        </label>
-        <label>Date of birth<input type="date" required {...field('dateOfBirth')} /></label>
-        <label>
-          Gender
-          <select required {...field('gender')}>
-            <option value="">Choose…</option>
-            {genders.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </label>
-        <label>Weight (kg)<input type="number" required min="20" max="200" step="0.1" {...field('weightKg')} /></label>
-        <label>Experience (bouts)<input type="number" required min="0" max="1000" step="1" {...field('bouts')} /></label>
-        <label>Club<input required {...field('club')} /></label>
-        <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add athlete'}</button>
-      </form>
-      {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
+      <AthleteForm
+        clubs={clubs}
+        users={users}
+        onSave={async (record) => {
+          await api.addAthlete(record)
+          reload()
+        }}
+      />
       {users.some((u) => !u.id) && (
         <p className="muted">Invited users appear in the coach list once they've signed in.</p>
       )}
+      <p className="muted">Clubs are made on the Clubs page. To move an athlete to another club, open their club there.</p>
       <CsvImport
         kind="athletes"
         context={{
           usersByEmail: new Map(users.map((u) => [u.email, u])),
+          clubsByName: new Map(clubs.map((c) => [c.name.trim().toLowerCase(), c])),
           existingEmails: new Set(athletes.map((a) => a.invite_email).filter(Boolean)),
         }}
         importRow={api.addAthlete}

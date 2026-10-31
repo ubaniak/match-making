@@ -591,3 +591,20 @@ button.link.danger {
     color: #fef3c7;
   }
 }
+
+/* Clubs (stage 2) */
+.badge.transfer-accepted,
+.badge.transfer-moved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.transfer-declined {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+td.actions button.link + span,
+td.actions span + button.link {
+  margin-left: 0.75rem;
+}

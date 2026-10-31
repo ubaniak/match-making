@@ -1,5 +1,5 @@
 // The details every athlete needs, and how they're shown. Matches the checks in
-// supabase/migrations/20261031220000_athlete_details.sql.
+// supabase/migrations/20261031220000_athlete_details.sql (the club is a club record since 20261101010000_clubs.sql).
 
 export const genders = [['male', 'Male'], ['female', 'Female']]
 export const genderLabel = (gender) => genders.find(([value]) => value === gender)?.[1] ?? '—'
@@ -8,7 +8,7 @@ export const formatWeight = (kg) => (kg == null || kg === '' ? '—' : `${Number
 export const formatBouts = (bouts) => (bouts == null || bouts === '' ? '—' : `${bouts} ${Number(bouts) === 1 ? 'bout' : 'bouts'}`)
 
 // Problems with an athlete's details, as messages. Empty when all is well.
-export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts, club }) {
+export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts, club_id }) {
   const problems = []
   if (!name?.trim()) problems.push('Name is missing')
   if (!date_of_birth) problems.push('Date of birth is missing')
@@ -21,6 +21,6 @@ export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts,
   else if (!(Number(weight_kg) >= 20 && Number(weight_kg) <= 200)) problems.push(`Weight "${weight_kg}" should be in kg, between 20 and 200`)
   if (bouts === '' || bouts == null) problems.push('Experience (number of bouts) is missing')
   else if (!Number.isInteger(Number(bouts)) || Number(bouts) < 0 || Number(bouts) > 1000) problems.push(`Bouts "${bouts}" should be a whole number, 0 or more`)
-  if (!club?.trim()) problems.push('Club is missing')
+  if (!club_id) problems.push('Club is missing')
   return problems
 }

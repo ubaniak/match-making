@@ -12,7 +12,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v4' // v4: event statuses, weigh-in windows and bout sessions
+const DATA_KEY = 'mock-data-v5' // v5: clubs, club members and transfers
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -27,10 +27,20 @@ function seed() {
       { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
     ],
     athletes: [
-      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club: 'Eastside BC', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
-      { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', gender: 'female', weight_kg: 51, bouts: 3, club: 'Eastside BC', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
-      { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', gender: 'male', weight_kg: 74.2, bouts: 27, club: 'Riverside Boxing', invite_email: null, user_id: null, coach_id: 'user-2' },
+      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club_id: 'club-1', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
+      { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', gender: 'female', weight_kg: 51, bouts: 3, club_id: 'club-1', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
+      { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', gender: 'male', weight_kg: 74.2, bouts: 27, club_id: 'club-2', invite_email: null, user_id: null, coach_id: 'user-2' },
     ],
+    clubs: [
+      { id: 'club-1', name: 'Eastside BC' },
+      { id: 'club-2', name: 'Riverside Boxing' },
+    ],
+    clubMembers: [
+      { club_id: 'club-1', user_id: 'user-1', role: 'owner', status: 'active' },
+      { club_id: 'club-2', user_id: 'user-2', role: 'owner', status: 'active' },
+      { club_id: 'club-1', user_id: 'user-3', role: 'coach', status: 'pending', invited_by: 'user-1', invited_at: new Date().toISOString() },
+    ],
+    transfers: [],
     officials: [
       { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
       { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: 'rob@example.com', user_id: null },
@@ -122,6 +132,29 @@ function roleOn(current, eventId) {
 }
 
 const canSee = (current, eventId) => isSiteAdmin() || Boolean(roleOn(current, eventId))
+
+// The signed-in user's role in a club: 'owner', 'coach' or null. Pending invites don't count.
+function clubRole(current, clubId) {
+  const userId = currentUserId()
+  return current.clubMembers.find((m) => m.club_id === clubId && m.user_id === userId && m.status === 'active')?.role ?? null
+}
+
+const clubName = (current, clubId) => current.clubs.find((c) => c.id === clubId)?.name ?? null
+const withClub = (current, athlete) => ({ ...athlete, club: clubName(current, athlete.club_id), coach: findUser(current, athlete.coach_id) })
+
+function clubMembers(current, clubId) {
+  return current.clubMembers.filter((m) => m.club_id === clubId).map((m) => ({ ...m, user: findUser(current, m.user_id) }))
+}
+
+// Mirrors athlete_in_open_event.
+function inOpenEvent(current, athleteId) {
+  return current.eventAthletes.some((ea) => {
+    const event = current.events.find((e) => e.id === ea.event_id)
+    return ea.athlete_id === athleteId && event && effectiveStatus(event) === 'active'
+  })
+}
+
+const LOCKED = 'This athlete is entered in an Active event, so they can\'t transfer until it is Done'
 
 function findEvent(current, eventId) {
   const event = current.events.find((e) => e.id === eventId)
@@ -222,16 +255,192 @@ export const mockApi = {
 
   async listAthletes() {
     const current = data()
-    return current.athletes
-      .map((a) => ({ ...a, coach: findUser(current, a.coach_id) }))
-      .sort(byName)
+    return current.athletes.map((a) => withClub(current, a)).sort(byName)
   },
 
+  // Mirrors the "add athletes" policy: site Admins, or an Owner of the athlete's club.
   async addAthlete(athlete) {
     const problems = athleteProblems(athlete)
     if (problems.length) throw new Error(problems.join('. '))
     const current = data()
+    if (!isSiteAdmin() && clubRole(current, athlete.club_id) !== 'owner') throw new Error('Only the club\'s Owners can add its athletes')
     current.athletes.push({ ...athlete, id: crypto.randomUUID(), user_id: null })
+    write(DATA_KEY, current)
+  },
+
+  async updateAthlete(athleteId, fields) {
+    const current = data()
+    const athlete = current.athletes.find((a) => a.id === athleteId)
+    if (!athlete) throw new Error('That athlete no longer exists')
+    if (!isSiteAdmin() && clubRole(current, athlete.club_id) !== 'owner') throw new Error('You can\'t edit this athlete')
+    if (fields.club_id && fields.club_id !== athlete.club_id && !isSiteAdmin()) throw new Error('Athletes change clubs through a transfer request')
+    const problems = athleteProblems({ ...athlete, ...fields })
+    if (problems.length) throw new Error(problems.join('. '))
+    Object.assign(athlete, fields)
+    write(DATA_KEY, current)
+  },
+
+  async listClubs() {
+    const current = data()
+    return current.clubs
+      .map((c) => ({ ...c, members: clubMembers(current, c.id), athlete_count: current.athletes.filter((a) => a.club_id === c.id).length }))
+      .sort(byName)
+  },
+
+  async getClub(clubId) {
+    const current = data()
+    const club = current.clubs.find((c) => c.id === clubId)
+    if (!club) return null
+    const canSeeTransfers = (t) => isSiteAdmin() || clubRole(current, t.from_club_id) || clubRole(current, t.to_club_id)
+    return {
+      ...club,
+      members: clubMembers(current, clubId),
+      athletes: current.athletes.filter((a) => a.club_id === clubId).map((a) => withClub(current, a)).sort(byName),
+      transfers: current.transfers
+        .filter((t) => (t.from_club_id === clubId || t.to_club_id === clubId) && canSeeTransfers(t))
+        .map((t) => ({
+          ...t,
+          athlete: current.athletes.find((a) => a.id === t.athlete_id) ?? null,
+          from_club: t.from_club_id ? { id: t.from_club_id, name: clubName(current, t.from_club_id) } : null,
+          to_club: t.to_club_id ? { id: t.to_club_id, name: clubName(current, t.to_club_id) } : null,
+          requester: findUser(current, t.requested_by),
+        }))
+        .sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
+    }
+  },
+
+  async createClub({ name, ownerIds }) {
+    requireSiteAdmin('Only a site Admin can create clubs')
+    const current = data()
+    if (!name.trim()) throw new Error('Give the club a name')
+    if (current.clubs.some((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())) throw new Error('There is already a club with that name')
+    const club = { id: crypto.randomUUID(), name: name.trim() }
+    current.clubs.push(club)
+    ownerIds.forEach((user_id) => current.clubMembers.push({ club_id: club.id, user_id, role: 'owner', status: 'active' }))
+    write(DATA_KEY, current)
+    return club.id
+  },
+
+  async renameClub(clubId, name) {
+    requireSiteAdmin('Only a site Admin can rename clubs')
+    const current = data()
+    if (!name.trim()) throw new Error('Give the club a name')
+    if (current.clubs.some((c) => c.id !== clubId && c.name.trim().toLowerCase() === name.trim().toLowerCase())) throw new Error('There is already a club with that name')
+    current.clubs.find((c) => c.id === clubId).name = name.trim()
+    write(DATA_KEY, current)
+  },
+
+  async deleteClub(clubId) {
+    requireSiteAdmin('Only a site Admin can delete clubs')
+    const current = data()
+    if (current.athletes.some((a) => a.club_id === clubId)) throw new Error('Move or remove the club\'s athletes first')
+    current.clubs = current.clubs.filter((c) => c.id !== clubId)
+    current.clubMembers = current.clubMembers.filter((m) => m.club_id !== clubId)
+    write(DATA_KEY, current)
+  },
+
+  async addClubMember(clubId, userId, role, { approved }) {
+    const current = data()
+    if (!isSiteAdmin() && clubRole(current, clubId) !== 'owner') throw new Error('Only the club\'s Owners can invite people')
+    if (approved && !isSiteAdmin()) throw new Error('A site Admin has to approve new club members')
+    if (current.clubMembers.some((m) => m.club_id === clubId && m.user_id === userId)) throw new Error('That person is already in the club or invited')
+    current.clubMembers.push({
+      club_id: clubId, user_id: userId, role, status: approved ? 'active' : 'pending',
+      invited_by: currentUserId(), invited_at: new Date().toISOString(),
+    })
+    write(DATA_KEY, current)
+  },
+
+  async approveClubMember(clubId, userId) {
+    requireSiteAdmin('Only a site Admin can approve club members')
+    const current = data()
+    const member = current.clubMembers.find((m) => m.club_id === clubId && m.user_id === userId)
+    if (member) member.status = 'active'
+    write(DATA_KEY, current)
+  },
+
+  async setClubMemberRole(clubId, userId, role) {
+    requireSiteAdmin('Only a site Admin can change club roles')
+    const current = data()
+    const member = current.clubMembers.find((m) => m.club_id === clubId && m.user_id === userId)
+    if (member) member.role = role
+    write(DATA_KEY, current)
+  },
+
+  async removeClubMember(clubId, userId) {
+    const current = data()
+    if (!isSiteAdmin() && clubRole(current, clubId) !== 'owner') throw new Error('Only the club\'s Owners can remove people')
+    current.clubMembers = current.clubMembers.filter((m) => !(m.club_id === clubId && m.user_id === userId))
+    write(DATA_KEY, current)
+  },
+
+  async listPendingClubInvites() {
+    const current = data()
+    return current.clubMembers
+      .filter((m) => m.status === 'pending')
+      .map((m) => ({ ...m, club: { name: clubName(current, m.club_id) }, user: findUser(current, m.user_id), inviter: findUser(current, m.invited_by) }))
+  },
+
+  // Mirrors request_transfer.
+  async requestTransfer(athleteId, toClubId, note) {
+    const current = data()
+    const athlete = current.athletes.find((a) => a.id === athleteId)
+    if (!athlete) throw new Error('That athlete no longer exists')
+    if (!isSiteAdmin() && !clubRole(current, athlete.club_id)) throw new Error('Only members of the athlete\'s club can ask to transfer them')
+    if (!toClubId) throw new Error('Pick the club to transfer to')
+    if (toClubId === athlete.club_id) throw new Error('The athlete is already in that club')
+    if (inOpenEvent(current, athleteId)) throw new Error(LOCKED)
+    if (current.transfers.some((t) => t.athlete_id === athleteId && t.status === 'pending')) throw new Error('This athlete already has a transfer request waiting')
+    current.transfers.push({
+      id: crypto.randomUUID(), athlete_id: athleteId, from_club_id: athlete.club_id, to_club_id: toClubId,
+      status: 'pending', note: note?.trim() || null, requested_by: currentUserId(), requested_at: new Date().toISOString(),
+    })
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors decide_transfer.
+  async decideTransfer(transferId, accept, override = false) {
+    const current = data()
+    const transfer = current.transfers.find((t) => t.id === transferId)
+    if (!transfer || transfer.status !== 'pending') throw new Error('That transfer request is no longer waiting')
+    if (!isSiteAdmin() && clubRole(current, transfer.to_club_id) !== 'owner') throw new Error('Only the receiving club\'s Owner can accept or decline')
+    if (accept) {
+      if (inOpenEvent(current, transfer.athlete_id) && !(override && isSiteAdmin())) throw new Error(LOCKED)
+      current.athletes.find((a) => a.id === transfer.athlete_id).club_id = transfer.to_club_id
+    }
+    Object.assign(transfer, { status: accept ? 'accepted' : 'declined', decided_by: currentUserId(), decided_at: new Date().toISOString() })
+    write(DATA_KEY, current)
+  },
+
+  async cancelTransfer(transferId) {
+    const current = data()
+    const transfer = current.transfers.find((t) => t.id === transferId)
+    if (!transfer || transfer.status !== 'pending') throw new Error('That transfer request is no longer waiting')
+    if (!isSiteAdmin() && transfer.requested_by !== currentUserId() && clubRole(current, transfer.from_club_id) !== 'owner') {
+      throw new Error('Only whoever asked, or the club\'s Owner, can withdraw this request')
+    }
+    Object.assign(transfer, { status: 'cancelled', decided_by: currentUserId(), decided_at: new Date().toISOString() })
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors move_athlete.
+  async moveAthlete(athleteId, clubId, override = false) {
+    requireSiteAdmin('Only a site Admin can move athletes between clubs')
+    const current = data()
+    const athlete = current.athletes.find((a) => a.id === athleteId)
+    if (!athlete) throw new Error('That athlete no longer exists')
+    if (!clubId) throw new Error('Pick the club to move to')
+    if (clubId === athlete.club_id) return
+    if (inOpenEvent(current, athleteId) && !override) throw new Error('This athlete is entered in an Active event. Tick "Move anyway" to override.')
+    const now = new Date().toISOString()
+    current.transfers.forEach((t) => {
+      if (t.athlete_id === athleteId && t.status === 'pending') Object.assign(t, { status: 'cancelled', decided_by: currentUserId(), decided_at: now })
+    })
+    current.transfers.push({
+      id: crypto.randomUUID(), athlete_id: athleteId, from_club_id: athlete.club_id, to_club_id: clubId,
+      status: 'moved', note: null, requested_by: currentUserId(), requested_at: now, decided_by: currentUserId(), decided_at: now,
+    })
+    athlete.club_id = clubId
     write(DATA_KEY, current)
   },
 
@@ -264,7 +473,7 @@ export const mockApi = {
       .filter((ea) => ea.event_id === eventId)
       .map((ea) => {
         const athlete = current.athletes.find((a) => a.id === ea.athlete_id)
-        return athlete && { ...athlete, added_by: ea.added_by, coach: findUser(current, athlete.coach_id) }
+        return athlete && { ...withClub(current, athlete), added_by: ea.added_by }
       })
       .filter(Boolean)
       .sort(byName)

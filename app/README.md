@@ -24,6 +24,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    6. [`20261031220000_athlete_details.sql`](../supabase/migrations/20261031220000_athlete_details.sql): athletes need date of birth, gender, weight, experience (bouts) and club
    7. [`20261031230000_event_owner_on_create.sql`](../supabase/migrations/20261031230000_event_owner_on_create.sql): pick the Owner when creating an event
    8. [`20261101000000_event_lifecycle.sql`](../supabase/migrations/20261101000000_event_lifecycle.sql): event statuses (Requested, Active, Done, Cancelled), only site Admins create events, weigh-in windows and bout sessions, posters, the public page, and no more event-level Admin
+   9. [`20261101010000_clubs.sql`](../supabase/migrations/20261101010000_clubs.sql): clubs, club Owners and Coaches, invites approved by a site Admin, athletes linked to a club (existing club names become clubs), and transfer requests
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
@@ -56,9 +57,14 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
 ## Who can do what
 
 - **Site Admins** see the Admin page. Adding a user saves their email; when that email first signs in, it gets a User account. If the person has already signed in, they become a User straight away.
-- Every **athlete** needs a name, date of birth, gender (male or female), weight in kg, experience (number of bouts) and club; email is optional. Adding an athlete with an email does the same with the Athletes role, and links the athlete record to that login.
+- Every **athlete** needs a name, date of birth, gender (male or female), weight in kg, experience (number of bouts) and a club from the Clubs page; email is optional. In the CSV import the `club` column must match an existing club's name. Adding an athlete with an email does the same with the Athletes role, and links the athlete record to that login.
 - Adding an **official** works the same way with the Officials role. Officials, like users, must have an email; only athletes can be added without one.
 - Each tab can also **bulk add from a CSV file**. "Download template" gives the expected columns; after choosing a file you see every row with any problems (missing name, bad email or date, unknown coach, repeated email), and only the rows without problems are added. Athletes are matched to their coach by `coach_email` (any user), who must have signed in already.
+- **Clubs** (the Clubs tab) follow [plan/events.md](../plan/events.md), section 2:
+  - A **site Admin** creates clubs and adds their **Owners**. Owners invite more people as Owner or Coach, and each invite waits until a site Admin approves it (the Clubs page lists them). One person can be in many clubs.
+  - **Owners** (and site Admins) add and edit the club's athletes. **Coaches** see them.
+  - An athlete is in one club at a time. A member of their club sends a **transfer request** to another club; that club's Owner accepts or declines. A site Admin can also **move** an athlete straight away. Bout count and history stay with the athlete.
+  - Athletes entered in an **Active** event can't change clubs until it's Done; a site Admin can override.
 - **Events** follow [plan/events.md](../plan/events.md):
   - Only a **site Admin** creates an event (name, dates, optional location, Owner). It starts as **Requested** and the Owner is emailed "You have Requested an event" (see [Owner emails](#owner-emails)).
   - The **Owner** edits the details, uploads an optional poster, and sets each day's times: one weigh-in (start and end, at least 2 hours, ending at least 3 hours before that day's first bout) and one or more bout sessions. Days can be left without bouts. The app refuses times that break the rules.
