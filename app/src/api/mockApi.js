@@ -1,7 +1,7 @@
 // A stand-in for Supabase so the app can be tried before a project exists.
 // Only one special user can sign in, and everything is kept in this browser's storage.
 // The password ships inside the page's JavaScript, so this is for demos, not for protecting anything.
-// The demo admin can also preview the app as one of the sample coaches (see viewAs).
+// The demo admin can also preview the app as one of the sample users (see viewAs).
 
 import { addDays, daysBetween, todayIso } from '../dates'
 
@@ -10,35 +10,33 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v1'
-
-const seed = {
-  coaches: [
-    { id: 'coach-1', email: 'maria.lopez@example.com', name: 'Maria Lopez', state: 'Active' },
-    { id: 'coach-2', email: 'dave.okafor@example.com', name: 'Dave Okafor', state: 'Active' },
-    { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
-  ],
-  athletes: [
-    { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', weight_class: 'Lightweight', club: 'Eastside BC', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'coach-1' },
-    { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', weight_class: 'Flyweight', club: 'Eastside BC', invite_email: 'jade@example.com', user_id: null, coach_id: 'coach-1' },
-    { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', weight_class: 'Middleweight', club: 'Riverside Boxing', invite_email: null, user_id: null, coach_id: 'coach-2' },
-  ],
-  officials: [
-    { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
-    { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: null, user_id: null },
-  ],
-}
+const DATA_KEY = 'mock-data-v2' // v2: coaches became users with per-event roles
 
 // Sample events dated from today, so there's always something upcoming.
-function seedEvents() {
+function seed() {
   const today = todayIso()
   const start = addDays(today, 14)
   const single = addDays(today, 35)
   return {
+    users: [
+      { id: 'user-1', email: 'maria.lopez@example.com', name: 'Maria Lopez', state: 'Active' },
+      { id: 'user-2', email: 'dave.okafor@example.com', name: 'Dave Okafor', state: 'Active' },
+      { id: 'user-3', email: 'priya.shah@example.com', name: 'Priya Shah', state: 'Active' },
+      { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
+    ],
+    athletes: [
+      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', weight_class: 'Lightweight', club: 'Eastside BC', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
+      { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', weight_class: 'Flyweight', club: 'Eastside BC', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
+      { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', weight_class: 'Middleweight', club: 'Riverside Boxing', invite_email: null, user_id: null, coach_id: 'user-2' },
+    ],
+    officials: [
+      { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
+      { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: null, user_id: null },
+    ],
     events: [
       {
         id: 'event-1', name: 'Eastside Winter Box Cup', venue: 'Eastside Leisure Centre',
-        start_date: start, end_date: addDays(start, 1), owner_id: 'coach-1',
+        start_date: start, end_date: addDays(start, 1),
         days: [
           { day: start, weigh_in_time: '08:00', bouts_time: '12:00' },
           { day: addDays(start, 1), weigh_in_time: '08:30', bouts_time: '11:00' },
@@ -46,13 +44,20 @@ function seedEvents() {
       },
       {
         id: 'event-2', name: 'Riverside Club Show', venue: 'Riverside Boxing Club',
-        start_date: single, end_date: single, owner_id: 'coach-2',
+        start_date: single, end_date: single,
         days: [{ day: single, weigh_in_time: '16:00', bouts_time: '19:00' }],
       },
     ],
+    eventMembers: [
+      { event_id: 'event-1', user_id: 'user-1', role: 'owner' },
+      { event_id: 'event-1', user_id: 'user-2', role: 'coach' },
+      { event_id: 'event-1', user_id: 'user-3', role: 'viewer' },
+      { event_id: 'event-2', user_id: 'user-2', role: 'owner' },
+      { event_id: 'event-2', user_id: 'user-3', role: 'admin' },
+    ],
     eventAthletes: [
-      { event_id: 'event-1', athlete_id: 'athlete-1' },
-      { event_id: 'event-1', athlete_id: 'athlete-3' },
+      { event_id: 'event-1', athlete_id: 'athlete-1', added_by: 'user-1' },
+      { event_id: 'event-1', athlete_id: 'athlete-3', added_by: 'user-2' },
     ],
   }
 }
@@ -60,15 +65,13 @@ function seedEvents() {
 const allPermissions = [
   'public:read', 'pages:read', 'cards:read', 'cards:create', 'cards:manage', 'cards:submit-official',
   'cards:submit-athlete', 'athletes:read', 'athletes:create', 'athletes:write', 'officials:read',
-  'officials:write', 'files:upload', 'users:manage', 'roles:manage', 'audit:read',
-  'events:read', 'events:create', 'events:manage',
+  'officials:write', 'files:upload', 'users:manage', 'roles:manage', 'audit:read', 'events:create',
 ]
 
-// Matches the coach grants in the migrations; 'own' scopes are checked in the functions below.
-const coachPermissions = [
+// Matches the Users grants in the migrations; 'own' scopes are checked in the functions below.
+const userPermissions = [
   'public:read', 'pages:read', 'cards:read', 'cards:create', 'cards:manage', 'cards:submit-athlete',
-  'athletes:read', 'athletes:create', 'athletes:write', 'officials:read', 'files:upload',
-  'events:read', 'events:manage',
+  'athletes:read', 'athletes:create', 'athletes:write', 'officials:read', 'files:upload', 'events:create',
 ]
 
 // Storage can be blocked (private windows, strict settings); fall back to memory.
@@ -91,29 +94,7 @@ function write(key, value) {
 }
 
 function data() {
-  const stored = read(DATA_KEY) ?? structuredClone(seed)
-  stored.officials ??= structuredClone(seed.officials) // saved before officials existed
-  if (!stored.events) Object.assign(stored, seedEvents()) // saved before events existed
-  return stored
-}
-
-function currentUserId() {
-  return read(SESSION_KEY)?.user.id
-}
-
-// Admins can change any event; a coach only the events they own.
-function eventForEditing(current, eventId) {
-  const event = current.events.find((e) => e.id === eventId)
-  if (!event) throw new Error('That event no longer exists')
-  const userId = currentUserId()
-  if (userId !== ADMIN_ID && event.owner_id !== userId) throw new Error('Only the event\'s owner can change it')
-  return event
-}
-
-function withEventExtras(current, event) {
-  const owner = current.coaches.find((c) => c.id === event.owner_id) ?? null
-  const entries = current.eventAthletes.filter((ea) => ea.event_id === event.id)
-  return { ...event, owner, athlete_count: entries.length, entries }
+  return read(DATA_KEY) ?? seed()
 }
 
 const listeners = new Set()
@@ -123,6 +104,32 @@ function setSession(session) {
 }
 
 const byName = (a, b) => (a.name || a.email).localeCompare(b.name || b.email)
+
+function currentUserId() {
+  return read(SESSION_KEY)?.user.id
+}
+
+const adminUser = { id: ADMIN_ID, email: ADMIN_EMAIL, name: 'Demo Admin', state: 'Active' }
+const findUser = (current, id) => (id === ADMIN_ID ? adminUser : current.users.find((u) => u.id && u.id === id) ?? null)
+
+// The signed-in user's role on an event. The site admin counts as Owner everywhere.
+function roleOn(current, eventId) {
+  const userId = currentUserId()
+  if (userId === ADMIN_ID) return 'owner'
+  return current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)?.role ?? null
+}
+
+function requireRole(current, eventId, roles, message) {
+  if (!current.events.some((e) => e.id === eventId)) throw new Error('That event no longer exists')
+  if (!roles.includes(roleOn(current, eventId))) throw new Error(message)
+}
+
+function withMembers(current, event) {
+  const members = current.eventMembers
+    .filter((m) => m.event_id === event.id)
+    .map((m) => ({ ...m, user: findUser(current, m.user_id) }))
+  return { ...event, members, athlete_count: current.eventAthletes.filter((ea) => ea.event_id === event.id).length }
+}
 
 export const mockApi = {
   mode: 'mock',
@@ -149,18 +156,18 @@ export const mockApi = {
     setSession({ user: { id: ADMIN_ID, email: ADMIN_EMAIL } })
   },
 
-  // Demo only: switch between the admin and the sample coaches without a second login.
+  // Demo only: switch between the admin and the sample users without a second login.
   async viewAs(userId) {
-    const coach = data().coaches.find((c) => c.id && c.id === userId)
-    setSession(coach ? { user: { id: coach.id, email: coach.email } } : { user: { id: ADMIN_ID, email: ADMIN_EMAIL } })
+    const user = data().users.find((u) => u.id && u.id === userId)
+    setSession(user ? { user: { id: user.id, email: user.email } } : { user: { id: ADMIN_ID, email: ADMIN_EMAIL } })
   },
 
   async loadMe(userId) {
-    const coach = data().coaches.find((c) => c.id && c.id === userId)
-    if (coach) {
+    const user = data().users.find((u) => u.id && u.id === userId)
+    if (user) {
       return {
-        profile: { id: coach.id, email: coach.email, name: coach.name, role_id: 'coach', status: 'active', roles: { name: 'Coaches' } },
-        permissions: coachPermissions,
+        profile: { id: user.id, email: user.email, name: user.name, role_id: 'user', status: 'active', roles: { name: 'Users' } },
+        permissions: userPermissions,
       }
     }
     return {
@@ -169,19 +176,24 @@ export const mockApi = {
     }
   },
 
-  async listCoaches() {
-    return [...data().coaches].sort(byName)
+  // Everyone with an account, plus invites waiting for a first sign-in.
+  async listUsers() {
+    const current = data()
+    return [
+      { ...adminUser, role_id: 'admin', role_name: 'Admins' },
+      ...current.users.map((u) => ({ ...u, role_id: 'user', role_name: 'Users' })),
+    ].sort(byName)
   },
 
-  async addCoach({ name, email }) {
+  async addUser({ name, email }) {
     const clean = email.trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
     const current = data()
-    const existing = current.coaches.find((c) => c.email === clean)
+    const existing = current.users.find((u) => u.email === clean)
     if (existing) {
       existing.name = name.trim() || existing.name
     } else {
-      current.coaches.push({ id: null, email: clean, name: name.trim(), state: 'Invited' })
+      current.users.push({ id: null, email: clean, name: name.trim(), state: 'Invited' })
     }
     write(DATA_KEY, current)
     return existing ? 'updated' : 'invited'
@@ -190,7 +202,7 @@ export const mockApi = {
   async listAthletes() {
     const current = data()
     return current.athletes
-      .map((a) => ({ ...a, coach: current.coaches.find((c) => c.id && c.id === a.coach_id) ?? null }))
+      .map((a) => ({ ...a, coach: findUser(current, a.coach_id) }))
       .sort(byName)
   },
 
@@ -210,38 +222,39 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  // Only events the user is a member of (all of them for the site admin).
   async listEvents() {
     const current = data()
     return current.events
-      .map((e) => withEventExtras(current, e))
+      .filter((e) => roleOn(current, e.id))
+      .map((e) => withMembers(current, e))
       .sort((a, b) => a.start_date.localeCompare(b.start_date))
   },
 
   async getEvent(eventId) {
     const current = data()
     const event = current.events.find((e) => e.id === eventId)
-    if (!event) return null
-    const result = withEventExtras(current, event)
-    result.athletes = result.entries
-      .map((ea) => current.athletes.find((a) => a.id === ea.athlete_id))
+    if (!event || !roleOn(current, eventId)) return null
+    const result = withMembers(current, event)
+    result.athletes = current.eventAthletes
+      .filter((ea) => ea.event_id === eventId)
+      .map((ea) => {
+        const athlete = current.athletes.find((a) => a.id === ea.athlete_id)
+        return athlete && { ...athlete, added_by: ea.added_by, coach: findUser(current, athlete.coach_id) }
+      })
       .filter(Boolean)
-      .map((a) => ({ ...a, coach: current.coaches.find((c) => c.id && c.id === a.coach_id) ?? null }))
       .sort(byName)
     return result
   },
 
-  // Creates the event when there's no id. Mirrors the checks in save_event and check_event.
-  async saveEvent({ id, name, venue, startDate, endDate, ownerId, days }) {
+  // Creates the event (owned by the current user) when there's no id. Mirrors save_event.
+  async saveEvent({ id, name, venue, startDate, endDate, days }) {
     const current = data()
-    const isAdmin = currentUserId() === ADMIN_ID
     const range = daysBetween(startDate, endDate)
     if (!name.trim()) throw new Error('Give the event a name')
     if (range.length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
     if (range.some((day) => !days.find((d) => d.day === day && d.weigh_in_time && d.bouts_time))) {
       throw new Error('Every day of the event needs a weigh-in time and a bout time')
-    }
-    if (!current.coaches.some((c) => c.id && c.id === ownerId && c.state === 'Active')) {
-      throw new Error('An event\'s owner must be an active coach')
     }
 
     const fields = {
@@ -256,41 +269,79 @@ export const mockApi = {
     }
 
     if (!id) {
-      if (!isAdmin) throw new Error('Only Admins can create events')
-      const event = { id: crypto.randomUUID(), owner_id: ownerId, ...fields }
+      const event = { id: crypto.randomUUID(), ...fields }
       current.events.push(event)
+      current.eventMembers.push({ event_id: event.id, user_id: currentUserId(), role: 'owner' })
       write(DATA_KEY, current)
       return event.id
     }
 
-    const event = eventForEditing(current, id)
-    if (ownerId !== event.owner_id && !isAdmin) throw new Error('Only Admins can change who owns an event')
-    Object.assign(event, fields, { owner_id: ownerId })
+    requireRole(current, id, ['owner', 'admin'], 'Only the event\'s Owner or Admins can edit it')
+    Object.assign(current.events.find((e) => e.id === id), fields)
     write(DATA_KEY, current)
     return id
   },
 
   async deleteEvent(eventId) {
-    if (currentUserId() !== ADMIN_ID) throw new Error('Only Admins can delete events')
     const current = data()
+    requireRole(current, eventId, ['owner'], 'Only the event\'s Owner can delete it')
     current.events = current.events.filter((e) => e.id !== eventId)
+    current.eventMembers = current.eventMembers.filter((m) => m.event_id !== eventId)
     current.eventAthletes = current.eventAthletes.filter((ea) => ea.event_id !== eventId)
+    write(DATA_KEY, current)
+  },
+
+  // Add someone to an event, or change their role. Ownership moves only through transferEventOwnership.
+  async setEventMember(eventId, userId, role) {
+    const current = data()
+    requireRole(current, eventId, ['owner', 'admin'], 'Only the event\'s Owner or Admins can change its members')
+    if (!['admin', 'coach', 'viewer'].includes(role)) throw new Error('Use "Make owner" to change who owns an event')
+    const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
+    if (existing?.role === 'owner') throw new Error('Use "Make owner" to change who owns an event')
+    if (existing) existing.role = role
+    else current.eventMembers.push({ event_id: eventId, user_id: userId, role })
+    write(DATA_KEY, current)
+  },
+
+  async removeEventMember(eventId, userId) {
+    const current = data()
+    requireRole(current, eventId, ['owner', 'admin'], 'Only the event\'s Owner or Admins can change its members')
+    const member = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
+    if (member?.role === 'owner') throw new Error('Use "Make owner" to change who owns an event')
+    current.eventMembers = current.eventMembers.filter((m) => m !== member)
+    write(DATA_KEY, current)
+  },
+
+  // The old Owner stays on as an Admin.
+  async transferEventOwnership(eventId, userId) {
+    const current = data()
+    requireRole(current, eventId, ['owner'], 'Only the event\'s Owner can hand it over')
+    current.eventMembers.forEach((m) => {
+      if (m.event_id === eventId && m.role === 'owner') m.role = 'admin'
+    })
+    const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
+    if (existing) existing.role = 'owner'
+    else current.eventMembers.push({ event_id: eventId, user_id: userId, role: 'owner' })
     write(DATA_KEY, current)
   },
 
   async addEventAthlete(eventId, athleteId) {
     const current = data()
-    eventForEditing(current, eventId)
+    requireRole(current, eventId, ['owner', 'admin', 'coach'], 'Only the event\'s Owner, Admins and Coaches can add athletes')
     if (!current.eventAthletes.some((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)) {
-      current.eventAthletes.push({ event_id: eventId, athlete_id: athleteId })
+      current.eventAthletes.push({ event_id: eventId, athlete_id: athleteId, added_by: currentUserId() })
       write(DATA_KEY, current)
     }
   },
 
   async removeEventAthlete(eventId, athleteId) {
     const current = data()
-    eventForEditing(current, eventId)
-    current.eventAthletes = current.eventAthletes.filter((ea) => !(ea.event_id === eventId && ea.athlete_id === athleteId))
+    const entry = current.eventAthletes.find((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)
+    const role = roleOn(current, eventId)
+    if (!(role === 'owner' || role === 'admin' || (role === 'coach' && entry?.added_by === currentUserId()))) {
+      throw new Error('Coaches can only remove the athletes they added')
+    }
+    current.eventAthletes = current.eventAthletes.filter((ea) => ea !== entry)
     write(DATA_KEY, current)
   },
 

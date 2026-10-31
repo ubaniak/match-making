@@ -15,7 +15,7 @@ export default function App() {
   if (!session) return api.mode === 'mock' ? <MockLogin /> : <Login />
 
   const pages = [
-    can('events:read') && ['events', 'Events'],
+    can('pages:read') && ['events', 'Events'],
     can('users:manage') && ['admin', 'Admin'],
   ].filter(Boolean)
   const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
@@ -46,10 +46,10 @@ export default function App() {
 }
 
 function DemoBanner({ userId }) {
-  const [coaches, setCoaches] = useState([])
+  const [users, setUsers] = useState([])
 
   useEffect(() => {
-    api.listCoaches().then((all) => setCoaches(all.filter((c) => c.id && c.state === 'Active')))
+    api.listUsers().then((all) => setUsers(all.filter((u) => u.id && u.id !== api.adminId && u.state === 'Active')))
   }, [])
 
   function reset() {
@@ -64,8 +64,8 @@ function DemoBanner({ userId }) {
         Viewing as{' '}
         <select value={userId} onChange={(e) => api.viewAs(e.target.value)}>
           <option value={api.adminId}>Demo Admin</option>
-          {coaches.map((c) => (
-            <option key={c.id} value={c.id}>{c.name} (coach)</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.name}</option>
           ))}
         </select>
       </label>
@@ -174,7 +174,7 @@ function Hello({ profile, email }) {
       <h1>Hello world</h1>
       <p>Signed in as {email}</p>
       {profile?.role_id === 'public' && (
-        <p className="muted">You don't have a role yet. Ask an Admin to add you as a coach or athlete.</p>
+        <p className="muted">You don't have a role yet. Ask an Admin to add you as a user.</p>
       )}
     </main>
   )

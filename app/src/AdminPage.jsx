@@ -3,13 +3,13 @@ import { api } from './api'
 import CsvImport from './CsvImport'
 
 const tabs = [
-  ['coaches', 'Coaches'],
+  ['users', 'Users'],
   ['athletes', 'Athletes'],
   ['officials', 'Officials'],
 ]
 
 export default function AdminPage() {
-  const [tab, setTab] = useState('coaches')
+  const [tab, setTab] = useState('users')
 
   return (
     <main className="panel">
@@ -19,21 +19,21 @@ export default function AdminPage() {
           <button key={key} className={tab === key ? 'tab active' : 'tab'} onClick={() => setTab(key)}>{label}</button>
         ))}
       </nav>
-      {tab === 'coaches' && <Coaches />}
+      {tab === 'users' && <Users />}
       {tab === 'athletes' && <Athletes />}
       {tab === 'officials' && <Officials />}
     </main>
   )
 }
 
-// Coaches who have signed in, plus invites waiting for a first sign-in.
-function useCoaches() {
-  const [coaches, setCoaches] = useState([])
+// Everyone with an account, plus invites waiting for a first sign-in.
+function useUsers() {
+  const [users, setUsers] = useState([])
   const [error, setError] = useState(null)
 
   const reload = useCallback(async () => {
     try {
-      setCoaches(await api.listCoaches())
+      setUsers(await api.listUsers())
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -44,22 +44,22 @@ function useCoaches() {
     reload()
   }, [reload])
 
-  return { coaches, error, reload }
+  return { users, error, reload }
 }
 
-function Coaches() {
-  const { coaches, error, reload } = useCoaches()
+function Users() {
+  const { users, error, reload } = useUsers()
   const [form, setForm] = useState({ name: '', email: '' })
   const [message, setMessage] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  async function addCoach(event) {
+  async function addUser(event) {
     event.preventDefault()
     setSaving(true)
     setMessage(null)
     let data
     try {
-      data = await api.addCoach(form)
+      data = await api.addUser(form)
     } catch (err) {
       return setMessage({ error: true, text: err.message })
     } finally {
@@ -67,8 +67,8 @@ function Coaches() {
     }
     setMessage({
       text: data === 'updated'
-        ? `${form.email} already had an account and is now a coach.`
-        : `${form.email} is added. They become a coach when they first sign in with that email.`,
+        ? `${form.email} already had an account and is now a user.`
+        : `${form.email} is added. They can sign in with that email.`,
     })
     setForm({ name: '', email: '' })
     reload()
@@ -76,8 +76,8 @@ function Coaches() {
 
   return (
     <section>
-      <form onSubmit={addCoach} className="row-form">
-        <h2>Add a coach</h2>
+      <form onSubmit={addUser} className="row-form">
+        <h2>Add a user</h2>
         <label>
           Name
           <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -86,30 +86,36 @@ function Coaches() {
           Email
           <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </label>
-        <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add coach'}</button>
+        <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add user'}</button>
       </form>
       {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
-      <CsvImport kind="coaches" importRow={api.addCoach} onDone={reload} />
+      <p className="muted">
+        Users can create events. What they can do on someone else's event (Admin, Coach or Viewer) is set on that event.
+      </p>
+      <CsvImport kind="users" importRow={api.addUser} onDone={reload} />
 
-      <h2>Coaches</h2>
+      <h2>Users</h2>
       {error && <p className="error">{error}</p>}
-      {coaches.length === 0 ? (
-        <p className="muted">No coaches yet.</p>
+      {users.length === 0 ? (
+        <p className="muted">No users yet.</p>
       ) : (
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Email</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            {coaches.map((c) => (
-              <tr key={c.email}>
-                <td>{c.name || '—'}</td>
-                <td>{c.email}</td>
-                <td><span className={`badge ${c.state.toLowerCase()}`}>{c.state}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Account</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.email}>
+                  <td>{u.name || '—'}</td>
+                  <td>{u.email}</td>
+                  <td>{u.role_name || '—'}</td>
+                  <td><span className={`badge ${u.state.toLowerCase()}`}>{u.state}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   )
@@ -118,7 +124,7 @@ function Coaches() {
 const emptyAthlete = { name: '', email: '', coachId: '', dateOfBirth: '', weightClass: '', club: '' }
 
 function Athletes() {
-  const { coaches, reload: reloadCoaches } = useCoaches()
+  const { users, reload: reloadUsers } = useUsers()
   const [athletes, setAthletes] = useState([])
   const [error, setError] = useState(null)
   const [form, setForm] = useState(emptyAthlete)
@@ -166,7 +172,7 @@ function Athletes() {
   }
 
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
-  const activeCoaches = coaches.filter((c) => c.id && c.state === 'Active')
+  const activeUsers = users.filter((u) => u.id && u.state === 'Active')
 
   return (
     <section>
@@ -178,8 +184,8 @@ function Athletes() {
           Coach
           <select {...field('coachId')}>
             <option value="">No coach</option>
-            {activeCoaches.map((c) => (
-              <option key={c.id} value={c.id}>{c.name || c.email}</option>
+            {activeUsers.map((u) => (
+              <option key={u.id} value={u.id}>{u.name || u.email}</option>
             ))}
           </select>
         </label>
@@ -189,19 +195,19 @@ function Athletes() {
         <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add athlete'}</button>
       </form>
       {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
-      {coaches.some((c) => !c.id) && (
-        <p className="muted">Invited coaches appear in the coach list once they've signed in.</p>
+      {users.some((u) => !u.id) && (
+        <p className="muted">Invited users appear in the coach list once they've signed in.</p>
       )}
       <CsvImport
         kind="athletes"
         context={{
-          coachesByEmail: new Map(coaches.map((c) => [c.email, c])),
+          usersByEmail: new Map(users.map((u) => [u.email, u])),
           existingEmails: new Set(athletes.map((a) => a.invite_email).filter(Boolean)),
         }}
         importRow={api.addAthlete}
         onDone={() => {
           reload()
-          reloadCoaches()
+          reloadUsers()
         }}
       />
 

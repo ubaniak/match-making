@@ -2,25 +2,37 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay, formatTime, todayIso } from './dates'
 
-// Events: Admins create them and pick the owning coach; that coach edits the event and enters athletes.
+const roleLabels = { owner: 'Owner', admin: 'Admin', coach: 'Coach', viewer: 'Viewer' }
+
+// What each event role can do. Site Admins count as Owner everywhere.
+const rights = {
+  owner: { edit: true, members: true, athletes: true, removeAnyAthlete: true, transfer: true, remove: true },
+  admin: { edit: true, members: true, athletes: true, removeAnyAthlete: true },
+  coach: { athletes: true },
+  viewer: {},
+}
+
+function myEventRole(event, profile, can) {
+  if (can('users:manage')) return 'owner'
+  return event.members.find((m) => m.user_id === profile?.id)?.role ?? null
+}
+
+const ownerOf = (event) => event.members.find((m) => m.role === 'owner')?.user
+const personName = (user) => (user ? user.name || user.email : '—')
+
+// Events: any user can create one and becomes its Owner. People are added to an event
+// as Admin, Coach or Viewer, and only see the events they belong to.
 export default function EventsPage({ profile, can }) {
   const [view, setView] = useState({ name: 'list' })
-
-  // Admins can do anything; coaches only change events they own.
-  const canCreate = can('events:create')
-  const canManage = useCallback(
-    (event) => canCreate || (can('events:manage') && event.owner_id === profile?.id),
-    [can, canCreate, profile],
-  )
-
   const back = () => setView({ name: 'list' })
 
   return (
     <main className="panel">
       {view.name === 'list' && (
         <EventList
-          canCreate={canCreate}
+          canCreate={can('events:create')}
           profile={profile}
+          can={can}
           onOpen={(id) => setView({ name: 'event', id })}
           onCreate={() => setView({ name: 'new' })}
         />
@@ -29,17 +41,16 @@ export default function EventsPage({ profile, can }) {
         <>
           <button className="link back" onClick={back}>← All events</button>
           <h1>New event</h1>
-          <EventForm canChooseOwner onCancel={back} onSaved={(id) => setView({ name: 'event', id })} />
+          <p className="muted">You'll be the event's Owner. You can add Admins, Coaches and Viewers once it's created.</p>
+          <EventForm onCancel={back} onSaved={(id) => setView({ name: 'event', id })} />
         </>
       )}
-      {view.name === 'event' && (
-        <EventDetail id={view.id} canCreate={canCreate} canManage={canManage} onBack={back} />
-      )}
+      {view.name === 'event' && <EventDetail id={view.id} profile={profile} can={can} onBack={back} />}
     </main>
   )
 }
 
-function EventList({ canCreate, profile, onOpen, onCreate }) {
+function EventList({ canCreate, profile, can, onOpen, onCreate }) {
   const [events, setEvents] = useState(null)
   const [error, setError] = useState(null)
 
@@ -60,36 +71,36 @@ function EventList({ canCreate, profile, onOpen, onCreate }) {
       {error && <p className="error">{error}</p>}
       {events === null && !error && <p className="muted">Loading…</p>}
       {events?.length === 0 && (
-        <p className="muted">{canCreate ? 'No events yet. Create one to get started.' : 'No events yet.'}</p>
+        <p className="muted">
+          {canCreate ? 'No events yet. Create one, or ask an event\'s Owner to add you.' : 'You haven\'t been added to any events yet.'}
+        </p>
       )}
-      {upcoming.length > 0 && <EventTable title="Upcoming" events={upcoming} profile={profile} onOpen={onOpen} />}
-      {past.length > 0 && <EventTable title="Past" events={past} profile={profile} onOpen={onOpen} />}
+      {upcoming.length > 0 && <EventTable title="Upcoming" events={upcoming} profile={profile} can={can} onOpen={onOpen} />}
+      {past.length > 0 && <EventTable title="Past" events={past} profile={profile} can={can} onOpen={onOpen} />}
     </>
   )
 }
 
-function EventTable({ title, events, profile, onOpen }) {
+function EventTable({ title, events, profile, can, onOpen }) {
   return (
     <section>
       <h2>{title}</h2>
       <div className="table-scroll">
         <table>
           <thead>
-            <tr><th>Event</th><th>Dates</th><th>Venue</th><th>Owner</th><th>Athletes</th></tr>
+            <tr><th>Event</th><th>Dates</th><th>Venue</th><th>Owner</th><th>Your role</th><th>Athletes</th></tr>
           </thead>
           <tbody>
             {events.map((e) => (
               <tr key={e.id}>
-                <td>
-                  <button className="link" onClick={() => onOpen(e.id)}>{e.name}</button>
-                  {e.owner_id === profile?.id && <span className="badge active">Yours</span>}
-                </td>
+                <td><button className="link" onClick={() => onOpen(e.id)}>{e.name}</button></td>
                 <td>
                   {formatDateRange(e.start_date, e.end_date)}
                   {e.days.length > 1 && <span className="muted"> ({e.days.length} days)</span>}
                 </td>
                 <td>{e.venue || '—'}</td>
-                <td>{e.owner ? e.owner.name || e.owner.email : '—'}</td>
+                <td>{personName(ownerOf(e))}</td>
+                <td><RoleBadge role={e.members.find((m) => m.user_id === profile?.id)?.role ?? (can('users:manage') ? 'site-admin' : null)} /></td>
                 <td>{e.athlete_count}</td>
               </tr>
             ))}
@@ -100,7 +111,7 @@ function EventTable({ title, events, profile, onOpen }) {
   )
 }
 
-function EventDetail({ id, canCreate, canManage, onBack }) {
+function EventDetail({ id, profile, can, onBack }) {
   const [event, setEvent] = useState(undefined)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(false)
@@ -133,7 +144,8 @@ function EventDetail({ id, canCreate, canManage, onBack }) {
   if (event === undefined) return <>{backLink}{error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}</>
   if (event === null) return <>{backLink}<p>That event no longer exists.</p></>
 
-  const manage = canManage(event)
+  const role = myEventRole(event, profile, can)
+  const may = rights[role] ?? {}
 
   if (editing) {
     return (
@@ -142,7 +154,6 @@ function EventDetail({ id, canCreate, canManage, onBack }) {
         <h1>Edit {event.name}</h1>
         <EventForm
           event={event}
-          canChooseOwner={canCreate}
           onCancel={() => setEditing(false)}
           onSaved={() => {
             setEditing(false)
@@ -158,14 +169,15 @@ function EventDetail({ id, canCreate, canManage, onBack }) {
       {backLink}
       <div className="heading-row">
         <h1>{event.name}</h1>
-        {manage && <button className="secondary" onClick={() => setEditing(true)}>Edit event</button>}
-        {canCreate && <button className="secondary danger" onClick={remove}>Delete</button>}
+        {may.edit && <button className="secondary" onClick={() => setEditing(true)}>Edit event</button>}
+        {may.remove && <button className="secondary danger" onClick={remove}>Delete</button>}
       </div>
       {error && <p className="error">{error}</p>}
       <dl className="facts">
         <div><dt>Dates</dt><dd>{formatDateRange(event.start_date, event.end_date)}</dd></div>
         <div><dt>Venue</dt><dd>{event.venue || '—'}</dd></div>
-        <div><dt>Owner</dt><dd>{event.owner ? event.owner.name || event.owner.email : '—'}</dd></div>
+        <div><dt>Owner</dt><dd>{personName(ownerOf(event))}</dd></div>
+        <div><dt>Your role</dt><dd><RoleBadge role={event.members.find((m) => m.user_id === profile?.id)?.role ?? 'site-admin'} /></dd></div>
       </dl>
 
       <h2>Schedule</h2>
@@ -184,20 +196,23 @@ function EventDetail({ id, canCreate, canManage, onBack }) {
         </tbody>
       </table>
 
-      <EventAthletes event={event} canManage={manage} onChange={reload} />
+      <EventAthletes event={event} may={may} profile={profile} onChange={reload} />
+      <EventMembers event={event} may={may} onChange={reload} />
     </>
   )
 }
 
-function EventAthletes({ event, canManage, onChange }) {
+function EventAthletes({ event, may, profile, onChange }) {
+  const canAdd = Boolean(may.athletes)
+  const canRemove = (athlete) => may.removeAnyAthlete || (may.athletes && athlete.added_by === profile?.id)
   const [allAthletes, setAllAthletes] = useState([])
   const [choice, setChoice] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    if (canManage) api.listAthletes().then(setAllAthletes, (err) => setError(err.message))
-  }, [canManage])
+    if (canAdd) api.listAthletes().then(setAllAthletes, (err) => setError(err.message))
+  }, [canAdd])
 
   const entered = useMemo(() => new Set(event.athletes.map((a) => a.id)), [event.athletes])
   const available = allAthletes.filter((a) => !entered.has(a.id))
@@ -227,7 +242,7 @@ function EventAthletes({ event, canManage, onChange }) {
   return (
     <section>
       <h2>Athletes ({event.athletes.length})</h2>
-      {canManage && (
+      {canAdd && (
         <form onSubmit={add} className="row-form">
           <label>
             Add an athlete
@@ -250,7 +265,7 @@ function EventAthletes({ event, canManage, onChange }) {
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Name</th><th>Weight class</th><th>Club</th><th>Coach</th>{canManage && <th />}</tr>
+              <tr><th>Name</th><th>Weight class</th><th>Club</th><th>Coach</th>{canAdd && <th />}</tr>
             </thead>
             <tbody>
               {event.athletes.map((a) => (
@@ -259,11 +274,13 @@ function EventAthletes({ event, canManage, onChange }) {
                   <td>{a.weight_class || '—'}</td>
                   <td>{a.club || '—'}</td>
                   <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
-                  {canManage && (
+                  {canAdd && (
                     <td className="actions">
-                      <button className="link" disabled={busy} onClick={() => run(() => api.removeEventAthlete(event.id, a.id))}>
-                        Remove
-                      </button>
+                      {canRemove(a) && (
+                        <button className="link" disabled={busy} onClick={() => run(() => api.removeEventAthlete(event.id, a.id))}>
+                          Remove
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -278,23 +295,17 @@ function EventAthletes({ event, canManage, onChange }) {
 
 const defaultTimes = { weigh_in_time: '08:00', bouts_time: '12:00' }
 
-function EventForm({ event, canChooseOwner, onCancel, onSaved }) {
+function EventForm({ event, onCancel, onSaved }) {
   const [form, setForm] = useState({
     name: event?.name ?? '',
     venue: event?.venue ?? '',
     startDate: event?.start_date ?? '',
     endDate: event?.end_date ?? '',
-    ownerId: event?.owner_id ?? '',
   })
   // Times typed so far, by day, so changing the dates keeps them.
   const [times, setTimes] = useState(() => Object.fromEntries((event?.days ?? []).map((d) => [d.day, d])))
-  const [coaches, setCoaches] = useState([])
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (canChooseOwner) api.listCoaches().then(setCoaches, (err) => setError(err.message))
-  }, [canChooseOwner])
 
   const days = daysBetween(form.startDate, form.endDate)
   const datesBackwards = form.startDate && form.endDate && form.endDate < form.startDate
@@ -327,7 +338,6 @@ function EventForm({ event, canChooseOwner, onCancel, onSaved }) {
     e.preventDefault()
     setError(null)
     if (days.length === 0) return setError('Check the dates: the end date must be on or after the start date.')
-    if (canChooseOwner && !form.ownerId) return setError('Choose the coach who owns this event.')
     setSaving(true)
     try {
       const id = await api.saveEvent({ id: event?.id, ...form, days: schedule })
@@ -338,7 +348,6 @@ function EventForm({ event, canChooseOwner, onCancel, onSaved }) {
     }
   }
 
-  const activeCoaches = coaches.filter((c) => c.id && c.state === 'Active')
   const field = (key) => ({ value: form[key], onChange: (e) => setField(key, e.target.value) })
 
   return (
@@ -347,21 +356,7 @@ function EventForm({ event, canChooseOwner, onCancel, onSaved }) {
         <h2>Details</h2>
         <label>Name<input required {...field('name')} placeholder="e.g. Winter Box Cup" /></label>
         <label>Venue <span className="muted">(optional)</span><input {...field('venue')} /></label>
-        {canChooseOwner && (
-          <label>
-            Owner (coach)
-            <select required {...field('ownerId')}>
-              <option value="">Choose a coach…</option>
-              {activeCoaches.map((c) => (
-                <option key={c.id} value={c.id}>{c.name || c.email}</option>
-              ))}
-            </select>
-          </label>
-        )}
       </div>
-      {canChooseOwner && coaches.length > 0 && activeCoaches.length === 0 && (
-        <p className="muted">No coach has signed in yet. Invited coaches can own events once they've signed in.</p>
-      )}
 
       <div className="row-form">
         <h2>Dates</h2>
@@ -400,5 +395,134 @@ function EventForm({ event, canChooseOwner, onCancel, onSaved }) {
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
     </form>
+  )
+}
+
+function RoleBadge({ role }) {
+  if (!role) return '—'
+  if (role === 'site-admin') return <span className="badge">Site admin</span>
+  return <span className={`badge role-${role}`}>{roleLabels[role]}</span>
+}
+
+// Who's on the event and in what role. Owners and Admins manage it; ownership moves with "Make owner".
+function EventMembers({ event, may, onChange }) {
+  const [users, setUsers] = useState([])
+  const [form, setForm] = useState({ userId: '', role: 'coach' })
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (may.members) api.listUsers().then(setUsers, (err) => setError(err.message))
+  }, [may.members])
+
+  const memberIds = new Set(event.members.map((m) => m.user_id))
+  const addable = users.filter((u) => u.id && u.state === 'Active' && !memberIds.has(u.id))
+  const order = ['owner', 'admin', 'coach', 'viewer']
+  const members = [...event.members].sort(
+    (a, b) => order.indexOf(a.role) - order.indexOf(b.role) || personName(a.user).localeCompare(personName(b.user)),
+  )
+
+  async function run(action) {
+    setBusy(true)
+    setError(null)
+    try {
+      await action()
+      await onChange()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function add(e) {
+    e.preventDefault()
+    if (!form.userId) return
+    run(async () => {
+      await api.setEventMember(event.id, form.userId, form.role)
+      setForm({ userId: '', role: form.role })
+    })
+  }
+
+  function makeOwner(member) {
+    if (!window.confirm(`Make ${personName(member.user)} the Owner of ${event.name}? You'll stay on as an Admin.`)) return
+    run(() => api.transferEventOwnership(event.id, member.user_id))
+  }
+
+  return (
+    <section>
+      <h2>People ({event.members.length})</h2>
+      <p className="muted">
+        Admins edit the event and manage people. Coaches add athletes. Viewers can see the event.
+      </p>
+      {may.members && (
+        <form onSubmit={add} className="row-form">
+          <label>
+            Add a person
+            <select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>
+              <option value="">{addable.length ? 'Choose a user…' : 'Everyone is already on this event'}</option>
+              {addable.map((u) => (
+                <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            As
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+              <option value="admin">Admin</option>
+              <option value="coach">Coach</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </label>
+          <button type="submit" disabled={busy || !form.userId}>Add</button>
+        </form>
+      )}
+      {error && <p className="error">{error}</p>}
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Role</th>{may.members && <th />}</tr>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.user_id}>
+                <td>{m.user?.name || '—'}</td>
+                <td>{m.user?.email || '—'}</td>
+                <td>
+                  {may.members && m.role !== 'owner' ? (
+                    <select
+                      value={m.role}
+                      disabled={busy}
+                      aria-label={`Role for ${personName(m.user)}`}
+                      onChange={(e) => run(() => api.setEventMember(event.id, m.user_id, e.target.value))}
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="coach">Coach</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                  ) : (
+                    <RoleBadge role={m.role} />
+                  )}
+                </td>
+                {may.members && (
+                  <td className="actions">
+                    {m.role !== 'owner' && (
+                      <>
+                        {may.transfer && (
+                          <button className="link" disabled={busy} onClick={() => makeOwner(m)}>Make owner</button>
+                        )}
+                        <button className="link" disabled={busy} onClick={() => run(() => api.removeEventMember(event.id, m.user_id))}>
+                          Remove
+                        </button>
+                      </>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
