@@ -20,6 +20,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    2. [`20261031000000_officials.sql`](../supabase/migrations/20261031000000_officials.sql): officials
    3. [`20261031120000_events.sql`](../supabase/migrations/20261031120000_events.sql): events, event days and event athletes
    4. [`20261031200000_event_roles.sql`](../supabase/migrations/20261031200000_event_roles.sql): turns Coaches into Users and adds per-event roles (Owner, Admin, Coach, Viewer)
+   5. [`20261031210000_official_email_required.sql`](../supabase/migrations/20261031210000_official_email_required.sql): officials must have an email
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
@@ -53,7 +54,7 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
 
 - **Site Admins** see the Admin page. Adding a user saves their email; when that email first signs in, it gets a User account. If the person has already signed in, they become a User straight away.
 - Adding an **athlete** with an email does the same with the Athletes role, and links the athlete record to that login.
-- Adding an **official** with an email works the same way with the Officials role.
+- Adding an **official** works the same way with the Officials role. Officials, like users, must have an email; only athletes can be added without one.
 - Each tab can also **bulk add from a CSV file**. "Download template" gives the expected columns; after choosing a file you see every row with any problems (missing name, bad email or date, unknown coach, repeated email), and only the rows without problems are added. Athletes are matched to their coach by `coach_email` (any user), who must have signed in already.
 - **Events**: any User can create an event (one day, or several days up to 31) and becomes its **Owner**. Each day has its own weigh-in time and bout start time. People are added to an event with a role, and only see the events they're on:
   - **Owner**: one per event. Everything an Admin can do, plus delete the event and hand it to someone else with "Make owner" (the old Owner stays on as an Admin).
