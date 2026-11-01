@@ -1,4 +1,4 @@
-// Officials on an event (plan/events.md, "Inviting officials"): the Owner or a site Admin
+// Officials on an event (plan/events.md, "Inviting officials"): a site Admin
 // invites officials, officials accept or decline, and the CO and Deputy are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
@@ -154,9 +154,10 @@ function useAcceptDays() {
 
 // officials: the event's CO and Deputy rows. run: the bouts section's runner, which reloads them.
 export function EventOfficials({ event, may, profile, officials, busy, run }) {
-  const manager = may.siteAdmin || may.role === 'owner'
-  // The Chief Official and Deputy see the lists too, but can't invite or remove.
-  const seesLists = manager || officials.some((o) => o.user_id === profile?.id)
+  // Only site Admins invite and remove officials and pick the Chief Official and Deputy.
+  const manager = may.siteAdmin
+  // The event's Owner, the Chief Official and the Deputy see the lists too, but can't change them.
+  const seesLists = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
@@ -241,12 +242,12 @@ function MyAnswer({ invitation, event, busy, act }) {
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
         )}
       </Space>
-      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask the event's Owner to invite you again.</Muted>}
+      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin to invite you again.</Muted>}
     </AntCard>
   )
 }
 
-// Owner and site Admin view: invite, pick the CO and Deputy, see who answered what.
+// The lists of who answered what. Site Admins also invite and pick the CO and Deputy here.
 // The CO and Deputy get the same lists without the buttons.
 function Manage({ event, may, manager, invitations, byRole, busy, act }) {
   const [officialsList, setOfficialsList] = useState([])
@@ -342,7 +343,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
       title: 'Invited', key: 'invited_at', value: (i) => i.invited_at,
       render: (_, i) => formatDay(i.invited_at.slice(0, 10)),
     },
-    may.edit && {
+    manager && {
       key: 'actions',
       className: 'actions',
       render: (_, i) => {
@@ -364,6 +365,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
   return (
     <>
       {manager && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
+      {!manager && may.role === 'owner' && <Muted>A site Admin invites the officials and picks the Chief Official and Deputy.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}
@@ -398,7 +400,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
       <FormCard compact>
         {['chief', 'deputy'].map((role) => (
           <Field key={role} label={officialLabels[role]}>
-            {may.edit ? (
+            {manager ? (
               <Pick
                 allowEmpty
                 aria-label={officialLabels[role]}
@@ -412,7 +414,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
             )}
           </Field>
         ))}
-        {may.edit && pickable.length === 0 && (
+        {manager && pickable.length === 0 && (
           <FullRow><Muted>Pick the Chief Official and Deputy from the officials who accepted.</Muted></FullRow>
         )}
       </FormCard>

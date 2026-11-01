@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Checkbox, Col, Descriptions, Input, Row, Space, Statistic, Tabs, Upload } from 'antd'
+import { Alert, Button, Card, Checkbox, Col, Descriptions, Input, Modal, Row, Select, Space, Statistic, Tabs, Upload } from 'antd'
 import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
@@ -333,9 +333,11 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
   const [clubs, setClubs] = useState([])
   const [tab, setTab] = useState('dashboard')
 
+  const loadClubs = useCallback(() => api.listClubs().then(setClubs, () => setClubs([])), [])
+
   useEffect(() => {
-    api.listClubs().then(setClubs, () => setClubs([]))
-  }, [])
+    loadClubs()
+  }, [loadClubs])
 
   const reload = useCallback(async () => {
     try {
@@ -458,7 +460,7 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
             label: `Clubs (${event.clubs.filter((ec) => ec.status === 'accepted').length})`,
             children: (
               <>
-                <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
+                <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={() => Promise.all([reload(), loadClubs()])} />
                 <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
               </>
             ),
@@ -859,8 +861,15 @@ const clubStatusLabels = { accepted: 'In', requested: 'Asked to join', declined:
 // Clubs in the event. The Owner invites clubs and answers requests; club owners ask to join.
 function EventClubs({ event, may, clubs, profile, onChange }) {
   const [choice, setChoice] = useState('')
+  const [newClub, setNewClub] = useState({ name: '', owners: [] })
+  const [ownersOf, setOwnersOf] = useState(null) // club id whose owners are being changed
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  // The event's Owner (and site Admins) add clubs and club owners while the event is Active.
+  const managesOwners = may.manageClubs && may.open
+  const users = useActiveUsers(managesOwners)
+  const clubById = Object.fromEntries(clubs.map((c) => [c.id, c]))
+  const ownersOfClub = (clubId) => (clubById[clubId]?.members ?? []).filter((m) => m.role === 'owner' && m.status === 'active')
   const byClub = Object.fromEntries(event.clubs.map((ec) => [ec.club_id, ec]))
   const ownedClubs = clubs.filter((c) => c.members.some((m) => m.user_id === profile?.id && m.role === 'owner' && m.status === 'active'))
   const canJoin = ownedClubs.filter((c) => !['accepted', 'requested'].includes(byClub[c.id]?.status))
@@ -891,6 +900,20 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
     })
   }
 
+  function addClub(e) {
+    e.preventDefault()
+    run(async () => {
+      await api.createEventClub(event.id, newClub.name, newClub.owners)
+      setNewClub({ name: '', owners: [] })
+    })
+  }
+
+  async function removeOwner(clubId, member) {
+    const club = clubById[clubId]
+    if (!(await askConfirm(`Remove ${personName(member.user)} as an owner of ${club?.name}? They leave the club.`, { okText: 'Remove', danger: true }))) return
+    run(() => api.removeEventClubOwner(event.id, clubId, member.user_id))
+  }
+
   async function remove(ec) {
     const entered = event.athletes.filter((a) => a.entry_club_id === ec.club_id).length
     const withdrawing = ec.status === 'requested' && owns(ec.club_id) && !may.manageClubs
@@ -906,12 +929,20 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
   const columns = [
     { title: 'Club', key: 'club', render: (_, ec) => ec.club?.name ?? '—' },
     { title: 'Status', key: 'status', value: (ec) => clubStatusLabels[ec.status], render: (_, ec) => <Badge strong={ec.status === 'accepted'} muted={ec.status === 'declined'}>{clubStatusLabels[ec.status]}</Badge> },
+    {
+      title: 'Owners', key: 'owners',
+      value: (ec) => ownersOfClub(ec.club_id).map((m) => personName(m.user)).join(', '),
+      render: (_, ec) => ownersOfClub(ec.club_id).map((m) => personName(m.user)).join(', ') || '—',
+    },
     { title: 'Athletes entered', key: 'count', render: (_, ec) => (ec.status === 'accepted' ? event.athletes.filter((a) => a.entry_club_id === ec.club_id).length : '') },
     {
       key: 'actions',
       className: 'actions',
       render: (_, ec) => (
         <Space>
+          {managesOwners && ec.status === 'accepted' && (
+            <Button size="small" disabled={busy} onClick={() => setOwnersOf(ec.club_id)}>Owners</Button>
+          )}
           {may.manageClubs && ec.status === 'requested' && (
             <>
               <Button size="small" type="primary" disabled={busy} onClick={() => run(() => api.decideJoinRequest(event.id, ec.club_id, true))}>Accept</Button>
@@ -943,6 +974,32 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
           </Field>
         </FormCard>
       )}
+      {managesOwners && (
+        <FormCard
+          compact
+          onSubmit={addClub}
+          actions={<Button type="primary" htmlType="submit" disabled={busy || !newClub.name.trim() || newClub.owners.length === 0}>Add club</Button>}
+        >
+          <Field label="New club name">
+            <Input value={newClub.name} onChange={(e) => setNewClub({ ...newClub, name: e.target.value })} placeholder="e.g. Riverside Boxing" />
+          </Field>
+          <Field label="Club owners">
+            <Select
+              mode="multiple"
+              aria-label="Club owners"
+              value={newClub.owners}
+              onChange={(owners) => setNewClub({ ...newClub, owners })}
+              placeholder="Choose people…"
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              options={users.map((u) => ({ value: u.id, label: userLabel(u) }))}
+            />
+          </Field>
+          <FullRow>
+            <Muted>The club joins this event straight away. Owners must have signed in at least once.</Muted>
+          </FullRow>
+        </FormCard>
+      )}
       {may.open && canJoin.length > 0 && (
         <Space wrap className="gap">
           {canJoin.map((c) => (
@@ -954,7 +1011,48 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
       )}
       <ErrorAlert>{error}</ErrorAlert>
       {rows.length > 0 && <DataTable rowKey="club_id" columns={columns} dataSource={rows} />}
+      <ClubOwnersDialog
+        club={ownersOf ? clubById[ownersOf] : null}
+        owners={ownersOf ? ownersOfClub(ownersOf) : []}
+        users={users}
+        busy={busy}
+        error={error}
+        onAdd={(userId) => run(() => api.addEventClubOwner(event.id, ownersOf, userId))}
+        onRemove={(member) => removeOwner(ownersOf, member)}
+        onClose={() => setOwnersOf(null)}
+      />
     </Section>
+  )
+}
+
+// Add or remove the owners of one club in the event.
+function ClubOwnersDialog({ club, owners, users, busy, error, onAdd, onRemove, onClose }) {
+  const [choice, setChoice] = useState('')
+  const ownerIds = new Set(owners.map((m) => m.user_id))
+  const addable = users.filter((u) => !ownerIds.has(u.id))
+  return (
+    <Modal open={Boolean(club)} title={`Owners of ${club?.name ?? ''}`} footer={<Button onClick={onClose}>Done</Button>} onCancel={onClose}>
+      <ErrorAlert>{error}</ErrorAlert>
+      <DataTable
+        rowKey="user_id"
+        columns={[
+          { title: 'Owner', key: 'name', render: (_, m) => personName(m.user) },
+          { title: 'Email', key: 'email', render: (_, m) => m.user?.email ?? '' },
+          {
+            key: 'actions',
+            className: 'actions',
+            render: (_, m) => (
+              <Button size="small" disabled={busy || owners.length < 2} title={owners.length < 2 ? 'A club needs at least one owner' : undefined} onClick={() => onRemove(m)}>Remove</Button>
+            ),
+          },
+        ]}
+        dataSource={owners}
+      />
+      <Space.Compact style={{ width: '100%', marginTop: 12 }}>
+        <Pick value={choice} onChange={setChoice} placeholder="Add an owner…" options={addable.map((u) => ({ value: u.id, label: userLabel(u) }))} />
+        <Button type="primary" disabled={busy || !choice} onClick={() => { onAdd(choice); setChoice('') }}>Add</Button>
+      </Space.Compact>
+    </Modal>
   )
 }
 
