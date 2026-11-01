@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { Button, Collapse, Space, Table, Upload } from 'antd'
+import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
 import { downloadCsv, parseCsv, rowsToRecords } from './csv'
 import { checkRecords, importSpecs } from './imports'
+import { ErrorAlert, Muted, Paragraph, SuccessAlert, Text } from './ui'
 
 const count = (n, spec) => `${n} ${n === 1 ? spec.singular : spec.label}`
 
@@ -12,9 +15,7 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
 
-  async function chooseFile(event) {
-    const file = event.target.files[0]
-    event.target.value = ''
+  async function chooseFile(file) {
     if (!file) return
     const { columns, records } = rowsToRecords(parseCsv(await file.text()))
     setFileName(file.name)
@@ -42,90 +43,89 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
   const ready = check?.rows.filter((row) => row.errors.length === 0).length ?? 0
   const problems = (check?.rows.length ?? 0) - ready
 
-  return (
-    <details className="csv-import">
-      <summary>Bulk add {spec.label} from a CSV file</summary>
-      <p className="muted">
+  const columns = [
+    { title: 'Line', dataIndex: 'line', key: 'line' },
+    {
+      title: 'Problems',
+      key: 'problems',
+      width: 240,
+      render: (_, row) => (row.errors.length ? <Text type="danger">{row.errors.join('; ')}</Text> : 'OK'),
+    },
+    ...spec.columns.map((c) => ({ title: c, key: c, render: (_, row) => row.values[c] || '—' })),
+  ]
+
+  const body = (
+    <>
+      <Muted>
         Columns: {spec.columns.map((c, i) => (
           <span key={c}>{i > 0 && ', '}<code>{c}</code>{spec.required.includes(c) && ' (required)'}</span>
         ))}. The first row must be the column names.
-      </p>
-      <div className="csv-actions">
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => downloadCsv(`${kind}-template.csv`, [spec.columns, ...spec.example])}
-        >
+      </Muted>
+      <Space wrap>
+        <Button icon={<DownloadOutlined />} onClick={() => downloadCsv(`${kind}-template.csv`, [spec.columns, ...spec.example])}>
           Download template
-        </button>
-        <label className="file-button">
-          Choose CSV file
-          <input type="file" accept=".csv,text/csv" onChange={chooseFile} />
-        </label>
-      </div>
+        </Button>
+        <Upload accept=".csv,text/csv" showUploadList={false} beforeUpload={(file) => { chooseFile(file); return false }}>
+          <Button icon={<UploadOutlined />}>Choose CSV file</Button>
+        </Upload>
+      </Space>
 
       {check?.missingColumns.length > 0 && (
-        <p className="error">
+        <ErrorAlert>
           {fileName} is missing the column{check.missingColumns.length > 1 ? 's' : ''} {check.missingColumns.join(', ')}.
           Download the template to see the expected layout.
-        </p>
+        </ErrorAlert>
       )}
 
       {check && check.missingColumns.length === 0 && (
         <>
-          <p>
+          <Paragraph style={{ marginTop: 12 }}>
             <strong>{fileName}</strong>: {ready} ready to add
-            {problems > 0 && <span className="error">, {problems} with problems that will be skipped</span>}.
-          </p>
+            {problems > 0 && <Text type="danger">, {problems} with problems that will be skipped</Text>}.
+          </Paragraph>
           {check.rows.length > 0 && (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Line</th>
-                    <th>Problems</th>
-                    {spec.columns.map((c) => <th key={c}>{c}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {check.rows.map((row) => (
-                    <tr key={row.line} className={row.errors.length ? 'row-error' : undefined}>
-                      <td>{row.line}</td>
-                      <td className="problems">{row.errors.length ? row.errors.join('; ') : <span className="success">OK</span>}</td>
-                      {spec.columns.map((c) => <td key={c}>{row.values[c] || '—'}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              size="small"
+              rowKey="line"
+              columns={columns}
+              dataSource={check.rows}
+              pagination={false}
+              scroll={{ x: true }}
+              rowClassName={(row) => (row.errors.length ? 'row-error' : '')}
+            />
           )}
-          <div className="csv-actions">
-            <button type="button" disabled={ready === 0 || importing} onClick={runImport}>
+          <Space wrap style={{ marginTop: 12 }}>
+            <Button type="primary" disabled={ready === 0} loading={importing} onClick={runImport}>
               {importing ? 'Adding…' : `Add ${count(ready, spec)}`}
-            </button>
-            <button type="button" className="secondary" disabled={importing} onClick={() => setCheck(null)}>
-              Cancel
-            </button>
-          </div>
+            </Button>
+            <Button disabled={importing} onClick={() => setCheck(null)}>Cancel</Button>
+          </Space>
         </>
       )}
 
       {result && (
-        <div>
-          <p className="success">
+        <>
+          <SuccessAlert>
             Added {count(result.added, spec)}.
             {result.skipped > 0 && ` Skipped ${result.skipped} with problems.`}
-          </p>
+          </SuccessAlert>
           {result.failed.length > 0 && (
-            <>
-              <p className="error">These rows couldn't be saved:</p>
-              <ul className="error">
+            <ErrorAlert>
+              These rows couldn't be saved:
+              <ul style={{ margin: 0 }}>
                 {result.failed.map((f) => <li key={f.line}>Line {f.line} ({f.name}): {f.message}</li>)}
               </ul>
-            </>
+            </ErrorAlert>
           )}
-        </div>
+        </>
       )}
-    </details>
+    </>
+  )
+
+  return (
+    <Collapse
+      className="gap"
+      items={[{ key: 'csv', label: <strong>Bulk add {spec.label} from a CSV file</strong>, children: body }]}
+    />
   )
 }

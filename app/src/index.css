@@ -1,544 +1,296 @@
-/* Plain black on white everywhere; no dark theme. */
+/* Black on white everywhere; no dark theme ever. Ant Design draws the components (theme in theme.js);
+   this file lays them out in the scoreboard style. See .claude/skills/frontend-style/SKILL.md. */
 :root {
   color-scheme: light;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: #000;
   background: #fff;
+  --text: #000;
+  --text-muted: rgba(0, 0, 0, 0.65);
+  --border-subtle: rgba(0, 0, 0, 0.1);
+  --bg-subtle: #fafafa;
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.12);
+  --inset-highlight: rgba(255, 255, 255, 0.7);
+  --corner-red: #b91c1c;
+  --corner-blue: #1d4ed8;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --page-width: 1280px;
 }
 
-a {
-  color: #000;
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
 }
 
 body {
-  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #fff;
+  color: #000;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Gloss on primary buttons, as in scoreboard. */
+.ant-btn-primary:not(:disabled) {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 55%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Signed-out screens: one card in the middle. */
+.center-screen {
   min-height: 100vh;
   display: grid;
   place-items: center;
-}
-
-.card {
-  background: #fff;
-  padding: 2rem 2.5rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgb(0 0 0 / 0.08);
-  text-align: center;
-  max-width: 360px;
-  margin: 1rem;
-}
-
-h1 {
-  margin-top: 0;
-}
-
-button {
-  font: inherit;
-  padding: 0.6rem 1.2rem;
-  border: none;
-  border-radius: 8px;
-  background: #000;
-  color: #fff;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #333;
-}
-
-.error {
-  color: #b00000;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-button.secondary {
-  background: transparent;
-  color: inherit;
-  border: 1px solid #000;
-}
-
-button.secondary:hover {
-  background: rgb(0 0 0 / 0.05);
-}
-
-input,
-select {
-  font: inherit;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid #000;
-  border-radius: 8px;
-  background: inherit;
-  color: inherit;
-}
-
-.stack {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.muted {
-  color: #444;
-}
-
-.success {
-  color: #000;
-}
-
-/* Signed-in layout */
-
-body:has(.page) {
-  place-items: start stretch;
-}
-
-.page {
-  width: 100%;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1.5rem;
-  background: #fff;
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.06);
-}
-
-.topbar .who {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.page > .card {
-  margin: 3rem auto;
-}
-
-.panel {
-  max-width: 960px;
-  margin: 1.5rem auto;
-  padding: 0 1rem;
-}
-
-.tabs {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid #000;
-  margin-bottom: 1.5rem;
-}
-
-.tab {
-  background: transparent;
-  color: inherit;
-  border-radius: 8px 8px 0 0;
-  border-bottom: 2px solid transparent;
-}
-
-.tab:hover {
-  background: rgb(0 0 0 / 0.05);
-}
-
-.tab.active {
-  border-bottom-color: #000;
-  font-weight: 600;
-}
-
-.row-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 0.75rem;
-  background: #fff;
-  padding: 1rem 1.25rem 1.25rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgb(0 0 0 / 0.06);
-}
-
-.row-form h2 {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 1.1rem;
-}
-
-.row-form label {
-  display: grid;
-  gap: 0.25rem;
-  font-size: 0.9rem;
-  flex: 1 1 180px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-th,
-td {
-  text-align: left;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid #ccc;
-}
-
-th {
-  font-size: 0.85rem;
-  color: #444;
-}
-
-.badge {
-  display: inline-block;
-  font-size: 0.8rem;
-  padding: 0.1rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid #000;
-  background: #fff;
-  color: #000;
-}
-
-.badge.active {
-  background: #fff;
-  color: #000;
-}
-
-.badge.invited {
-  background: #fff;
-  color: #000;
-}
-
-.badge.disabled {
-  background: #fff;
-  color: #333;
-}
-
-.demo-banner {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.4rem 1rem;
-  font-size: 0.9rem;
-  background: #fff;
-  color: #000;
-}
-
-button.link {
-  background: none;
-  color: inherit;
-  padding: 0;
-  text-decoration: underline;
-}
-
-button.link:hover {
-  background: none;
-}
-
-/* CSV import */
-
-.csv-import {
-  margin-top: 1rem;
-  padding: 0.75rem 1.25rem;
-  border: 1px dashed #000;
-  border-radius: 12px;
-}
-
-.csv-import summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.csv-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin: 0.75rem 0;
-}
-
-.file-button {
-  display: inline-block;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  background: #fff;
-  color: #000;
-  cursor: pointer;
-}
-
-.file-button:hover {
-  background: rgb(0 0 0 / 0.05);
-}
-
-.file-button input {
-  display: none;
-}
-
-.table-scroll {
-  overflow-x: auto;
-}
-
-tr.row-error td {
-  background: rgb(0 0 0 / 0.05);
-}
-
-code {
-  font-size: 0.9em;
-}
-
-td.problems {
-  min-width: 14rem;
-}
-
-/* Navigation and events */
-
-.nav {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.nav .tab.active {
-  border-bottom: 2px solid #000;
-}
-
-.heading-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.heading-row h1 {
-  margin: 0;
-  margin-right: auto;
-}
-
-button.link.back {
-  display: inline-block;
-  margin-bottom: 0.75rem;
-}
-
-button.link:disabled {
-  opacity: 0.5;
-}
-
-button.secondary.danger {
-  color: #b00000;
-  border-color: #b00000;
-}
-
-td .badge {
-  margin-left: 0.5rem;
-}
-
-td.actions {
-  text-align: right;
-}
-
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
-  margin: 0 0 1rem;
-}
-
-.facts dt {
-  font-size: 0.85rem;
-  color: #444;
-}
-
-.facts dd {
-  margin: 0.15rem 0 0;
-  font-weight: 500;
-}
-
-.event-form {
-  display: grid;
-  gap: 1rem;
-}
-
-.row-form .full {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.row-form table.schedule input {
-  width: 100%;
+  padding: 16px;
   box-sizing: border-box;
 }
 
-.form-actions {
-  display: flex;
-  gap: 0.75rem;
+.center-card.ant-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md), inset 0 1px 0 var(--inset-highlight);
 }
 
-.demo-banner label {
+/* App shell: sticky white header with a soft shadow and pill nav. */
+.app-header.ant-layout-header {
+  height: auto;
+  min-height: 64px;
+  line-height: normal;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.app-header-inner {
+  max-width: var(--page-width);
+  margin: 0 auto;
+  min-height: 64px;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 20px;
 }
 
-.demo-banner select {
-  padding: 0.15rem 0.4rem;
-  border-color: #000;
+.app-header .brand {
+  font-weight: 700;
+  font-size: 18px;
+  white-space: nowrap;
 }
 
-@media (max-width: 640px) {
-  .topbar {
-    flex-wrap: wrap;
-    padding: 0.75rem 1rem;
-  }
-  .demo-banner {
-    flex-wrap: wrap;
-  }
+.pill-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
-td.actions button.link + button.link {
-  margin-left: 0.75rem;
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
 }
 
-.badge.role-owner {
-  background: #fff;
-  color: #333;
+.pill:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
 }
 
-.badge.role-admin {
-  background: #fff;
-  color: #000;
+.pill.active {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--border-subtle);
+  box-shadow: inset 0 1px 0 var(--inset-highlight);
 }
 
-.badge.role-coach {
-  background: #fff;
-  color: #000;
+.pill:focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 2px;
 }
 
-td select {
-  padding: 0.25rem 0.4rem;
+.app-header .who {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 
-td .badge.category {
-  margin-left: 0;
+.demo-banner.ant-alert {
+  border-radius: 0;
+  border-width: 0 0 1px;
 }
 
-.badge.category.open {
-  background: #fff;
-  color: #000;
-}
-
-.badge.category.warning {
-  background: #fff;
-  color: #000;
-}
-
-/* Event lifecycle (stage 1) */
-.badge.status-requested {
-  background: #fff;
-  color: #000;
-}
-
-.badge.status-active {
-  background: #fff;
-  color: #000;
-}
-
-.badge.status-done {
-  background: #fff;
-  color: #000;
-}
-
-.badge.status-cancelled {
-  background: #fff;
-  color: #333;
-}
-
-.heading-row .badge {
-  font-size: 0.9rem;
-}
-
-.notice {
-  border: 1px solid #000;
-  background: #fff;
-  color: #000;
-  padding: 0.6rem 0.9rem;
-  border-radius: 8px;
-}
-
-.notice.warning {
-  background: #fff;
-  color: #000;
-}
-
-.notice a,
-.notice button.link {
-  color: inherit;
-}
-
-.admin-actions {
+.demo-banner .ant-alert-title {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin: 0 0 1rem;
-}
-
-.link-button,
-.file-button {
-  display: inline-block;
-  padding: 0.6rem 1.2rem;
-  border: 1px solid #000;
-  border-radius: 8px;
-  color: inherit;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.file-button.disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-button.link.danger {
-  color: #b00000;
-}
-
-.row-form.compact {
-  margin: 0 0 1rem;
-  padding: 0.75rem 1rem;
-}
-
-.row-form .checkbox {
-  display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 0.5rem;
+  gap: 12px;
 }
 
-.row-form .checkbox input {
-  width: auto;
+.panel {
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 16px 12px 48px;
+  box-sizing: border-box;
+}
+
+/* Page title row */
+.page-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.page-heading h1.ant-typography {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.back.ant-btn {
+  padding-left: 0;
+}
+
+.gap {
+  margin: 12px 0;
+}
+
+/* Cards: rounded with a soft shadow, as scoreboard's Card. */
+.section-card.ant-card,
+.bout.ant-card,
+.public-event.ant-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md), inset 0 1px 0 var(--inset-highlight);
+  margin-bottom: 16px;
+}
+
+.section-card.ant-card > .ant-card-body {
+  padding: 16px;
+}
+
+.section-card > .ant-card-body > .ant-typography:last-child {
+  margin-bottom: 0;
+}
+
+/* Forms: a card on the page, a flat grey box inside a section. */
+.form-card.ant-card {
+  margin: 0 0 16px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md), inset 0 1px 0 var(--inset-highlight);
+}
+
+.section-card .form-card.ant-card,
+.bout .form-card.ant-card {
+  background: var(--bg-subtle);
+  box-shadow: none;
+  border-radius: var(--radius-md);
+}
+
+.form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  align-items: flex-start;
+}
+
+.form-grid > .field {
+  flex: 1 1 200px;
+  margin-bottom: 12px;
+}
+
+.form-grid > .full,
+.form-grid > .field.full {
+  flex-basis: 100%;
+}
+
+.form-grid > .full {
+  margin-bottom: 12px;
+}
+
+.form-grid > .full .ant-typography {
+  margin-bottom: 0;
+}
+
+.form-card.compact .form-grid > .field {
+  margin-bottom: 8px;
+}
+
+.form-actions {
+  margin-top: 4px;
+}
+
+/* Tags: outlined and neutral. Strong is solid black; muted is faint. */
+.badge.ant-tag {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.25);
+  color: #000;
+  margin-inline-end: 6px;
+}
+
+.badge.ant-tag.muted {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: var(--text-muted);
+}
+
+.badge.ant-tag.strong {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+
+.ant-table td.actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ant-table tr.row-error td {
+  background: var(--bg-subtle);
 }
 
 .poster {
   display: block;
   max-width: min(100%, 360px);
   max-height: 480px;
-  border-radius: 8px;
-  margin-bottom: 0.75rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
 }
 
+/* Public page */
 .public-events {
   display: grid;
-  gap: 1.5rem;
+  gap: 8px;
 }
 
-.public-event {
+.public-event .ant-card-body {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
-  background: #fff;
-  padding: 1.25rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgb(0 0 0 / 0.06);
-}
-
-.public-event h2 {
-  margin: 0 0 0.25rem;
+  gap: 20px;
 }
 
 .public-event .poster {
@@ -546,124 +298,75 @@ button.link.danger {
   margin: 0;
 }
 
-.public-event .when {
-  margin: 0 0 0.75rem;
-  font-weight: 500;
-}
-
 .day-list {
   margin: 0;
-  padding-left: 1.1rem;
+  padding-left: 18px;
   display: grid;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
-/* Clubs (stage 2) */
-.badge.transfer-accepted,
-.badge.transfer-moved {
-  background: #fff;
-  color: #000;
-}
-
-.badge.transfer-declined {
-  background: #fff;
-  color: #333;
-}
-
-td.actions button.link + span,
-td.actions span + button.link {
-  margin-left: 0.75rem;
-}
-
-/* Entries (stage 3) */
-.badge.club-accepted,
-.badge.late-accepted {
-  background: #fff;
-  color: #000;
-}
-
-.badge.club-requested,
-.badge.late-pending {
-  background: #fff;
-  color: #000;
-}
-
-.badge.club-declined,
-.badge.late-declined {
-  background: #fff;
-  color: #333;
-}
-
-.inline-edit {
+/* Day times form */
+.schedule-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 8px;
   align-items: center;
+  margin-bottom: 8px;
 }
 
-.inline-edit input {
-  width: 8rem;
-  padding: 0.25rem 0.4rem;
+.schedule-row .ant-input {
+  flex: 1 1 12rem;
 }
 
-/* Bouts (stage 4) */
+.schedule-row .ant-picker {
+  width: 8rem !important;
+}
+
+/* Bouts: red and blue are the only colours, and only for the corners. */
 .bout-list {
   display: grid;
-  gap: 0.75rem;
-  margin: 1rem 0;
-}
-
-.bout {
-  border: 1px solid #000;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  background: #fff;
+  gap: 0;
+  margin: 16px 0 0;
 }
 
 .bout.status-rejected {
   border-style: dashed;
-}
-
-.bout-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.bout-number {
-  font-weight: 600;
-}
-
-.bout-order {
-  margin-left: auto;
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
+  border-color: #000;
 }
 
 .bout-corners {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  gap: 0.75rem;
+  gap: 12px;
   align-items: start;
-  margin: 0.6rem 0;
+  margin-bottom: 8px;
 }
 
 .corner {
   display: grid;
-  gap: 0.15rem;
+  gap: 2px;
 }
 
 .corner.red {
-  border-left: 4px solid #000;
-  padding-left: 0.5rem;
+  border-left: 4px solid var(--corner-red);
+  padding-left: 8px;
 }
 
 .corner.blue {
-  border-right: 4px double #000;
-  padding-right: 0.5rem;
+  border-right: 4px solid var(--corner-blue);
+  padding-right: 8px;
   text-align: right;
+  justify-items: end;
+}
+
+.corner-label.red {
+  color: var(--corner-red);
+  font-weight: 600;
+}
+
+.corner-label.blue {
+  color: var(--corner-blue);
+  font-weight: 600;
 }
 
 .vs {
@@ -674,33 +377,57 @@ td.actions span + button.link {
 .approvals {
   list-style: none;
   padding: 0;
-  margin: 0.4rem 0;
+  margin: 8px 0;
   display: grid;
-  gap: 0.2rem;
-}
-
-.bout-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  gap: 2px;
 }
 
 .comments {
-  border-top: 1px solid #ccc;
-  margin-top: 0.6rem;
-  padding-top: 0.4rem;
-}
-
-.comments .inline-edit input {
-  width: min(28rem, 100%);
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 12px;
+  padding-top: 12px;
 }
 
 .weigh-in {
-  margin-top: 1.5rem;
+  margin-top: 24px;
 }
 
-.weigh-in input[type='number'] {
-  width: 6rem;
+@media (prefers-reduced-motion: reduce) {
+  .pill {
+    transition: none;
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  /* Stop iOS Safari zooming in on focus. */
+  input,
+  select,
+  textarea,
+  .ant-input,
+  .ant-select-selector,
+  .ant-input-number-input,
+  .ant-picker-input > input {
+    font-size: 16px !important;
+  }
+
+  .app-header-inner {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .pill-nav {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .who-name {
+    display: none;
+  }
 }
 
 @media (max-width: 600px) {
@@ -710,9 +437,30 @@ td.actions span + button.link {
 
   .corner.blue {
     text-align: left;
+    justify-items: start;
     border-right: none;
-    border-left: 4px double #000;
+    border-left: 4px solid var(--corner-blue);
     padding-right: 0;
-    padding-left: 0.5rem;
+    padding-left: 8px;
   }
+}
+
+/* A bout inside the Bouts section: flat, so cards don't stack shadows. */
+.section-card .bout.ant-card {
+  box-shadow: none;
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+
+.ant-descriptions.gap,
+.panel > .ant-descriptions {
+  margin-bottom: 16px;
+}
+
+.ant-table .ant-btn-link {
+  font-weight: 500;
+}
+
+.form-card.compact .form-grid > .field {
+  flex: 0 1 420px;
 }

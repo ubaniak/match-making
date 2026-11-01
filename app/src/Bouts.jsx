@@ -6,6 +6,10 @@ import { formatWeight } from './athletes'
 import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { checkMatch } from './matching'
+import { Button, Card as AntCard, Collapse, Input, Space, Table, Tabs } from 'antd'
+import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
+import { askConfirm, askText, tableProps } from './dialogs'
+import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
 const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
 const statusLabels = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
@@ -53,7 +57,7 @@ export default function EventBouts({ event, may, clubs, profile, onEntriesChange
     }
   }
 
-  if (!data) return error ? <p className="error">{error}</p> : null
+  if (!data) return error ? <ErrorAlert>{error}</ErrorAlert> : null
 
   const officialRole = data.officials.find((o) => o.user_id === profile?.id)?.role ?? null
   const ownedClubs = new Set(clubs.filter((c) => c.members.some((m) => m.user_id === profile?.id && m.role === 'owner' && m.status === 'active')).map((c) => c.id))
@@ -70,7 +74,7 @@ export default function EventBouts({ event, may, clubs, profile, onEntriesChange
   return (
     <>
       <Officials event={event} officials={data.officials} canEdit={may.edit} busy={busy} run={run} />
-      {error && <p className="error">{error}</p>}
+      <ErrorAlert>{error}</ErrorAlert>
       {seesBouts && ['active', 'done'].includes(event.status) && (
         <Card event={event} data={data} rights={rights} busy={busy} run={run} />
       )}
@@ -89,36 +93,41 @@ function Officials({ event, officials, canEdit, busy, run }) {
   }, [canEdit])
   const byRole = Object.fromEntries(officials.map((o) => [o.role, o]))
   const missing = ['chief', 'deputy'].filter((r) => !byRole[r])
+  const options = [{ value: '', label: 'Not chosen' }, ...users.map((u) => ({ value: u.id, label: u.name ? `${u.name} (${u.email})` : u.email }))]
 
   return (
-    <section>
-      <h2>Officials</h2>
+    <Section title="Officials">
       {missing.length > 0 && (
-        <p className="muted">Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</p>
+        <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
       )}
-      <dl className="facts">
-        {['chief', 'deputy'].map((role) => (
-          <div key={role}>
-            <dt>{officialLabels[role]}</dt>
-            <dd>
-              {canEdit ? (
-                <select
-                  aria-label={officialLabels[role]}
-                  value={byRole[role]?.user_id ?? ''}
-                  disabled={busy}
-                  onChange={(e) => run(() => api.setEventOfficial(event.id, role, e.target.value))}
-                >
-                  <option value="">Not chosen</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>)}
-                </select>
-              ) : (
-                personName(byRole[role]?.user) || 'Not chosen'
-              )}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+      {canEdit ? (
+        <FormCard compact>
+          {['chief', 'deputy'].map((role) => (
+            <Field key={role} label={officialLabels[role]}>
+              <Pick
+                allowEmpty
+                aria-label={officialLabels[role]}
+                value={byRole[role]?.user_id ?? ''}
+                disabled={busy}
+                onChange={(value) => run(() => api.setEventOfficial(event.id, role, value))}
+                options={options}
+              />
+            </Field>
+          ))}
+        </FormCard>
+      ) : (
+        <AntCard size="small" className="form-card">
+          <Space size="large" wrap>
+            {['chief', 'deputy'].map((role) => (
+              <span key={role}>
+                <Text type="secondary">{officialLabels[role]}: </Text>
+                <Text strong>{byRole[role] ? personName(byRole[role].user) : 'Not chosen'}</Text>
+              </span>
+            ))}
+          </Space>
+        </AntCard>
+      )}
+    </Section>
   )
 }
 
@@ -154,18 +163,18 @@ function Card({ event, data, rights, busy, run }) {
   }
 
   return (
-    <section>
-      <h2>Bouts</h2>
+    <Section title="Bouts">
       {days.length > 1 && (
-        <nav className="tabs">
-          {days.map((d) => (
-            <button key={d} className={d === day ? 'tab active' : 'tab'} onClick={() => { setDay(d); setRematch(null) }}>
-              {formatShortDay(d)} ({data.bouts.filter((b) => b.day === d && b.status !== 'cancelled').length})
-            </button>
-          ))}
-        </nav>
+        <Tabs
+          activeKey={day}
+          onChange={(d) => { setDay(d); setRematch(null) }}
+          items={days.map((d) => ({
+            key: d,
+            label: `${formatShortDay(d)} (${data.bouts.filter((b) => b.day === d && b.status !== 'cancelled').length})`,
+          }))}
+        />
       )}
-      {weighInStarted && <p className="muted">The weigh-in for {formatDay(day)} has started, so only the Chief Official or Deputy can make or change bouts.</p>}
+      {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only the Chief Official or Deputy can make or change bouts.</Muted>}
 
       {canMatch && (
         <MatchForm
@@ -182,7 +191,7 @@ function Card({ event, data, rights, busy, run }) {
       )}
 
       {live.length === 0 ? (
-        <p className="muted">No bouts on {formatDay(day)} yet.</p>
+        <Muted>No bouts on {formatDay(day)} yet.</Muted>
       ) : (
         <div className="bout-list">
           {live.map((b, i) => (
@@ -196,23 +205,29 @@ function Card({ event, data, rights, busy, run }) {
       )}
 
       {cancelled.length > 0 && (
-        <details>
-          <summary>Cancelled bouts ({cancelled.length})</summary>
-          <ul>
-            {cancelled.map((b) => (
-              <li key={b.id}>{b.red?.name ?? '?'} vs {b.blue?.name ?? '?'}{b.cancel_reason ? ` — ${b.cancel_reason}` : ''}</li>
-            ))}
-          </ul>
-        </details>
+        <Collapse
+          className="gap"
+          items={[{
+            key: 'cancelled',
+            label: `Cancelled bouts (${cancelled.length})`,
+            children: (
+              <ul style={{ margin: 0 }}>
+                {cancelled.map((b) => (
+                  <li key={b.id}>{b.red?.name ?? '?'} vs {b.blue?.name ?? '?'}{b.cancel_reason ? ` — ${b.cancel_reason}` : ''}</li>
+                ))}
+              </ul>
+            ),
+          }]}
+        />
       )}
 
       {rights.official && rights.cardOpen && (
         <WeighIn event={event} day={day} bouts={live} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
       )}
       {!rights.official && weighIns.length > 0 && (
-        <p className="muted">Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</p>
+        <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
       )}
-    </section>
+    </Section>
   )
 }
 
@@ -227,16 +242,14 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
   const red = byId[redId]
   const blue = byId[blueId]
   const check = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
-  const options = (other) => event.athletes.filter((a) => a.id !== other)
-
-  function option(a) {
+  const options = (other) => event.athletes.filter((a) => a.id !== other).map((a) => {
     const busyThatDay = taken.has(a.id)
-    return (
-      <option key={a.id} value={a.id} disabled={busyThatDay}>
-        {a.name} · {a.club ?? '—'} · {categoryText(a, event.start_date)}{busyThatDay ? ' (already boxing this day)' : ''}
-      </option>
-    )
-  }
+    return {
+      value: a.id,
+      disabled: busyThatDay,
+      label: `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${busyThatDay ? ' (already boxing this day)' : ''}`,
+    }
+  })
 
   async function save(e) {
     e.preventDefault()
@@ -251,34 +264,30 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
   const suggestion = red?.suggested_opponent_name ? `${red.name}'s club suggests ${[red.suggested_opponent_name, red.suggested_opponent_club].filter(Boolean).join(', ')}.` : null
 
   return (
-    <form onSubmit={save} className="row-form">
-      <h2>{bout ? `Re-match bout ${bout.red?.name ?? ''} vs ${bout.blue?.name ?? ''}` : `Match a bout on ${formatDay(day)}`}</h2>
-      <label>
-        Red corner
-        <select value={redId} onChange={(e) => setRedId(e.target.value)}>
-          <option value="">Choose an athlete…</option>
-          {options(blueId).map(option)}
-        </select>
-      </label>
-      <label>
-        Blue corner
-        <select value={blueId} onChange={(e) => setBlueId(e.target.value)}>
-          <option value="">Choose an athlete…</option>
-          {options(redId).map(option)}
-        </select>
-      </label>
-      {suggestion && <p className="muted full">{suggestion}</p>}
-      {check && check.blocks.map((b) => <p key={b} className="error full">{b}</p>)}
+    <FormCard
+      title={bout ? `Re-match bout ${bout.red?.name ?? ''} vs ${bout.blue?.name ?? ''}` : `Match a bout on ${formatDay(day)}`}
+      onSubmit={save}
+      actions={
+        <>
+          <Button type="primary" htmlType="submit" disabled={busy || !check || check.blocks.length > 0}>{bout ? 'Save re-match' : 'Make bout'}</Button>
+          {bout && <Button onClick={onCancel}>Cancel</Button>}
+        </>
+      }
+    >
+      <Field label={<span className="corner-label red">Red corner</span>}>
+        <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={options(blueId)} />
+      </Field>
+      <Field label={<span className="corner-label blue">Blue corner</span>}>
+        <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={options(redId)} />
+      </Field>
+      {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
+      {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
       {check && check.blocks.length === 0 && check.warnings.length > 0 && (
-        <p className="full">Check before approving: {check.warnings.join('; ')}.</p>
+        <FullRow><Text>Check before approving: {check.warnings.join('; ')}.</Text></FullRow>
       )}
-      {check && check.blocks.length === 0 && check.warnings.length === 0 && <p className="full">These two are a good match.</p>}
-      <div className="form-actions full">
-        <button type="submit" disabled={busy || !check || check.blocks.length > 0}>{bout ? 'Save re-match' : 'Make bout'}</button>
-        {bout && <button type="button" className="secondary" onClick={onCancel}>Cancel</button>}
-      </div>
-      {bout && <p className="muted full">Re-matching clears the bout's approvals; both corners and an official approve it again.</p>}
-    </form>
+      {check && check.blocks.length === 0 && check.warnings.length === 0 && <FullRow><Text strong>These two are a good match.</Text></FullRow>}
+      {bout && <FullRow><Muted>Re-matching clears the bout's approvals; both corners and an official approve it again.</Muted></FullRow>}
+    </FormCard>
   )
 }
 
@@ -306,19 +315,25 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
     return rights.siteAdmin || rights.ownedClubs.has(club) || (bout.after_weigh_in && Boolean(rights.officialRole))
   }
 
-  function decide(side, approve) {
+  async function decide(side, approve) {
     let note = null
     if (!approve) {
-      note = window.prompt('Why are you rejecting this bout? (optional)')
+      note = await askText('Why are you rejecting this bout? (optional)', { okText: 'Reject' })
       if (note === null) return
     }
     run(() => api.decideBout(bout.id, side, approve, note))
   }
 
-  function cancel() {
-    const reason = window.prompt(`Take ${bout.red?.name} vs ${bout.blue?.name} off the card? Give a reason (optional).`)
+  async function cancel() {
+    const reason = await askText(`Take ${bout.red?.name} vs ${bout.blue?.name} off the card? Give a reason (optional).`, { okText: 'Cancel bout' })
     if (reason === null) return
     run(() => api.cancelBout(bout.id, reason))
+  }
+
+  async function clearResult() {
+    if (await askConfirm('Remove this result? Both boxers\' bout counts go back down by one.', { okText: 'Remove result', danger: true })) {
+      run(() => api.clearResult(bout.id), { entries: true })
+    }
   }
 
   async function addComment(e) {
@@ -328,134 +343,154 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
 
   async function saveResult(e) {
     e.preventDefault()
+    if (!result.winner || !result.method) return
     if (await run(() => api.recordResult(bout.id, result.winner, result.method, result.note), { entries: true })) setResult(null)
   }
 
   const corner = (side, athlete, fallback, club) => (
     <div className={`corner ${side}`}>
-      <strong>{athlete?.name ?? fallback?.name ?? 'Unknown'}</strong>
-      <span className="muted">{club?.name ?? '—'}</span>
-      {athlete && <span className="muted">{categoryText(athlete, event.start_date)}{weights[athlete.id] != null ? ` · weighed ${formatWeight(weights[athlete.id])}` : ''}</span>}
-      {bout.winner === side && <span className="badge">Winner · {methodLabels[bout.method]}</span>}
+      <Text strong>{athlete?.name ?? fallback?.name ?? 'Unknown'}</Text>
+      <Text type="secondary">{club?.name ?? '—'}</Text>
+      {athlete && <Text type="secondary">{categoryText(athlete, event.start_date)}{weights[athlete.id] != null ? ` · weighed ${formatWeight(weights[athlete.id])}` : ''}</Text>}
+      {bout.winner === side && <span><Badge strong>Winner · {methodLabels[bout.method]}</Badge></span>}
     </div>
   )
 
+  const order = rights.owner && rights.cardOpen ? (
+    <Space size={4}>
+      {sessions.length > 0 && (
+        <Pick
+          allowEmpty
+          size="small"
+          style={{ width: 150 }}
+          aria-label="Session"
+          value={bout.session_starts_at?.slice(0, 5) ?? ''}
+          disabled={busy}
+          onChange={(v) => onSession(v || null)}
+          options={[{ value: '', label: 'No session' }, ...sessions.map((s) => ({ value: s.starts_at, label: s.label ? `${s.label} ${s.starts_at}` : s.starts_at }))]}
+        />
+      )}
+      <Button size="small" shape="circle" icon={<ArrowUpOutlined />} disabled={busy || index === 0} onClick={() => onMove(-1)} aria-label="Move up" />
+      <Button size="small" shape="circle" icon={<ArrowDownOutlined />} disabled={busy || index === count - 1} onClick={() => onMove(1)} aria-label="Move down" />
+    </Space>
+  ) : (
+    bout.session_starts_at && <Text type="secondary">Session {bout.session_starts_at.slice(0, 5)}</Text>
+  )
+
   return (
-    <article className={`bout status-${bout.status}`}>
-      <div className="bout-head">
-        <span className="bout-number">Bout {index + 1}</span>
-        <span className={`badge bout-${bout.status}`}>{statusLabels[bout.status]}</span>
-        {bout.needs_supervisor && <span className="badge">U17 v U19: needs the official's approval</span>}
-        {rights.owner && rights.cardOpen && (
-          <span className="bout-order">
-            {sessions.length > 0 && (
-              <select aria-label="Session" value={bout.session_starts_at?.slice(0, 5) ?? ''} disabled={busy} onChange={(e) => onSession(e.target.value || null)}>
-                <option value="">No session</option>
-                {sessions.map((s) => <option key={s.starts_at} value={s.starts_at}>{s.label ? `${s.label} ${s.starts_at}` : s.starts_at}</option>)}
-              </select>
-            )}
-            <button className="link" disabled={busy || index === 0} onClick={() => onMove(-1)} aria-label="Move up">↑</button>
-            <button className="link" disabled={busy || index === count - 1} onClick={() => onMove(1)} aria-label="Move down">↓</button>
-          </span>
-        )}
-        {!rights.owner && bout.session_starts_at && <span className="muted">Session {bout.session_starts_at.slice(0, 5)}</span>}
-      </div>
+    <AntCard
+      size="small"
+      className={`bout status-${bout.status}`}
+      title={
+        <Space size={8} wrap>
+          <span>Bout {index + 1}</span>
+          <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
+          {bout.needs_supervisor && <Badge>U17 v U19: needs the official's approval</Badge>}
+        </Space>
+      }
+      extra={order}
+    >
       <div className="bout-corners">
         {corner('red', red, bout.red, bout.red_club)}
         <span className="vs">vs</span>
         {corner('blue', blue, bout.blue, bout.blue_club)}
       </div>
-      {bout.warnings.length > 0 && <p className="muted">Gaps: {bout.warnings.join('; ')}.</p>}
+      {bout.warnings.length > 0 && <Muted>Gaps: {bout.warnings.join('; ')}.</Muted>}
       {recheck && recheck.blocks.length > 0 && !hasResult && (
-        <p className="error">After the weigh-in this bout no longer fits: {recheck.blocks.join(' ')}</p>
+        <ErrorAlert>After the weigh-in this bout no longer fits: {recheck.blocks.join(' ')}</ErrorAlert>
       )}
-      {bout.result_note && <p className="muted">Result note: {bout.result_note}</p>}
+      {bout.result_note && <Muted>Result note: {bout.result_note}</Muted>}
 
       <ul className="approvals">
         {['red', 'blue', 'official'].map((side) => {
           const a = approval[side]
           return (
             <li key={side}>
-              {sideLabels[side]}:{' '}
-              {a ? (
-                <span>{a.decision === 'approved' ? 'Approved' : 'Rejected'}{a.override ? ' by an official' : ''}{a.note ? ` (“${a.note}”)` : ''}</span>
-              ) : (
-                <span className="muted">Waiting</span>
-              )}
-              {canDecide(side) && (
-                <>
-                  {' '}
-                  {a?.decision !== 'approved' && <button className="link" disabled={busy} onClick={() => decide(side, true)}>Approve</button>}
-                  {' '}
-                  {a?.decision !== 'rejected' && <button className="link danger" disabled={busy} onClick={() => decide(side, false)}>Reject</button>}
-                </>
-              )}
+              <Space size={6} wrap>
+                <span className={side === 'official' ? undefined : `corner-label ${side}`}>{sideLabels[side]}:</span>
+                {a ? (
+                  <span>{a.decision === 'approved' ? 'Approved' : 'Rejected'}{a.override ? ' by an official' : ''}{a.note ? ` (“${a.note}”)` : ''}</span>
+                ) : (
+                  <Text type="secondary">Waiting</Text>
+                )}
+                {canDecide(side) && a?.decision !== 'approved' && <Button size="small" type="link" disabled={busy} onClick={() => decide(side, true)}>Approve</Button>}
+                {canDecide(side) && a?.decision !== 'rejected' && <Button size="small" type="link" danger disabled={busy} onClick={() => decide(side, false)}>Reject</Button>}
+              </Space>
             </li>
           )
         })}
       </ul>
 
-      <div className="bout-actions">
-        <button className="link" onClick={() => setShowComments(!showComments)}>
+      <Space size={4} wrap>
+        <Button size="small" onClick={() => setShowComments(!showComments)}>
           {showComments ? 'Hide comments' : `Comments (${bout.comments.length})`}
-        </button>
-        {canMatch && !hasResult && <button className="link" disabled={busy} onClick={onRematch}>Re-match</button>}
-        {canMatch && !hasResult && <button className="link danger" disabled={busy} onClick={cancel}>Cancel bout</button>}
+        </Button>
+        {canMatch && !hasResult && <Button size="small" disabled={busy} onClick={onRematch}>Re-match</Button>}
+        {canMatch && !hasResult && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
         {rights.official && bout.status === 'approved' && !result && (
-          <button className="link" disabled={busy} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>
+          <Button size="small" type="primary" disabled={busy} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>
             {hasResult ? 'Change result' : 'Record result'}
-          </button>
+          </Button>
         )}
         {rights.official && hasResult && (
-          <button className="link danger" disabled={busy} onClick={() => window.confirm('Remove this result? Both boxers\' bout counts go back down by one.') && run(() => api.clearResult(bout.id), { entries: true })}>
-            Remove result
-          </button>
+          <Button size="small" danger disabled={busy} onClick={clearResult}>Remove result</Button>
         )}
-      </div>
+      </Space>
 
       {result && (
-        <form onSubmit={saveResult} className="row-form compact">
-          <label>
-            Winner
-            <select required value={result.winner} onChange={(e) => setResult({ ...result, winner: e.target.value })}>
-              <option value="">Choose…</option>
-              <option value="red">{bout.red?.name} (red)</option>
-              <option value="blue">{bout.blue?.name} (blue)</option>
-            </select>
-          </label>
-          <label>
-            Method
-            <select required value={result.method} onChange={(e) => setResult({ ...result, method: e.target.value })}>
-              <option value="">Choose…</option>
-              {Object.entries(methodLabels).map(([key, labelText]) => <option key={key} value={key}>{labelText}</option>)}
-            </select>
-          </label>
-          <label>Note <span className="muted">(optional)</span><input value={result.note} onChange={(e) => setResult({ ...result, note: e.target.value })} /></label>
-          <div className="form-actions">
-            <button type="submit" disabled={busy}>Save result</button>
-            <button type="button" className="secondary" onClick={() => setResult(null)}>Cancel</button>
-          </div>
-          {!hasResult && <p className="muted full">Saving adds one to both boxers' bout counts.</p>}
-        </form>
+        <div style={{ marginTop: 12 }}>
+          <FormCard
+            compact
+            onSubmit={saveResult}
+            actions={
+              <>
+                <Button type="primary" htmlType="submit" disabled={busy || !result.winner || !result.method}>Save result</Button>
+                <Button onClick={() => setResult(null)}>Cancel</Button>
+              </>
+            }
+          >
+            <Field label="Winner">
+              <Pick
+                value={result.winner}
+                onChange={(winner) => setResult({ ...result, winner })}
+                placeholder="Choose…"
+                options={[{ value: 'red', label: `${bout.red?.name} (red)` }, { value: 'blue', label: `${bout.blue?.name} (blue)` }]}
+              />
+            </Field>
+            <Field label="Method">
+              <Pick
+                value={result.method}
+                onChange={(method) => setResult({ ...result, method })}
+                placeholder="Choose…"
+                options={Object.entries(methodLabels).map(([value, label]) => ({ value, label }))}
+              />
+            </Field>
+            <Field label="Note" hint="optional"><Input value={result.note} onChange={(e) => setResult({ ...result, note: e.target.value })} /></Field>
+            {!hasResult && <FullRow><Muted>Saving adds one to both boxers' bout counts.</Muted></FullRow>}
+          </FormCard>
+        </div>
       )}
 
       {showComments && (
         <div className="comments">
-          {bout.comments.length === 0 && <p className="muted">No comments yet.</p>}
+          {bout.comments.length === 0 && <Muted>No comments yet.</Muted>}
           {bout.comments.map((c) => (
             <p key={c.id}>
-              <strong>{personName(c.author)}</strong> <span className="muted">{new Date(c.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              <Text strong>{personName(c.author)}</Text>{' '}
+              <Text type="secondary">{new Date(c.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Text>
               <br />
               {c.body}
             </p>
           ))}
-          <form onSubmit={addComment} className="inline-edit">
-            <input aria-label="Comment" placeholder="Add a comment" value={comment} maxLength={1000} onChange={(e) => setComment(e.target.value)} />
-            <button type="submit" className="secondary" disabled={busy || !comment.trim()}>Post</button>
+          <form onSubmit={addComment}>
+            <Space.Compact style={{ width: '100%', maxWidth: 520 }}>
+              <Input aria-label="Comment" placeholder="Add a comment" value={comment} maxLength={1000} onChange={(e) => setComment(e.target.value)} />
+              <Button htmlType="submit" disabled={busy || !comment.trim()}>Post</Button>
+            </Space.Compact>
           </form>
         </div>
       )}
-    </article>
+    </AntCard>
   )
 }
 
@@ -483,51 +518,60 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
     })
   }
 
+  // Each row keeps its own form; the key resets it when a new weigh-in is recorded.
+  const columns = [
+    { title: 'Athlete', key: 'athlete', render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
+    { title: 'Entered', key: 'entered', render: (_, a) => formatWeight(a.weight_kg) },
+    {
+      title: 'Weigh-in',
+      key: 'form',
+      render: (_, a) => (
+        <WeighInForm key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} />
+      ),
+    },
+  ]
+
   return (
     <div className="weigh-in">
-      <h3>Weigh-in, {formatDay(day)}</h3>
+      <Title level={4}>Weigh-in, {formatDay(day)}</Title>
       {rows.length === 0 ? (
-        <p className="muted">Nobody is boxing this day yet.</p>
+        <Muted>Nobody is boxing this day yet.</Muted>
       ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr><th>Athlete</th><th>Entered</th><th>Weight (kg)</th><th>Medical</th><th>Note</th><th /></tr>
-            </thead>
-            <tbody>
-              {rows.map((a) => (
-                <WeighInRow key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table {...tableProps} rowKey="id" columns={columns} dataSource={rows} />
       )}
-      <p className="muted">A failed medical or a no-show takes the athlete's bouts off the card. A bout that no longer fits the weight allowance after the weigh-in is cancelled too.</p>
+      <Muted>A failed medical or a no-show takes the athlete's bouts off the card. A bout that no longer fits the weight allowance after the weigh-in is cancelled too.</Muted>
     </div>
   )
 }
 
-function WeighInRow({ athlete, recorded, busy, onSave }) {
+function WeighInForm({ athlete, recorded, busy, onSave }) {
   const [form, setForm] = useState({
     weight: recorded?.weight_kg ?? '', medical: recorded?.medical ?? 'pass', note: recorded?.note ?? '',
   })
   return (
-    <tr>
-      <td>{athlete.name}<br /><span className="muted">{athlete.club ?? '—'}</span></td>
-      <td>{formatWeight(athlete.weight_kg)}</td>
-      <td><input aria-label={`${athlete.name} weight`} type="number" step="0.1" min="10" max="250" value={form.weight} onChange={(e) => setForm({ ...form, weight: e.target.value })} /></td>
-      <td>
-        <select aria-label={`${athlete.name} medical`} value={form.medical} onChange={(e) => setForm({ ...form, medical: e.target.value })}>
-          {Object.entries(medicalLabels).map(([key, text]) => <option key={key} value={key}>{text}</option>)}
-        </select>
-      </td>
-      <td><input aria-label={`${athlete.name} note`} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></td>
-      <td className="actions">
-        <button className="secondary" disabled={busy || (form.medical === 'pass' && form.weight === '')} onClick={() => onSave(form)}>
-          {recorded ? 'Update' : 'Save'}
-        </button>
-        {recorded && <span className="muted"> {medicalLabels[recorded.medical]}</span>}
-      </td>
-    </tr>
+    <Space wrap size={6}>
+      <NumberInput
+        aria-label={`${athlete.name} weight`}
+        placeholder="kg"
+        step={0.1}
+        min={10}
+        max={250}
+        style={{ width: 90 }}
+        value={form.weight}
+        onChange={(weight) => setForm({ ...form, weight })}
+      />
+      <Pick
+        aria-label={`${athlete.name} medical`}
+        style={{ width: 110 }}
+        value={form.medical}
+        onChange={(medical) => setForm({ ...form, medical })}
+        options={Object.entries(medicalLabels).map(([value, label]) => ({ value, label }))}
+      />
+      <Input aria-label={`${athlete.name} note`} placeholder="Note" style={{ width: 160 }} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+      <Button disabled={busy || (form.medical === 'pass' && form.weight === '')} onClick={() => onSave(form)}>
+        {recorded ? 'Update' : 'Save'}
+      </Button>
+      {recorded && <Text type="secondary">{medicalLabels[recorded.medical]}</Text>}
+    </Space>
   )
 }
