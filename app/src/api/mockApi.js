@@ -235,6 +235,27 @@ function canSee(current, eventId) {
 const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
 const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
 const eventOpen = (event) => effectiveStatus(event) === 'active'
+// Mirrors can_invite_officials: site Admins and the event's Chief Official.
+const canInviteOfficials = (current, eventId) => isSiteAdmin() || officialRole(current, eventId) === 'chief'
+
+// Mirrors can_manage_event_clubs: the event's Owner or a site Admin, while the event is Active.
+function requireClubManager(current, eventId, what) {
+  const event = findEvent(current, eventId)
+  if (!isOwnerOf(current, eventId) || !eventOpen(event)) throw new Error(`Only the event's Owner or a site Admin can ${what}, while the event is Active`)
+}
+
+function requireClubInEvent(current, eventId, clubId) {
+  if (!current.eventClubs.some((ec) => ec.event_id === eventId && ec.club_id === clubId && ec.status === 'accepted')) throw new Error('That club isn\'t in this event')
+}
+
+// An active club owner, with no site Admin approval (only the functions above call this).
+function putClubOwner(current, clubId, userId) {
+  const user = findUser(current, userId)
+  if (!user || user.state !== 'Active') throw new Error('Pick someone who has signed in at least once')
+  const existing = current.clubMembers.find((m) => m.club_id === clubId && m.user_id === userId)
+  if (existing) Object.assign(existing, { role: 'owner', status: 'active' })
+  else current.clubMembers.push({ club_id: clubId, user_id: userId, role: 'owner', status: 'active' })
+}
 const entriesOpen = (event) => eventOpen(event) && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline))
 const stillRunning = (event) => ['requested', 'active'].includes(effectiveStatus(event))
 const now = () => new Date().toISOString()
@@ -1066,6 +1087,40 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  // The event's Owner (or a site Admin) creates a club that joins the event straight away.
+  async createEventClub(eventId, name, ownerIds) {
+    const current = data()
+    requireClubManager(current, eventId, 'add clubs')
+    if (!name?.trim()) throw new Error('Give the club a name')
+    if (!ownerIds?.length) throw new Error('Choose at least one club owner')
+    if (current.clubs.some((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())) throw new Error('There is already a club with that name. Invite it instead.')
+    const club = { id: crypto.randomUUID(), name: name.trim() }
+    current.clubs.push(club)
+    ownerIds.forEach((userId) => putClubOwner(current, club.id, userId))
+    current.eventClubs.push({ event_id: eventId, club_id: club.id, status: 'accepted', requested_at: now() })
+    write(DATA_KEY, current)
+    return club.id
+  },
+
+  async addEventClubOwner(eventId, clubId, userId) {
+    const current = data()
+    requireClubManager(current, eventId, 'add club owners')
+    requireClubInEvent(current, eventId, clubId)
+    putClubOwner(current, clubId, userId)
+    write(DATA_KEY, current)
+  },
+
+  async removeEventClubOwner(eventId, clubId, userId) {
+    const current = data()
+    requireClubManager(current, eventId, 'remove club owners')
+    requireClubInEvent(current, eventId, clubId)
+    if (!current.clubMembers.some((m) => m.club_id === clubId && m.role === 'owner' && m.status === 'active' && m.user_id !== userId)) {
+      throw new Error('A club needs at least one owner. Add another owner first.')
+    }
+    current.clubMembers = current.clubMembers.filter((m) => !(m.club_id === clubId && m.user_id === userId && m.role === 'owner'))
+    write(DATA_KEY, current)
+  },
+
   async removeEventClub(eventId, clubId) {
     const current = data()
     const event = findEvent(current, eventId)
@@ -1240,7 +1295,12 @@ export const mockApi = {
 
   async setEventOfficial(eventId, role, userId) {
     const current = data()
-    requireEditor(current, eventId)
+    if (role === 'chief') {
+      requireSiteAdmin('Only a site Admin can choose the Chief Official')
+    } else {
+      if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can choose the Deputy')
+      if (!isSiteAdmin() && !eventOpen(findEvent(current, eventId))) throw new Error('The Deputy can be changed while the event is Active')
+    }
     if (userId && !userAccepted(current, eventId, userId)) throw new Error('Pick an official who has accepted the invitation to this event')
     current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === eventId && o.role === role))
     if (userId) {
@@ -1252,10 +1312,10 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  // Official invitations: the same rules as the database functions in migration 14.
+  // Official invitations: the same rules as the database functions in migrations 14 and 21.
   async listInvitableOfficials(eventId) {
     const current = data()
-    if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner or a site Admin can invite officials')
+    if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can invite officials')
     return current.officials
       .filter((o) => o.invite_email)
       .map((o) => ({ id: o.id, name: o.name, email: o.invite_email, signed_in: Boolean(o.user_id) }))
@@ -1292,7 +1352,7 @@ export const mockApi = {
   async inviteOfficials(eventId, officialIds, respondBy) {
     const current = data()
     const event = findEvent(current, eventId)
-    if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner or a site Admin can invite officials')
+    if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can invite officials')
     if (!eventOpen(event)) throw new Error('Officials can be invited once the event is Active, and until it is over')
     if (respondBy && respondBy < todayIso(event.timezone)) throw new Error('The respond-by date has already passed')
     if (respondBy && respondBy > event.end_date) throw new Error('The respond-by date must be on or before the event\'s last day')
@@ -1328,7 +1388,7 @@ export const mockApi = {
     const today = todayIso(event.timezone)
     if (event.status !== 'active' || today >= event.start_date) throw new Error('Answers are locked once the event starts. Contact the event\'s Owner.')
     if (invite.status === 'pending' && invite.respond_by && today > invite.respond_by) {
-      throw new Error('The respond-by date has passed. Ask the event\'s Owner to invite you again.')
+      throw new Error('The respond-by date has passed. Ask a site Admin or the Chief Official to invite you again.')
     }
     let chosen = null
     let parts = null
@@ -1356,8 +1416,9 @@ export const mockApi = {
     const current = data()
     const invite = current.officialInvitations.find((i) => i.id === invitationId)
     if (!invite) return
-    requireEditor(current, invite.event_id)
+    if (!canInviteOfficials(current, invite.event_id)) throw new Error('Only a site Admin or the event\'s Chief Official can remove officials')
     const userId = current.officials.find((o) => o.id === invite.official_id)?.user_id
+    if (userId === currentUserId() && !isSiteAdmin()) throw new Error('Ask a site Admin to take you off this event')
     current.officialInvitations = current.officialInvitations.filter((i) => i.id !== invitationId)
     resolveNotes(current, `invitation:${invitationId}`)
     if (userId) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === invite.event_id && o.user_id === userId))

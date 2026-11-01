@@ -1,5 +1,5 @@
-// Officials on an event (plan/events.md, "Inviting officials"): the Owner or a site Admin
-// invites officials, officials accept or decline, and the CO and Deputy are picked from
+// Officials on an event (plan/events.md, "Inviting officials"): a site Admin or the event's
+// Chief Official invites officials, officials accept or decline, and the CO and Deputy are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card as AntCard, Checkbox, Modal, Segmented, Select, Space, Tabs } from 'antd'
@@ -154,9 +154,12 @@ function useAcceptDays() {
 
 // officials: the event's CO and Deputy rows. run: the bouts section's runner, which reloads them.
 export function EventOfficials({ event, may, profile, officials, busy, run }) {
-  const manager = may.siteAdmin || may.role === 'owner'
-  // The Chief Official and Deputy see the lists too, but can't invite or remove.
-  const seesLists = manager || officials.some((o) => o.user_id === profile?.id)
+  // Site Admins and the event's Chief Official invite and remove officials (Bhavek: "admins and
+  // the nominated CO"). Only a site Admin picks the Chief Official; either picks the Deputy.
+  const chief = officials.some((o) => o.role === 'chief' && o.user_id === profile?.id)
+  const manager = may.siteAdmin || chief
+  // The event's Owner, the Chief Official and the Deputy see the lists too, but can't change them.
+  const seesLists = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
@@ -198,7 +201,7 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
         <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
       )}
       {seesLists ? (
-        <Manage event={event} may={may} manager={manager} invitations={invitations} byRole={byRole} busy={busy} act={act} />
+        <Manage event={event} may={may} manager={manager} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
       ) : (
         <AntCard size="small" className="form-card">
           <Space size="large" wrap>
@@ -241,14 +244,14 @@ function MyAnswer({ invitation, event, busy, act }) {
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
         )}
       </Space>
-      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask the event's Owner to invite you again.</Muted>}
+      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or the Chief Official to invite you again.</Muted>}
     </AntCard>
   )
 }
 
-// Owner and site Admin view: invite, pick the CO and Deputy, see who answered what.
+// The lists of who answered what. Site Admins and the Chief Official also invite and pick here.
 // The CO and Deputy get the same lists without the buttons.
-function Manage({ event, may, manager, invitations, byRole, busy, act }) {
+function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
   const [officialsList, setOfficialsList] = useState([])
   const [choice, setChoice] = useState([])
   const [respondBy, setRespondBy] = useState('')
@@ -342,7 +345,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
       title: 'Invited', key: 'invited_at', value: (i) => i.invited_at,
       render: (_, i) => formatDay(i.invited_at.slice(0, 10)),
     },
-    may.edit && {
+    manager && {
       key: 'actions',
       className: 'actions',
       render: (_, i) => {
@@ -352,7 +355,9 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
             {canInvite && answer !== 'accepted' && (
               <Button size="small" disabled={busy} onClick={() => reinvite(i)}>{answer === 'pending' ? 'Resend' : 'Invite again'}</Button>
             )}
-            <Button size="small" disabled={busy} onClick={() => remove(i)}>{answer === 'accepted' ? 'Remove' : 'Cancel'}</Button>
+            {(may.siteAdmin || i.user_id !== me) && (
+              <Button size="small" disabled={busy} onClick={() => remove(i)}>{answer === 'accepted' ? 'Remove' : 'Cancel'}</Button>
+            )}
           </Space>
         )
       },
@@ -364,6 +369,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
   return (
     <>
       {manager && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
+      {!manager && may.role === 'owner' && <Muted>A site Admin or the Chief Official invites the officials. A site Admin picks the Chief Official.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}
@@ -398,7 +404,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
       <FormCard compact>
         {['chief', 'deputy'].map((role) => (
           <Field key={role} label={officialLabels[role]}>
-            {may.edit ? (
+            {(role === 'chief' ? may.siteAdmin : manager) ? (
               <Pick
                 allowEmpty
                 aria-label={officialLabels[role]}
@@ -412,8 +418,8 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
             )}
           </Field>
         ))}
-        {may.edit && pickable.length === 0 && (
-          <FullRow><Muted>Pick the Chief Official and Deputy from the officials who accepted.</Muted></FullRow>
+        {manager && pickable.length === 0 && (
+          <FullRow><Muted>{may.siteAdmin ? 'Pick the Chief Official and Deputy from the officials who accepted.' : 'Pick the Deputy from the officials who accepted.'}</Muted></FullRow>
         )}
       </FormCard>
 

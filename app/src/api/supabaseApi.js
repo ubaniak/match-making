@@ -481,6 +481,19 @@ export const supabaseApi = {
     await rpc('decide_join_request', { p_event_id: eventId, p_club_id: clubId, p_accept: accept })
   },
 
+  // The event's Owner (or a site Admin) creates a club that joins the event straight away.
+  async createEventClub(eventId, name, ownerIds) {
+    return rpc('create_event_club', { p_event_id: eventId, p_name: name, p_owner_ids: ownerIds })
+  },
+
+  async addEventClubOwner(eventId, clubId, userId) {
+    await rpc('add_event_club_owner', { p_event_id: eventId, p_club_id: clubId, p_user_id: userId })
+  },
+
+  async removeEventClubOwner(eventId, clubId, userId) {
+    await rpc('remove_event_club_owner', { p_event_id: eventId, p_club_id: clubId, p_user_id: userId })
+  },
+
   async removeEventClub(eventId, clubId) {
     await rpc('remove_event_club', { p_event_id: eventId, p_club_id: clubId })
   },
