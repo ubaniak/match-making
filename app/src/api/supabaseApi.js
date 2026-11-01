@@ -414,4 +414,72 @@ export const supabaseApi = {
   async cancelLateEntry(requestId) {
     await rpc('cancel_late_entry', { p_request_id: requestId })
   },
+
+  // ---------------------------------------------------------------------------
+  // Bouts (stage 4)
+  // ---------------------------------------------------------------------------
+
+  // The event's officials, bouts (with approvals and comments) and weigh-ins.
+  async getBouts(eventId) {
+    const [officials, bouts, weighIns] = await Promise.all([
+      supabase.from('event_officials').select('role, user_id, user:profiles!event_officials_user_id_fkey(id, name, email)').eq('event_id', eventId),
+      supabase.from('bouts').select(`*,
+        red:athletes!bouts_red_athlete_id_fkey(id, name), blue:athletes!bouts_blue_athlete_id_fkey(id, name),
+        red_club:clubs!bouts_red_club_id_fkey(id, name), blue_club:clubs!bouts_blue_club_id_fkey(id, name),
+        approvals:bout_approvals(side, decision, note, override, decided_by, decided_at),
+        comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
+        .eq('event_id', eventId).order('day').order('position'),
+      supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
+    ])
+    const failed = officials.error || bouts.error || weighIns.error
+    if (failed) throw failed
+    return {
+      officials: officials.data,
+      bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
+      weighIns: weighIns.data,
+    }
+  },
+
+  async setEventOfficial(eventId, role, userId) {
+    await rpc('set_event_official', { p_event_id: eventId, p_role: role, p_user_id: userId || null })
+  },
+
+  async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings }) {
+    return rpc('save_bout', {
+      p_bout_id: id || null, p_event_id: eventId, p_day: day, p_red_athlete_id: redId, p_blue_athlete_id: blueId,
+      p_needs_supervisor: Boolean(needsSupervisor), p_warnings: warnings ?? [],
+    })
+  },
+
+  async decideBout(boutId, side, approve, note) {
+    await rpc('decide_bout', { p_bout_id: boutId, p_side: side, p_approve: approve, p_note: note || null })
+  },
+
+  async cancelBout(boutId, reason) {
+    await rpc('cancel_bout', { p_bout_id: boutId, p_reason: reason || null })
+  },
+
+  // order: [{ id, session }] in running order.
+  async setCardOrder(eventId, day, order) {
+    await rpc('set_card_order', { p_event_id: eventId, p_day: day, p_order: order })
+  },
+
+  async addBoutComment(boutId, body) {
+    await rpc('add_bout_comment', { p_bout_id: boutId, p_body: body })
+  },
+
+  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
+    await rpc('record_weigh_in', {
+      p_event_id: eventId, p_day: day, p_athlete_id: athleteId,
+      p_weight_kg: weightKg === '' || weightKg == null ? null : Number(weightKg), p_medical: medical, p_note: note || null,
+    })
+  },
+
+  async recordResult(boutId, winner, method, note) {
+    await rpc('record_result', { p_bout_id: boutId, p_winner: winner, p_method: method, p_note: note || null })
+  },
+
+  async clearResult(boutId) {
+    await rpc('clear_result', { p_bout_id: boutId })
+  },
 }

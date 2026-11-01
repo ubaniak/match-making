@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
+import EventBouts from './Bouts'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { categorise, compareByCategory } from './categories'
 import {
@@ -442,6 +443,7 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
       <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
       <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
       <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
+      <EventBouts event={event} may={may} clubs={clubs} profile={profile} onEntriesChange={reload} />
       <EventMembers event={event} may={may} onChange={reload} />
 
       {siteAdmin && (
