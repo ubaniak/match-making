@@ -19,10 +19,12 @@ export default function PublicEvents({ signedIn }) {
     <Layout className="page">
       <Layout.Header className="app-header">
         <div className="app-header-inner">
-          {signedIn
-            ? <Button type="primary" icon={<HomeOutlined />} href="#home">My dashboard</Button>
-            : <Button type="primary" icon={<LoginOutlined />} href="#login">Sign in</Button>}
           <span className="brand">Match Making</span>
+          <span className="who">
+            {signedIn
+              ? <Button type="primary" icon={<HomeOutlined />} href="#home">My dashboard</Button>
+              : <Button type="primary" icon={<LoginOutlined />} href="#login">Sign in</Button>}
+          </span>
         </div>
       </Layout.Header>
       <Layout.Content>
