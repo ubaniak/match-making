@@ -69,6 +69,14 @@ new hex values.
 
 ## Patterns
 
+- **Full CRUD, always (Bhavek's rule).** Every kind of record the app manages, users included,
+  gets the whole set: **create**, **read** (a searchable `DataTable` list, plus details where a row
+  has more to show), **update** (edit every field that can change) and **delete**. Never ship an
+  add-only screen. Delete sits behind `askConfirm(..., { danger: true })`, and when the database
+  refuses (a record still in use), show its message and say what to do first (for example "Withdraw
+  the athlete first"). The edit and delete buttons follow the row-action pattern below. A new table
+  or record type isn't done until its migration, both API files (`supabaseApi.js` and
+  `mockApi.js`) and the UI cover all four.
 - **Tables:** every table is `<DataTable columns dataSource rowKey>` (`app/src/DataTable.jsx`), never
   a bare antd `Table`. It adds a search box, sortable columns and pagination (10 per page, size changer
   on wider screens). Each column sorts and searches by `value(row)`, else `dataIndex`, else its `render`
@@ -117,3 +125,4 @@ The app must work on a 390px-wide phone.
 2. Run `npx vite`, sign in to demo mode (`admin@matchmaking.test` / `letmein`) and look at the screen
    you changed at 1280px and 390px wide. No console errors or antd deprecation warnings.
 3. No new colours, no dark styles, no raw HTML controls.
+4. Every record type you added or touched can be created, listed, edited and deleted in the UI.

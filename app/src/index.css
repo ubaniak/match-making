@@ -632,3 +632,26 @@ body {
     max-width: calc(100vw - 24px);
   }
 }
+
+/* Event dashboard: one small card per count. */
+.stats.ant-row {
+  margin-bottom: 16px;
+}
+
+.stat-card.ant-card {
+  height: 100%;
+  border-radius: var(--radius-md);
+}
+
+.stat-note.ant-typography {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+/* Fit the event page's five tabs on a phone instead of hiding some behind "…". */
+@media (max-width: 767px) {
+  .event-tabs > .ant-tabs-nav .ant-tabs-tab + .ant-tabs-tab {
+    margin-left: 14px;
+  }
+}

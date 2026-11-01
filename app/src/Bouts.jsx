@@ -1,6 +1,6 @@
 // Stage 4 (plan/events.md sections 4 to 6): the event's officials (Officials.jsx), bout matching and
 // approvals, comments, the weigh-in, the card order and results.
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import DataTable from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
@@ -25,62 +25,24 @@ function categoryText(athlete, eventDate) {
   return [c.age?.label, c.weight?.label, c.experience?.label].filter(Boolean).join(' · ')
 }
 
-export default function EventBouts({ event, may, clubs, profile, onEntriesChange }) {
-  const [data, setData] = useState(null)
-  const [error, setError] = useState(null)
-  const [busy, setBusy] = useState(false)
-
-  const reload = useCallback(async () => {
-    try {
-      setData(await api.getBouts(event.id))
-    } catch (err) {
-      setError(err.message)
-    }
-  }, [event.id])
-
-  useEffect(() => {
-    reload()
-  }, [reload])
-
-  async function run(action, { entries = false } = {}) {
-    setBusy(true)
-    setError(null)
-    try {
-      await action()
-      await reload()
-      if (entries) await onEntriesChange()
-      return true
-    } catch (err) {
-      setError(err.message)
-      return false
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (!data) return error ? <ErrorAlert>{error}</ErrorAlert> : null
-
-  const officialRole = data.officials.find((o) => o.user_id === profile?.id)?.role ?? null
-  const ownedClubs = new Set(clubs.filter((c) => c.members.some((m) => m.user_id === profile?.id && m.role === 'owner' && m.status === 'active')).map((c) => c.id))
-  const rights = {
-    siteAdmin: may.siteAdmin,
-    owner: may.siteAdmin || may.role === 'owner',
-    official: may.siteAdmin || Boolean(officialRole),
-    // The CO and Deputy record every day's weigh-in; other officials only on the days they accepted.
-    weighInDays: data.acceptedDays ?? [],
-    officialRole,
-    ownedClubs,
-    cardOpen: event.status === 'active',
-  }
-  const seesBouts = rights.owner || rights.official || rights.weighInDays.length > 0 || event.athletes.length > 0
-
+// The Bouts tab: the card, the weigh-in and results.
+export function EventBouts({ event, bouts }) {
+  if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
   return (
     <>
-      <EventOfficials event={event} may={may} profile={profile} officials={data.officials} busy={busy} run={run} />
-      <ErrorAlert>{error}</ErrorAlert>
-      {seesBouts && ['active', 'done'].includes(event.status) && (
-        <Card event={event} data={data} rights={rights} busy={busy} run={run} />
-      )}
+      <ErrorAlert>{bouts.error}</ErrorAlert>
+      <Card event={event} data={bouts.data} rights={bouts.rights} busy={bouts.busy} run={bouts.run} />
+    </>
+  )
+}
+
+// The Officials tab.
+export function EventOfficialsTab({ event, may, profile, bouts }) {
+  if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
+  return (
+    <>
+      <ErrorAlert>{bouts.error}</ErrorAlert>
+      <EventOfficials event={event} may={may} profile={profile} officials={bouts.data.officials} busy={bouts.busy} run={bouts.run} />
     </>
   )
 }
