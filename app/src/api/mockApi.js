@@ -1184,6 +1184,7 @@ export const mockApi = {
       red_athlete_id: redId, blue_athlete_id: blueId, red_club_id: red.club_id, blue_club_id: blue.club_id,
       needs_supervisor: Boolean(needsSupervisor), warnings: warnings ?? [], after_weigh_in: weighInStarted(current, eventId, day),
       status: 'pending', cancel_reason: null, cancelled_at: null, made_by: currentUserId(), made_at: now(), approvals: [],
+      approval_requested_at: null, approval_requested_by: null,
     }
     let bout = old
     if (bout) {
@@ -1195,6 +1196,46 @@ export const mockApi = {
     }
     write(DATA_KEY, current)
     return bout.id
+  },
+
+  // Mirrors request_bout_approvals (migration 18).
+  async requestBoutApprovals(boutIds) {
+    const current = data()
+    const bouts = boutIds.map((id) => findBout(current, id))
+    for (const eventId of new Set(bouts.map((b) => b.event_id))) {
+      if (!isOwnerOf(current, eventId) && !isOfficial(current, eventId)) {
+        throw new Error('Only the event\'s Owner, its Chief Official or Deputy, or a site Admin can send bouts for approval')
+      }
+      if (!cardOpen(findEvent(current, eventId))) throw new Error('Bouts can be sent for approval only while the event is Active')
+    }
+    const rows = []
+    for (const b of bouts.filter((x) => x.status === 'pending' && !x.winner)) {
+      b.approval_requested_at = now()
+      b.approval_requested_by = currentUserId()
+      const event = findEvent(current, b.event_id)
+      const live = current.bouts.filter((x) => x.event_id === b.event_id && x.day === b.day && x.status !== 'cancelled')
+        .sort((x, y) => x.position - y.position)
+      const name = (id) => current.athletes.find((a) => a.id === id)?.name ?? null
+      const base = {
+        bout_id: b.id, event_name: event.name, venue: event.venue, day: b.day, bout_number: live.findIndex((x) => x.id === b.id) + 1,
+        red_name: name(b.red_athlete_id), red_club: clubName(current, b.red_club_id),
+        blue_name: name(b.blue_athlete_id), blue_club: clubName(current, b.blue_club_id),
+      }
+      for (const side of ['red', 'blue', 'official']) {
+        if (b.approvals.some((a) => a.side === side && a.decision === 'approved')) continue
+        const people = side === 'official'
+          ? current.eventOfficials.filter((o) => o.event_id === b.event_id).map((o) => findUser(current, o.user_id))
+          : clubMembers(current, side === 'red' ? b.red_club_id : b.blue_club_id)
+            .filter((m) => m.role === 'owner' && m.status === 'active').map((m) => m.user)
+        for (const u of people.filter((x) => x?.email)) rows.push({ ...base, side, recipient_name: u.name, recipient_email: u.email })
+      }
+    }
+    write(DATA_KEY, current)
+    return rows
+  },
+
+  async emailBoutApprovals() {
+    throw new Error('Demo mode doesn\'t send email')
   },
 
   async decideBout(boutId, side, approve, note) {
