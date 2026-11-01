@@ -127,6 +127,36 @@ export const supabaseApi = {
     return data
   },
 
+  // user: a row from listUsers. Accounts change name, account type and status; invites change
+  // name, email and account type.
+  async updateUser(user, { name, email, roleId, status }) {
+    if (user.id) {
+      const { data, error } = await supabase.from('profiles')
+        .update({ name: name?.trim() || null, role_id: roleId, status })
+        .eq('id', user.id).select('id')
+      if (error) throw error
+      if (!data.length) throw new Error('Only Admins can change users')
+      return
+    }
+    const clean = email.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
+    const { data, error } = await supabase.from('invites')
+      .update({ name: name?.trim() || null, email: clean, role_id: roleId })
+      .eq('email', user.email).select('email')
+    if (error) throw error
+    if (!data.length) throw new Error('That invite no longer exists')
+  },
+
+  // Deletes an account (delete_user refuses your own, the last Admin and event Owners) or an invite.
+  async deleteUser(user) {
+    if (user.id) {
+      await rpc('delete_user', { p_user_id: user.id })
+      return
+    }
+    const { error } = await supabase.from('invites').delete().eq('email', user.email)
+    if (error) throw error
+  },
+
   async listAthletes() {
     const { data, error } = await supabase
       .from('athletes')
@@ -277,6 +307,21 @@ export const supabaseApi = {
 
   async addOfficial(official) {
     const { error } = await supabase.from('officials').insert(official)
+    if (error) throw error
+  },
+
+  // A new email unlinks the old login, so the official is linked (or invited) at the new address.
+  async updateOfficial(official, fields) {
+    const changes = { ...fields }
+    if (fields.invite_email !== undefined && fields.invite_email !== official.invite_email) changes.user_id = null
+    const { data, error } = await supabase.from('officials').update(changes).eq('id', official.id).select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('Only Admins can change officials')
+  },
+
+  // Their invitations go too, and they stop being Chief Official or Deputy on those events.
+  async deleteOfficial(officialId) {
+    const { error } = await supabase.from('officials').delete().eq('id', officialId)
     if (error) throw error
   },
 

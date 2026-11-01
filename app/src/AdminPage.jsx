@@ -1,12 +1,53 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Input, Tabs } from 'antd'
+import { Button, Input, Popconfirm, Space, Tabs } from 'antd'
+import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
 import CsvImport from './CsvImport'
 import AthleteForm from './AthleteForm'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { dash } from './dialogs'
-import { Badge, ErrorAlert, Field, FormCard, FormMessage, Muted, PageHeading, Section } from './ui'
+import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, PageHeading, Pick, Section } from './ui'
+
+const accountTypes = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'user', label: 'User' },
+  { value: 'official', label: 'Official' },
+  { value: 'public', label: 'Public (no access yet)' },
+]
+
+// Edit and delete buttons for a table row, as the frontend-style skill describes.
+function RowActions({ name, onEdit, onDelete, deleteText, busy }) {
+  return (
+    <Space size={4}>
+      <Button size="small" shape="circle" icon={<EditOutlined />} aria-label={`Edit ${name}`} title="Edit" onClick={onEdit} />
+      <Popconfirm title={`Delete ${name}?`} description={deleteText} okText="Delete" okButtonProps={{ danger: true }} cancelText="Cancel" onConfirm={onDelete}>
+        <Button size="small" shape="circle" danger icon={<DeleteOutlined />} aria-label={`Delete ${name}`} title="Delete" disabled={busy} />
+      </Popconfirm>
+    </Space>
+  )
+}
+
+// Runs a change and reloads, keeping its error for the section's alert.
+function useRunner(reload) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  async function run(action) {
+    setBusy(true)
+    setError(null)
+    try {
+      await action()
+      await reload()
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { busy, error, setError, run }
+}
 
 const tabs = [
   ['users', 'Users'],
@@ -54,6 +95,8 @@ function Users() {
   const [form, setForm] = useState({ name: '', email: '' })
   const [message, setMessage] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(null) // the user row being edited
+  const changes = useRunner(reload)
 
   async function addUser(event) {
     event.preventDefault()
@@ -81,6 +124,19 @@ function Users() {
     { title: 'Email', dataIndex: 'email', key: 'email' },
     { title: 'Account', key: 'role', render: (_, u) => dash(u.role_name) },
     { title: 'Status', key: 'state', value: (u) => u.state, render: (_, u) => <Badge muted={u.state !== 'Active'}>{u.state}</Badge> },
+    {
+      key: 'actions',
+      className: 'actions',
+      render: (_, u) => (
+        <RowActions
+          name={u.name || u.email}
+          busy={changes.busy}
+          onEdit={() => { changes.setError(null); setEditing(u) }}
+          deleteText={u.id ? 'Their account is removed for good. To keep their history, disable them instead.' : 'The invite is withdrawn.'}
+          onDelete={() => changes.run(() => api.deleteUser(u))}
+        />
+      ),
+    },
   ]
 
   return (
@@ -100,7 +156,18 @@ function Users() {
       <CsvImport kind="users" importRow={api.addUser} onDone={reload} />
 
       <Section title="Users">
-        <ErrorAlert>{error}</ErrorAlert>
+        <ErrorAlert>{error || changes.error}</ErrorAlert>
+        {editing && (
+          <UserForm
+            key={editing.id ?? editing.email}
+            user={editing}
+            busy={changes.busy}
+            onCancel={() => setEditing(null)}
+            onSave={async (fields) => {
+              if (await changes.run(() => api.updateUser(editing, fields))) setEditing(null)
+            }}
+          />
+        )}
         {users.length === 0 ? (
           <Muted>No users yet.</Muted>
         ) : (
@@ -116,6 +183,7 @@ function Athletes() {
   const [athletes, setAthletes] = useState([])
   const [clubs, setClubs] = useState([])
   const [error, setError] = useState(null)
+  const [editing, setEditing] = useState(null) // the athlete being edited
 
   const reload = useCallback(async () => {
     try {
@@ -131,6 +199,7 @@ function Athletes() {
   useEffect(() => {
     reload()
   }, [reload])
+  const changes = useRunner(reload)
 
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name' },
@@ -141,6 +210,19 @@ function Athletes() {
     { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
     { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
     { title: 'Login', key: 'login', value: (a) => a.invite_email, render: (_, a) => <LoginBadge record={a} /> },
+    {
+      key: 'actions',
+      className: 'actions',
+      render: (_, a) => (
+        <RowActions
+          name={a.name}
+          busy={changes.busy}
+          onEdit={() => { changes.setError(null); setEditing(a) }}
+          deleteText="This can't be undone. Athletes in an Active event or with a recorded result can't be deleted."
+          onDelete={() => changes.run(() => api.deleteAthlete(a.id))}
+        />
+      ),
+    },
   ]
 
   return (
@@ -172,7 +254,20 @@ function Athletes() {
       />
 
       <Section title="Athletes">
-        <ErrorAlert>{error}</ErrorAlert>
+        <ErrorAlert>{error || changes.error}</ErrorAlert>
+        {editing && (
+          <AthleteForm
+            key={editing.id}
+            athlete={editing}
+            users={users}
+            onCancel={() => setEditing(null)}
+            onSave={async (record) => {
+              await api.updateAthlete(editing.id, record)
+              setEditing(null)
+              await reload()
+            }}
+          />
+        )}
         {athletes.length === 0 ? (
           <Muted>No athletes yet.</Muted>
         ) : (
@@ -198,6 +293,7 @@ function Officials() {
   const [form, setForm] = useState(emptyOfficial)
   const [message, setMessage] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(null) // the official being edited
 
   const reload = useCallback(async () => {
     try {
@@ -207,6 +303,7 @@ function Officials() {
       setError(err.message)
     }
   }, [])
+  const changes = useRunner(reload)
 
   useEffect(() => {
     reload()
@@ -238,6 +335,19 @@ function Officials() {
     { title: 'Name', dataIndex: 'name', key: 'name' },
     { title: 'Qualifications', key: 'q', render: (_, o) => dash(o.qualifications) },
     { title: 'Login', key: 'login', value: (o) => o.invite_email, render: (_, o) => <LoginBadge record={o} /> },
+    {
+      key: 'actions',
+      className: 'actions',
+      render: (_, o) => (
+        <RowActions
+          name={o.name}
+          busy={changes.busy}
+          onEdit={() => { changes.setError(null); setEditing(o) }}
+          deleteText="Their event invitations are removed too, and they stop being Chief Official or Deputy on those events."
+          onDelete={() => changes.run(() => api.deleteOfficial(o.id))}
+        />
+      ),
+    },
   ]
 
   return (
@@ -260,7 +370,18 @@ function Officials() {
       />
 
       <Section title="Officials">
-        <ErrorAlert>{error}</ErrorAlert>
+        <ErrorAlert>{error || changes.error}</ErrorAlert>
+        {editing && (
+          <OfficialForm
+            key={editing.id}
+            official={editing}
+            busy={changes.busy}
+            onCancel={() => setEditing(null)}
+            onSave={async (fields) => {
+              if (await changes.run(() => api.updateOfficial(editing, fields))) setEditing(null)
+            }}
+          />
+        )}
         {officials.length === 0 ? (
           <Muted>No officials yet.</Muted>
         ) : (
@@ -268,5 +389,67 @@ function Officials() {
         )}
       </Section>
     </section>
+  )
+}
+
+// Edit a user. Accounts: name, account type and status (the email is their login). Invites:
+// name, email and account type.
+function UserForm({ user, busy, onSave, onCancel }) {
+  const [form, setForm] = useState({
+    name: user.name ?? '',
+    email: user.email,
+    roleId: user.role_id ?? 'user',
+    status: user.status ?? (user.state === 'Disabled' ? 'disabled' : 'active'),
+  })
+  const set = (key) => (value) => setForm({ ...form, [key]: value })
+  return (
+    <FormCard
+      title={`Edit ${user.name || user.email}`}
+      onSubmit={(e) => { e.preventDefault(); onSave(form) }}
+      actions={
+        <>
+          <Button type="primary" htmlType="submit" loading={busy}>Save</Button>
+          <Button onClick={onCancel}>Cancel</Button>
+        </>
+      }
+    >
+      <Field label="Name"><Input value={form.name} onChange={(e) => set('name')(e.target.value)} /></Field>
+      <Field label="Email">
+        <Input type="email" required value={form.email} disabled={Boolean(user.id)} onChange={(e) => set('email')(e.target.value)} />
+      </Field>
+      <Field label="Account"><Pick value={form.roleId} onChange={set('roleId')} options={accountTypes} /></Field>
+      {user.id && (
+        <Field label="Status">
+          <Pick value={form.status} onChange={set('status')} options={[{ value: 'active', label: 'Active' }, { value: 'disabled', label: 'Disabled (can\'t sign in to anything)' }]} />
+        </Field>
+      )}
+      {user.id && <FullRow><Muted>The email is their sign-in, so it can't be changed here. There must always be at least one active Admin.</Muted></FullRow>}
+    </FormCard>
+  )
+}
+
+function OfficialForm({ official, busy, onSave, onCancel }) {
+  const [form, setForm] = useState({ name: official.name, email: official.invite_email ?? '', qualifications: official.qualifications ?? '' })
+  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  function save(e) {
+    e.preventDefault()
+    onSave({ name: form.name.trim(), invite_email: form.email.trim().toLowerCase(), qualifications: form.qualifications.trim() || null })
+  }
+  return (
+    <FormCard
+      title={`Edit ${official.name}`}
+      onSubmit={save}
+      actions={
+        <>
+          <Button type="primary" htmlType="submit" loading={busy}>Save</Button>
+          <Button onClick={onCancel}>Cancel</Button>
+        </>
+      }
+    >
+      <Field label="Name"><Input required {...field('name')} /></Field>
+      <Field label="Email"><Input type="email" required {...field('email')} /></Field>
+      <Field label="Qualifications"><Input {...field('qualifications')} /></Field>
+      <FullRow><Muted>Changing the email links the official to the account with the new address, or invites it.</Muted></FullRow>
+    </FormCard>
   )
 }
