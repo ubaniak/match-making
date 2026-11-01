@@ -36,6 +36,8 @@ jobs:
           # Both are public values; Supabase row-level security does the protecting.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Set to true after turning on the Google provider in Supabase (see app/README.md).
+          VITE_GOOGLE_SIGN_IN: ${{ vars.VITE_GOOGLE_SIGN_IN }}
           # Without the Supabase values the site runs in demo mode with one demo admin login.
           VITE_MOCK_ADMIN_EMAIL: ${{ vars.VITE_MOCK_ADMIN_EMAIL }}
           VITE_MOCK_ADMIN_PASSWORD: ${{ vars.VITE_MOCK_ADMIN_PASSWORD }}

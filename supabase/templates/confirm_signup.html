@@ -2,11 +2,14 @@
 <div style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: #ffffff; color: #000000; padding: 24px;">
   <div style="max-width: 480px; margin: 0 auto; border: 1px solid #000000; border-radius: 8px; padding: 28px;">
     <h1 style="margin: 0 0 16px; font-size: 22px; color: #000000;">Match Making</h1>
-    <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #000000;">Welcome! Click the button below to finish setting up your account and sign in.</p>
+    <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #000000;">Welcome! Type this code on the sign-in page to finish setting up your account.</p>
+    <p style="margin: 0 0 8px; font-size: 16px; line-height: 1.5; color: #000000;">Your sign-in code:</p>
+    <p style="margin: 0 0 20px; font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: 'SF Mono', Menlo, Consolas, monospace; color: #000000;">{{ .Token }}</p>
+    <p style="margin: 0 0 12px; font-size: 16px; line-height: 1.5; color: #000000;">Or sign in on this device:</p>
     <p style="margin: 0 0 24px;">
       <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: #000000; color: #ffffff; text-decoration: none; font-size: 16px; padding: 12px 22px; border-radius: 6px;">Sign in to Match Making</a>
     </p>
-    <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5; color: #000000;">This link works once and expires in 1 hour. Asking for a new link cancels this one.</p>
+    <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5; color: #000000;">The code and link work once and expire in 1 hour. Asking for a new code cancels this one.</p>
     <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #000000;">Didn't ask to sign in? You can ignore this email.</p>
   </div>
 </div>
