@@ -13,7 +13,8 @@ import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Se
 const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
 const answerLabels = { accepted: 'Accepted', declined: 'Declined', pending: 'Waiting', expired: 'No response' }
 const personName = (user) => (user ? user.name || user.email : '—')
-const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
+// Emailed links go straight to sign-in and then Home; the bare root is the public page.
+const siteUrl = () => window.location.origin + import.meta.env.BASE_URL + '#home'
 
 // 'accepted', 'declined', 'pending' or 'expired' (pending past its respond-by date).
 function answerOf(invitation, timeZone) {

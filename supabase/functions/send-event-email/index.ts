@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
   const owner = (event.members as any[]).find((m) => m.role === 'owner')?.user
   if (!owner?.email) return json({ error: 'The event has no Owner with an email address' }, 422)
 
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const dates = event.start_date === event.end_date ? event.start_date : `${event.start_date} to ${event.end_date}`
   const greeting = owner.name ? `Hi ${owner.name},` : 'Hi,'
   const text = [
@@ -164,7 +164,7 @@ async function sendInvitation(supabase: any, invitationId: string) {
   if (!invite) return json({ error: 'Only the event\'s Owner or a site Admin can send this email' }, 403)
   if (!invite.email) return json({ error: 'The official has no email address' }, 422)
 
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const dates = invite.start_date === invite.end_date
     ? longDate(invite.start_date)
     : `${longDate(invite.start_date)} to ${longDate(invite.end_date)}`
@@ -196,7 +196,7 @@ async function sendBoutApprovals(supabase: any, boutIds: string[]) {
   const rows = (data ?? []) as any[]
   if (rows.length === 0) return json({ sent: 0 })
 
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const sideText: Record<string, string> = { red: 'red corner', blue: 'blue corner', official: 'official approval' }
 
   // One email per person, listing each of their bouts once with the sides they approve for.
@@ -227,4 +227,10 @@ async function sendBoutApprovals(supabase: any, boutIds: string[]) {
   const result = await deliver(emails)
   if (result.error) return json({ error: result.error, sent: result.sent }, result.status)
   return json({ sent: result.sent })
+}
+
+// The site root is the public events page, so emailed "Sign in" links go to #home (sign-in, then the dashboard).
+function appUrl() {
+  const root = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  return root.replace(/#.*$/, '').replace(/\/?$/, '/') + '#home'
 }

@@ -21,14 +21,22 @@ export default function App() {
   // Where a link from Home (or an alert) asked to go: { eventId, tab } or { clubId }.
   const [target, setTarget] = useState({})
   const hash = useHash()
+  const route = routeFor(hash)
 
-  // The public page needs no sign-in.
-  if (hash === '#upcoming') return <PublicEvents signedIn={Boolean(session)} />
+  // Once signed in, the sign-in page moves on to Home, and the address bar shows #home rather
+  // than the bare root a sign-in link leaves behind.
+  useEffect(() => {
+    if (session && (route === 'login' || (route === 'app' && !/^#\/?home$/.test(window.location.hash)))) goTo('#home')
+  }, [session, route, hash])
+
+  // The site root is the public list of upcoming events; it needs no sign-in.
+  if (route === 'public') return <PublicEvents signedIn={Boolean(session)} />
 
   if (loading) {
     return <main className="center-screen"><Spin description="Loading…" /></main>
   }
 
+  // #login, or any app page while signed out: sign in, then carry on to Home.
   if (!session) return api.mode === 'mock' ? <MockLogin /> : <Login />
 
   const pages = [
@@ -77,7 +85,7 @@ export default function App() {
               <NotificationBell onOpen={open} />
               <Text className="who-name">{profile?.name || session.user.email}</Text>
               {profile && <Badge>{profile.roles?.name}</Badge>}
-              <Button icon={<LogoutOutlined />} onClick={() => api.signOut()}>Sign out</Button>
+              <Button icon={<LogoutOutlined />} onClick={() => api.signOut().then(() => goTo(''))}>Sign out</Button>
             </span>
           </div>
         </Layout.Header>
@@ -92,8 +100,30 @@ export default function App() {
   )
 }
 
+// Routes live in the URL hash so GitHub Pages serves them without any server setup:
+//   (none), #upcoming  public upcoming events (the site root)
+//   #login             sign-in page
+//   #home              the signed-in app (anything else counts too, e.g. a sign-in link's #access_token=…)
+function routeFor(hash) {
+  const key = hash.replace(/^#\/?/, '')
+  if (key === '' || key === 'upcoming') return 'public'
+  if (key === 'login') return 'login'
+  return 'app'
+}
+
+function goTo(hash) {
+  const url = window.location.pathname + window.location.search + (hash ? hash : '')
+  window.history.replaceState(null, '', url)
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
+}
+
+// A sign-in link (magic link or Google) comes back to the root with #access_token=… or ?code=…,
+// which Supabase strips from the address bar as it signs in. Read it now, before that happens,
+// so the person lands on Home and not on the public list.
+const backFromSignIn = /access_token=|error_description=/.test(window.location.hash) || /[?&]code=/.test(window.location.search)
+
 function useHash() {
-  const [hash, setHash] = useState(window.location.hash)
+  const [hash, setHash] = useState(backFromSignIn ? '#home' : window.location.hash)
   useEffect(() => {
     const onChange = () => setHash(window.location.hash)
     window.addEventListener('hashchange', onChange)
@@ -102,7 +132,7 @@ function useHash() {
   return hash
 }
 
-const publicLink = <Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}><a href="#upcoming">See upcoming events</a></Paragraph>
+const publicLink = <Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}><a href="#">Back to upcoming events</a></Paragraph>
 
 function DemoBanner({ userId }) {
   const [users, setUsers] = useState([])
