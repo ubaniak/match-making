@@ -1,23 +1,39 @@
 -- Migration 21 (Bhavek, 2026-11-01): "an event owner can add clubs and add club owners, they do
--- not invite officials."
+-- not invite officials." Who invites officials: "admins and the nominated CO".
 --
---   * Only site Admins invite officials, cancel or resend invitations, remove officials and pick
---     the Chief Official and Deputy. The event Owner still sees the lists.
+--   * Site Admins and the event's Chief Official invite officials, cancel or resend invitations
+--     and remove officials. A site Admin picks the Chief Official; a site Admin or the Chief
+--     Official picks the Deputy. The event Owner still sees the lists.
 --   * While the event is Active, its Owner can create a new club (it joins the event straight
 --     away) and add or remove the owners of any club in the event. These owners are active at
 --     once, with no site Admin approval. A club always keeps at least one owner.
 
 -- ---------------------------------------------------------------------------
--- Officials: site Admins only
+-- Officials: site Admins and the event's Chief Official
 -- ---------------------------------------------------------------------------
+
+create function public.is_event_chief(p_event_id uuid) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select exists (
+    select 1 from public.event_officials
+    where event_id = p_event_id and role = 'chief' and user_id = auth.uid()
+  )
+$$;
+
+create function public.can_invite_officials(p_event_id uuid) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select public.is_site_admin() or public.is_event_chief(p_event_id)
+$$;
 
 create or replace function public.list_invitable_officials(p_event_id uuid)
 returns table (id uuid, name text, email text, signed_in boolean)
 language plpgsql stable security definer set search_path = public
 as $$
 begin
-  if not public.is_site_admin() then
-    raise exception 'Only a site Admin can invite officials' using errcode = '42501';
+  if not public.can_invite_officials(p_event_id) then
+    raise exception 'Only a site Admin or the event''s Chief Official can invite officials' using errcode = '42501';
   end if;
   return query
     select o.id, o.name, o.invite_email, o.user_id is not null
@@ -36,8 +52,8 @@ declare
   v_official uuid;
   v_id uuid;
 begin
-  if not public.is_site_admin() then
-    raise exception 'Only a site Admin can invite officials' using errcode = '42501';
+  if not public.can_invite_officials(p_event_id) then
+    raise exception 'Only a site Admin or the event''s Chief Official can invite officials' using errcode = '42501';
   end if;
   if not public.event_is_open(p_event_id) then
     raise exception 'Officials can be invited once the event is Active, and until it is over' using errcode = '22023';
@@ -83,10 +99,13 @@ begin
   if not found then
     return;
   end if;
-  if not public.is_site_admin() then
-    raise exception 'Only a site Admin can remove officials' using errcode = '42501';
+  if not public.can_invite_officials(v_inv.event_id) then
+    raise exception 'Only a site Admin or the event''s Chief Official can remove officials' using errcode = '42501';
   end if;
   select user_id into v_user from public.officials where id = v_inv.official_id;
+  if v_user = auth.uid() and not public.is_site_admin() then
+    raise exception 'Ask a site Admin to take you off this event' using errcode = '42501';
+  end if;
   delete from public.official_invitations where id = p_invitation_id;
   if v_user is not null then
     delete from public.event_officials where event_id = v_inv.event_id and user_id = v_user;
@@ -101,7 +120,10 @@ returns table (
 language plpgsql stable security definer set search_path = public
 as $$
 begin
-  if not public.is_site_admin() then
+  if not exists (
+    select 1 from public.official_invitations
+    where id = p_invitation_id and public.can_invite_officials(event_id)
+  ) then
     return;
   end if;
   return query
@@ -117,11 +139,17 @@ create or replace function public.set_event_official(p_event_id uuid, p_role tex
 language plpgsql security definer set search_path = public
 as $$
 begin
-  if not public.is_site_admin() then
-    raise exception 'Only a site Admin can choose the Chief Official and Deputy' using errcode = '42501';
-  end if;
   if p_role not in ('chief', 'deputy') then
     raise exception 'Officials are a Chief Official or a Deputy' using errcode = '22023';
+  end if;
+  if p_role = 'chief' and not public.is_site_admin() then
+    raise exception 'Only a site Admin can choose the Chief Official' using errcode = '42501';
+  end if;
+  if p_role = 'deputy' and not public.can_invite_officials(p_event_id) then
+    raise exception 'Only a site Admin or the event''s Chief Official can choose the Deputy' using errcode = '42501';
+  end if;
+  if not public.is_site_admin() and not public.event_is_open(p_event_id) then
+    raise exception 'The Deputy can be changed while the event is Active' using errcode = '22023';
   end if;
   if p_user_id is null then
     delete from public.event_officials where event_id = p_event_id and role = p_role;
@@ -268,6 +296,10 @@ end;
 $$;
 
 revoke execute on function public.put_club_owner(uuid, uuid) from public, anon, authenticated;
+revoke execute on function public.is_event_chief(uuid) from public, anon;
+grant execute on function public.is_event_chief(uuid) to authenticated;
+revoke execute on function public.can_invite_officials(uuid) from public, anon;
+grant execute on function public.can_invite_officials(uuid) to authenticated;
 revoke execute on function public.can_manage_event_clubs(uuid) from public, anon;
 grant execute on function public.can_manage_event_clubs(uuid) to authenticated;
 revoke execute on function public.create_event_club(uuid, text, uuid[]) from public, anon;

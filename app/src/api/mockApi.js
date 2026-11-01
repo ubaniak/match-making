@@ -216,6 +216,8 @@ function canSee(current, eventId) {
 const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
 const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
 const eventOpen = (event) => effectiveStatus(event) === 'active'
+// Mirrors can_invite_officials: site Admins and the event's Chief Official.
+const canInviteOfficials = (current, eventId) => isSiteAdmin() || officialRole(current, eventId) === 'chief'
 
 // Mirrors can_manage_event_clubs: the event's Owner or a site Admin, while the event is Active.
 function requireClubManager(current, eventId, what) {
@@ -1142,9 +1144,13 @@ export const mockApi = {
   },
 
   async setEventOfficial(eventId, role, userId) {
-    requireSiteAdmin('Only a site Admin can choose the Chief Official and Deputy')
     const current = data()
-    requireEditor(current, eventId)
+    if (role === 'chief') {
+      requireSiteAdmin('Only a site Admin can choose the Chief Official')
+    } else {
+      if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can choose the Deputy')
+      if (!isSiteAdmin() && !eventOpen(findEvent(current, eventId))) throw new Error('The Deputy can be changed while the event is Active')
+    }
     if (userId && !userAccepted(current, eventId, userId)) throw new Error('Pick an official who has accepted the invitation to this event')
     current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === eventId && o.role === role))
     if (userId) {
@@ -1157,9 +1163,9 @@ export const mockApi = {
   },
 
   // Official invitations: the same rules as the database functions in migrations 14 and 21.
-  async listInvitableOfficials() {
+  async listInvitableOfficials(eventId) {
     const current = data()
-    if (!isSiteAdmin()) throw new Error('Only a site Admin can invite officials')
+    if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can invite officials')
     return current.officials
       .filter((o) => o.invite_email)
       .map((o) => ({ id: o.id, name: o.name, email: o.invite_email, signed_in: Boolean(o.user_id) }))
@@ -1196,7 +1202,7 @@ export const mockApi = {
   async inviteOfficials(eventId, officialIds, respondBy) {
     const current = data()
     const event = findEvent(current, eventId)
-    if (!isSiteAdmin()) throw new Error('Only a site Admin can invite officials')
+    if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can invite officials')
     if (!eventOpen(event)) throw new Error('Officials can be invited once the event is Active, and until it is over')
     if (respondBy && respondBy < todayIso(event.timezone)) throw new Error('The respond-by date has already passed')
     if (respondBy && respondBy > event.end_date) throw new Error('The respond-by date must be on or before the event\'s last day')
@@ -1227,7 +1233,7 @@ export const mockApi = {
     const today = todayIso(event.timezone)
     if (event.status !== 'active' || today >= event.start_date) throw new Error('Answers are locked once the event starts. Contact the event\'s Owner.')
     if (invite.status === 'pending' && invite.respond_by && today > invite.respond_by) {
-      throw new Error('The respond-by date has passed. Ask a site Admin to invite you again.')
+      throw new Error('The respond-by date has passed. Ask a site Admin or the Chief Official to invite you again.')
     }
     let chosen = null
     let parts = null
@@ -1251,9 +1257,9 @@ export const mockApi = {
     const current = data()
     const invite = current.officialInvitations.find((i) => i.id === invitationId)
     if (!invite) return
-    requireSiteAdmin('Only a site Admin can remove officials')
-    requireEditor(current, invite.event_id)
+    if (!canInviteOfficials(current, invite.event_id)) throw new Error('Only a site Admin or the event\'s Chief Official can remove officials')
     const userId = current.officials.find((o) => o.id === invite.official_id)?.user_id
+    if (userId === currentUserId() && !isSiteAdmin()) throw new Error('Ask a site Admin to take you off this event')
     current.officialInvitations = current.officialInvitations.filter((i) => i.id !== invitationId)
     if (userId) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === invite.event_id && o.user_id === userId))
     write(DATA_KEY, current)

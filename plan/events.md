@@ -39,23 +39,24 @@ Event statuses are **Requested**, **Active**, **Done** and **Cancelled**.
 
 Agreed with Bhavek on 2026-11-01.
 
-- Once the event is **Active**, a site Admin invites officials (the event's Owner doesn't;
-  Bhavek, 2026-11-01). Anyone on the
+- Once the event is **Active**, a site Admin or the event's Chief Official invites officials (the
+  event's Owner doesn't; Bhavek, 2026-11-01: "admins and the nominated CO"). Anyone on the
   Officials list (Admin page) with an email can be invited; one who has never signed in gets a
   sign-in invite as well. Each invitation is emailed, with a ready-made email to send by hand if
   the automatic one can't go out.
 - An invitation can have an optional **respond by** date. After it, an unanswered invitation
-  shows as **No response** and can't be accepted until a site Admin re-invites.
+  shows as **No response** and can't be accepted until a site Admin or the Chief Official re-invites.
 - The official accepts or declines from the Events page. They accept for the parts they can work:
   one day, some days or the whole event, and on a day with more than one bout session, the whole
   day or just some sessions (for example only the evening). They can change their answer, days or
   sessions until the event's first day.
-- A site Admin can re-invite an official who declined or didn't respond, and can cancel an
-  invitation or remove an official at any time. A site Admin also picks the Chief Official and
-  Deputy from the officials who accepted.
+- A site Admin or the Chief Official can re-invite an official who declined or didn't respond,
+  and can cancel an invitation or remove an official at any time (the Chief Official can't remove
+  themselves). A site Admin picks the Chief Official from the officials who accepted; a site
+  Admin or the Chief Official picks the Deputy.
 - The event shows how many officials accepted, declined and haven't answered, with a list of each.
-  The Owner, site Admins, the Chief Official and the Deputy see the lists (the Owner and the Chief
-  Official and Deputy can't change them), and the dashboard shows the count; any other official
+  The Owner, site Admins, the Chief Official and the Deputy see the lists (the Owner and the
+  Deputy can't change them), and the dashboard shows the count; any other official
   sees only their own invitation.
 - The Chief Official and Deputy are chosen from the officials who accepted. An official who
   declines or is removed stops being CO or Deputy.
@@ -163,7 +164,8 @@ applies them like this:
 |--------|:-:|:-:|:-:|:-:|:-:|
 | Create, approve, cancel, close event | ✓ | | | | |
 | Edit details, times, poster | ✓ | ✓ | | | |
-| Invite officials; choose CO and Deputy | ✓ | | | | |
+| Choose the CO | ✓ | | | | |
+| Invite and remove officials; choose the Deputy | ✓ | | | CO only | |
 | See the officials lists and count | ✓ | ✓ | | ✓ | |
 | Accept or decline an invitation | | | | ✓ | ✓ |
 | Invite clubs, accept join and late-entry requests | ✓ | ✓ | | | |

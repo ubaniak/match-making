@@ -1,8 +1,8 @@
 // Sends the app's event emails through Resend:
 //   { event_id }       emails the Owner "You have Requested an event" with a link to the site.
 //                      Called right after a site Admin creates an event.
-//   { invitation_id }  emails an official their invitation to officiate. Called by the Owner or a
-//                      site Admin right after inviting.
+//   { invitation_id }  emails an official their invitation to officiate. Called by a site Admin or
+//                      the Chief Official right after inviting.
 //   { bout_ids }       "Send for approval": emails everyone who still has to approve those bouts
 //                      (each corner's club Owners, the Chief Official and Deputy), one email per
 //                      person listing all their bouts. Called by the Owner, an official or a site Admin.
@@ -104,7 +104,7 @@ const longDate = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 
 // The official's invitation. official_invitation_email returns nothing unless the caller is the
-// event's Owner or a site Admin.
+// event's Chief Official or a site Admin.
 // deno-lint-ignore no-explicit-any
 async function sendInvitation(supabase: any, invitationId: string) {
   const { data, error } = await supabase.rpc('official_invitation_email', { p_invitation_id: invitationId })
