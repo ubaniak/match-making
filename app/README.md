@@ -25,6 +25,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    7. [`20261031230000_event_owner_on_create.sql`](../supabase/migrations/20261031230000_event_owner_on_create.sql): pick the Owner when creating an event
    8. [`20261101000000_event_lifecycle.sql`](../supabase/migrations/20261101000000_event_lifecycle.sql): event statuses (Requested, Active, Done, Cancelled), only site Admins create events, weigh-in windows and bout sessions, posters, the public page, and no more event-level Admin
    9. [`20261101010000_clubs.sql`](../supabase/migrations/20261101010000_clubs.sql): clubs, club Owners and Coaches, invites approved by a site Admin, athletes linked to a club (existing club names become clubs), and transfer requests
+   10. [`20261101020000_entries.sql`](../supabase/migrations/20261101020000_entries.sql): clubs joining events (invites and join requests), entering and withdrawing athletes, suggested opponents, the entry deadline and late-entry requests; event Coaches become Viewers
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
@@ -69,7 +70,9 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
   - Only a **site Admin** creates an event (name, dates, optional location, Owner). It starts as **Requested** and the Owner is emailed "You have Requested an event" (see [Owner emails](#owner-emails)).
   - The **Owner** edits the details, uploads an optional poster, and sets each day's times: one weigh-in (start and end, at least 2 hours, ending at least 3 hours before that day's first bout) and one or more bout sessions. Days can be left without bouts. The app refuses times that break the rules.
   - A site Admin **approves** the event (Active) at any time, **cancels** it, or **marks it Done**. Events also turn Done by themselves the day after their end date. Only site Admins change the Owner; the old Owner stays on as a Viewer.
-  - Once an event is **Active**, the Owner adds **Coaches** (who enter athletes) and **Viewers**. There is no event-level Admin.
+  - Once an event is **Active**, the Owner (or a site Admin) **invites clubs**, and club owners can **ask to join**; the Owner accepts or declines. Club owners then **enter their own athletes** straight away, optionally suggesting an opponent by name and club, and can **withdraw** them any time before the event is Done.
+  - The Owner can set an optional **entry deadline**. After it, club owners send a **late-entry request** instead, which the Owner accepts or declines.
+  - Every signed-in user can see Active and Done events. Entries are seen only by the Owner, site Admins and members of clubs that are in. The Owner can also add **Viewers**, who see the event but not its entries. There is no event-level Admin.
   - The **public page** (`#upcoming`, linked from the sign-in page) lists upcoming Active events with their location, poster and times, with no sign-in. It never shows people or athletes.
 - Anyone else who signs in gets the Public role and sees a holding page until an Admin adds them.
 

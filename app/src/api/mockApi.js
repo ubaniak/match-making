@@ -12,7 +12,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v5' // v5: clubs, club members and transfers
+const DATA_KEY = 'mock-data-v6' // v6: event clubs, entries and late-entry requests
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -48,7 +48,7 @@ function seed() {
     events: [
       {
         id: 'event-1', name: 'Eastside Winter Box Cup', venue: 'Eastside Leisure Centre',
-        start_date: start, end_date: addDays(start, 1), status: 'active', poster_path: null,
+        start_date: start, end_date: addDays(start, 1), status: 'active', poster_path: null, entry_deadline: null,
         days: [
           { day: start, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions: [{ starts_at: '13:00', label: 'Afternoon' }, { starts_at: '18:30', label: 'Evening' }] },
           { day: addDays(start, 1), weigh_in_start: '08:30', weigh_in_end: '10:30', sessions: [{ starts_at: '14:00', label: '' }] },
@@ -56,20 +56,23 @@ function seed() {
       },
       {
         id: 'event-2', name: 'Riverside Club Show', venue: 'Riverside Boxing Club',
-        start_date: single, end_date: single, status: 'requested', poster_path: null,
+        start_date: single, end_date: single, status: 'requested', poster_path: null, entry_deadline: null,
         days: [],
       },
     ],
     eventMembers: [
       { event_id: 'event-1', user_id: 'user-1', role: 'owner' },
-      { event_id: 'event-1', user_id: 'user-2', role: 'coach' },
       { event_id: 'event-1', user_id: 'user-3', role: 'viewer' },
       { event_id: 'event-2', user_id: 'user-2', role: 'owner' },
     ],
-    eventAthletes: [
-      { event_id: 'event-1', athlete_id: 'athlete-1', added_by: 'user-1' },
-      { event_id: 'event-1', athlete_id: 'athlete-3', added_by: 'user-2' },
+    eventClubs: [
+      { event_id: 'event-1', club_id: 'club-1', status: 'accepted', requested_at: new Date().toISOString() },
+      { event_id: 'event-1', club_id: 'club-2', status: 'requested', requested_at: new Date().toISOString() },
     ],
+    eventAthletes: [
+      { event_id: 'event-1', athlete_id: 'athlete-1', club_id: 'club-1', added_by: 'user-1', suggested_opponent_name: 'Tom Becker', suggested_opponent_club: 'Riverside Boxing' },
+    ],
+    lateEntries: [],
   }
 }
 
@@ -131,7 +134,32 @@ function roleOn(current, eventId) {
   return current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)?.role ?? null
 }
 
-const canSee = (current, eventId) => isSiteAdmin() || Boolean(roleOn(current, eventId))
+// Mirrors can_read_event and can_read_entries.
+const inEventClub = (current, eventId) =>
+  current.eventClubs.some((ec) => ec.event_id === eventId && ec.status === 'accepted' && clubRole(current, ec.club_id))
+function canSee(current, eventId) {
+  const event = current.events.find((e) => e.id === eventId)
+  return Boolean(event) && (isSiteAdmin() || Boolean(roleOn(current, eventId)) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
+}
+const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId)
+const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
+const eventOpen = (event) => effectiveStatus(event) === 'active'
+const entriesOpen = (event) => eventOpen(event) && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline))
+const stillRunning = (event) => ['requested', 'active'].includes(effectiveStatus(event))
+const now = () => new Date().toISOString()
+
+// Mirrors check_entry. Returns the athlete's club.
+function checkEntry(current, event, athleteId) {
+  const athlete = current.athletes.find((a) => a.id === athleteId)
+  if (!athlete) throw new Error('That athlete no longer exists')
+  if (!isSiteAdmin() && clubRole(current, athlete.club_id) !== 'owner') throw new Error('Only the athlete\'s club Owners can enter them')
+  if (!eventOpen(event)) throw new Error('Athletes can be entered once the event is Active, and until it is over')
+  if (!current.eventClubs.some((ec) => ec.event_id === event.id && ec.club_id === athlete.club_id && ec.status === 'accepted')) {
+    throw new Error('The athlete\'s club isn\'t in this event yet')
+  }
+  if (current.eventAthletes.some((ea) => ea.event_id === event.id && ea.athlete_id === athleteId)) throw new Error('That athlete is already entered')
+  return athlete.club_id
+}
 
 // The signed-in user's role in a club: 'owner', 'coach' or null. Pending invites don't count.
 function clubRole(current, clubId) {
@@ -469,14 +497,27 @@ export const mockApi = {
     const event = current.events.find((e) => e.id === eventId)
     if (!event || !canSee(current, eventId)) return null
     const result = withMembers(current, event)
-    result.athletes = current.eventAthletes
-      .filter((ea) => ea.event_id === eventId)
-      .map((ea) => {
-        const athlete = current.athletes.find((a) => a.id === ea.athlete_id)
-        return athlete && { ...withClub(current, athlete), added_by: ea.added_by }
-      })
-      .filter(Boolean)
-      .sort(byName)
+    const entries = canSeeEntries(current, eventId)
+    result.athletes = entries
+      ? current.eventAthletes
+        .filter((ea) => ea.event_id === eventId)
+        .map((ea) => {
+          const athlete = current.athletes.find((a) => a.id === ea.athlete_id)
+          return athlete && {
+            ...withClub(current, athlete), added_by: ea.added_by, entry_club_id: ea.club_id,
+            suggested_opponent_name: ea.suggested_opponent_name ?? null, suggested_opponent_club: ea.suggested_opponent_club ?? null,
+          }
+        })
+        .filter(Boolean)
+        .sort(byName)
+      : []
+    result.clubs = current.eventClubs
+      .filter((ec) => ec.event_id === eventId && (entries || clubRole(current, ec.club_id)))
+      .map((ec) => ({ ...ec, club: { id: ec.club_id, name: clubName(current, ec.club_id) } }))
+    result.late_entries = current.lateEntries
+      .filter((r) => r.event_id === eventId && (isOwnerOf(current, eventId) || clubRole(current, r.club_id)))
+      .map((r) => ({ ...r, athlete: current.athletes.find((a) => a.id === r.athlete_id) ?? null, club: { id: r.club_id, name: clubName(current, r.club_id) } }))
+      .sort((a, b) => b.requested_at.localeCompare(a.requested_at))
     return result
   },
 
@@ -497,12 +538,12 @@ export const mockApi = {
     return event.id
   },
 
-  async updateEventDetails(eventId, { name, venue, startDate, endDate }) {
+  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline }) {
     const current = data()
     const event = requireEditor(current, eventId)
     if (!name.trim()) throw new Error('Give the event a name')
     if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
-    Object.assign(event, { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate })
+    Object.assign(event, { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null })
     // Days that fall outside the new dates go with them.
     event.days = event.days.filter((d) => d.day >= startDate && d.day <= endDate)
     write(DATA_KEY, current)
@@ -594,7 +635,7 @@ export const mockApi = {
   async setEventMember(eventId, userId, role) {
     const current = data()
     const event = requireEditor(current, eventId)
-    if (!['coach', 'viewer'].includes(role)) throw new Error('Only a site Admin can change who owns an event')
+    if (role !== 'viewer') throw new Error('Only a site Admin can change who owns an event')
     const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
     if (existing?.role === 'owner') throw new Error('Only a site Admin can change who owns an event')
     if (existing) existing.role = role
@@ -628,29 +669,121 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  async addEventAthlete(eventId, athleteId) {
+  async inviteClub(eventId, clubId) {
     const current = data()
     const event = findEvent(current, eventId)
-    if (!isSiteAdmin() && !['owner', 'coach'].includes(roleOn(current, eventId))) {
-      throw new Error('Only the event\'s Owner and Coaches can add athletes')
-    }
-    if (effectiveStatus(event) !== 'active') throw new Error('Athletes can be added once the event is Active')
-    if (!current.eventAthletes.some((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)) {
-      current.eventAthletes.push({ event_id: eventId, athlete_id: athleteId, added_by: currentUserId() })
-      write(DATA_KEY, current)
-    }
+    if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner or a site Admin can invite clubs')
+    if (!eventOpen(event)) throw new Error('Clubs can be invited once the event is Active')
+    const existing = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId)
+    if (existing) existing.status = 'accepted'
+    else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'accepted', requested_at: now() })
+    write(DATA_KEY, current)
   },
 
-  async removeEventAthlete(eventId, athleteId) {
+  async requestToJoin(eventId, clubId) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    if (!isSiteAdmin() && clubRole(current, clubId) !== 'owner') throw new Error('Only the club\'s Owners can ask to join for it')
+    if (!eventOpen(event)) throw new Error('Clubs can join once the event is Active')
+    const existing = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId)
+    if (existing?.status === 'accepted') throw new Error('That club is already in this event')
+    if (existing) Object.assign(existing, { status: 'requested', requested_at: now() })
+    else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'requested', requested_at: now() })
+    write(DATA_KEY, current)
+  },
+
+  async decideJoinRequest(eventId, clubId, accept) {
+    const current = data()
+    if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner or a site Admin can answer join requests')
+    const request = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId && ec.status === 'requested')
+    if (!request) throw new Error('That request is no longer waiting')
+    request.status = accept ? 'accepted' : 'declined'
+    write(DATA_KEY, current)
+  },
+
+  async removeEventClub(eventId, clubId) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    if (!isOwnerOf(current, eventId) && clubRole(current, clubId) !== 'owner') throw new Error('Only the event\'s Owner, the club\'s Owners or a site Admin can do that')
+    if (!stillRunning(event) && !isSiteAdmin()) throw new Error('This event can no longer be changed')
+    current.eventAthletes = current.eventAthletes.filter((ea) => !(ea.event_id === eventId && ea.club_id === clubId))
+    current.lateEntries.forEach((r) => {
+      if (r.event_id === eventId && r.club_id === clubId && r.status === 'pending') r.status = 'cancelled'
+    })
+    current.eventClubs = current.eventClubs.filter((ec) => !(ec.event_id === eventId && ec.club_id === clubId))
+    write(DATA_KEY, current)
+  },
+
+  async enterAthlete(eventId, athleteId, opponentName, opponentClub) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    const clubId = checkEntry(current, event, athleteId)
+    if (!entriesOpen(event) && !isSiteAdmin()) throw new Error('The entry deadline has passed. Send the Owner a late-entry request instead.')
+    current.eventAthletes.push({
+      event_id: eventId, athlete_id: athleteId, club_id: clubId, added_by: currentUserId(),
+      suggested_opponent_name: opponentName?.trim() || null, suggested_opponent_club: opponentClub?.trim() || null,
+    })
+    write(DATA_KEY, current)
+  },
+
+  async suggestOpponent(eventId, athleteId, opponentName, opponentClub) {
+    const current = data()
+    const entry = current.eventAthletes.find((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)
+    if (!entry) throw new Error('That athlete isn\'t entered')
+    if (!isSiteAdmin() && clubRole(current, entry.club_id) !== 'owner') throw new Error('Only the athlete\'s club Owners can suggest an opponent')
+    Object.assign(entry, { suggested_opponent_name: opponentName?.trim() || null, suggested_opponent_club: opponentClub?.trim() || null })
+    write(DATA_KEY, current)
+  },
+
+  async withdrawAthlete(eventId, athleteId) {
     const current = data()
     const event = findEvent(current, eventId)
     const entry = current.eventAthletes.find((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)
-    const role = roleOn(current, eventId)
-    const editable = ['requested', 'active'].includes(effectiveStatus(event))
-    if (!(isSiteAdmin() || (editable && (role === 'owner' || (role === 'coach' && entry?.added_by === currentUserId()))))) {
-      throw new Error('Coaches can only remove the athletes they added')
-    }
+    if (!entry) throw new Error('That athlete isn\'t entered')
+    if (!isSiteAdmin() && clubRole(current, entry.club_id) !== 'owner') throw new Error('Only the athlete\'s club Owners can withdraw them')
+    if (!isSiteAdmin() && !stillRunning(event)) throw new Error('This event is over, so its entries can\'t change')
     current.eventAthletes = current.eventAthletes.filter((ea) => ea !== entry)
+    write(DATA_KEY, current)
+  },
+
+  async requestLateEntry(eventId, athleteId, note) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    const clubId = checkEntry(current, event, athleteId)
+    if (entriesOpen(event)) throw new Error('Entries are still open, so enter the athlete directly')
+    if (current.lateEntries.some((r) => r.event_id === eventId && r.athlete_id === athleteId && r.status === 'pending')) {
+      throw new Error('There is already a late-entry request waiting for that athlete')
+    }
+    current.lateEntries.push({
+      id: crypto.randomUUID(), event_id: eventId, athlete_id: athleteId, club_id: clubId, note: note?.trim() || null,
+      status: 'pending', requested_by: currentUserId(), requested_at: now(),
+    })
+    write(DATA_KEY, current)
+  },
+
+  async decideLateEntry(requestId, accept) {
+    const current = data()
+    const request = current.lateEntries.find((r) => r.id === requestId)
+    if (!request || request.status !== 'pending') throw new Error('That request is no longer waiting')
+    if (!isOwnerOf(current, request.event_id)) throw new Error('Only the event\'s Owner or a site Admin can answer late-entry requests')
+    if (accept) {
+      if (!eventOpen(findEvent(current, request.event_id))) throw new Error('This event is no longer taking entries')
+      if (!current.eventAthletes.some((ea) => ea.event_id === request.event_id && ea.athlete_id === request.athlete_id)) {
+        current.eventAthletes.push({ event_id: request.event_id, athlete_id: request.athlete_id, club_id: request.club_id, added_by: currentUserId() })
+      }
+    }
+    request.status = accept ? 'accepted' : 'declined'
+    write(DATA_KEY, current)
+  },
+
+  async cancelLateEntry(requestId) {
+    const current = data()
+    const request = current.lateEntries.find((r) => r.id === requestId)
+    if (!request || request.status !== 'pending') throw new Error('That request is no longer waiting')
+    if (!isSiteAdmin() && request.requested_by !== currentUserId() && clubRole(current, request.club_id) !== 'owner') {
+      throw new Error('Only the club\'s Owners can withdraw this request')
+    }
+    request.status = 'cancelled'
     write(DATA_KEY, current)
   },
 

@@ -1,11 +1,17 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, poster_path,
+const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
 const POSTERS = 'event-posters'
+
+async function rpc(name, args) {
+  const { data, error } = await supabase.rpc(name, args)
+  if (error) throw error
+  return data
+}
 
 // Athletes carry their club's name as `club` so pages can show it directly.
 const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id,
@@ -248,13 +254,19 @@ export const supabaseApi = {
     const { data, error } = await supabase
       .from('events')
       .select(`${eventColumns},
-        event_athletes(added_by, athlete:athletes(${athleteColumns}))`)
+        event_athletes(added_by, club_id, suggested_opponent_name, suggested_opponent_club, athlete:athletes(${athleteColumns})),
+        clubs:event_clubs(club_id, status, requested_at, club:clubs(id, name)),
+        late_entries:late_entry_requests(id, athlete_id, club_id, note, status, requested_by, requested_at, athlete:athletes(id, name), club:clubs(id, name))`)
       .eq('id', eventId)
       .maybeSingle()
     if (error) throw error
     if (!data) return null
-    const athletes = data.event_athletes.filter((ea) => ea.athlete).map((ea) => ({ ...tidyAthlete(ea.athlete), added_by: ea.added_by })).sort((a, b) => a.name.localeCompare(b.name))
-    return { ...tidyEvent(data), athletes, athlete_count: athletes.length }
+    const athletes = data.event_athletes
+      .filter((ea) => ea.athlete)
+      .map(({ athlete, ...entry }) => ({ ...tidyAthlete(athlete), ...entry, entry_club_id: entry.club_id, club_id: athlete.club_id }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    const late_entries = [...data.late_entries].sort((a, b) => b.requested_at.localeCompare(a.requested_at))
+    return { ...tidyEvent(data), athletes, athlete_count: athletes.length, late_entries, event_athletes: undefined }
   },
 
   // Site Admins only. The event starts as Requested. Returns its id.
@@ -270,10 +282,11 @@ export const supabaseApi = {
     return data
   },
 
-  async updateEventDetails(eventId, { name, venue, startDate, endDate }) {
+  // entryDeadline: an ISO timestamp, or '' for no deadline.
+  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline }) {
     const { data, error } = await supabase
       .from('events')
-      .update({ name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate })
+      .update({ name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null })
       .eq('id', eventId)
       .select('id')
     if (error) throw error
@@ -357,13 +370,44 @@ export const supabaseApi = {
     if (error) throw error
   },
 
-  async addEventAthlete(eventId, athleteId) {
-    const { error } = await supabase.from('event_athletes').insert({ event_id: eventId, athlete_id: athleteId })
-    if (error && error.code !== '23505') throw error // already entered is fine
+  // Clubs and entries (plan/events.md section 3). Rules are enforced by the database functions.
+  async inviteClub(eventId, clubId) {
+    await rpc('invite_club', { p_event_id: eventId, p_club_id: clubId })
   },
 
-  async removeEventAthlete(eventId, athleteId) {
-    const { error } = await supabase.from('event_athletes').delete().eq('event_id', eventId).eq('athlete_id', athleteId)
-    if (error) throw error
+  async requestToJoin(eventId, clubId) {
+    await rpc('request_to_join', { p_event_id: eventId, p_club_id: clubId })
+  },
+
+  async decideJoinRequest(eventId, clubId, accept) {
+    await rpc('decide_join_request', { p_event_id: eventId, p_club_id: clubId, p_accept: accept })
+  },
+
+  async removeEventClub(eventId, clubId) {
+    await rpc('remove_event_club', { p_event_id: eventId, p_club_id: clubId })
+  },
+
+  async enterAthlete(eventId, athleteId, opponentName, opponentClub) {
+    await rpc('enter_athlete', { p_event_id: eventId, p_athlete_id: athleteId, p_opponent_name: opponentName || null, p_opponent_club: opponentClub || null })
+  },
+
+  async suggestOpponent(eventId, athleteId, opponentName, opponentClub) {
+    await rpc('suggest_opponent', { p_event_id: eventId, p_athlete_id: athleteId, p_name: opponentName || null, p_club: opponentClub || null })
+  },
+
+  async withdrawAthlete(eventId, athleteId) {
+    await rpc('withdraw_athlete', { p_event_id: eventId, p_athlete_id: athleteId })
+  },
+
+  async requestLateEntry(eventId, athleteId, note) {
+    await rpc('request_late_entry', { p_event_id: eventId, p_athlete_id: athleteId, p_note: note || null })
+  },
+
+  async decideLateEntry(requestId, accept) {
+    await rpc('decide_late_entry', { p_request_id: requestId, p_accept: accept })
+  },
+
+  async cancelLateEntry(requestId) {
+    await rpc('cancel_late_entry', { p_request_id: requestId })
   },
 }

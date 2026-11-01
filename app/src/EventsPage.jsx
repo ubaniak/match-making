@@ -5,7 +5,7 @@ import { categorise, compareByCategory } from './categories'
 import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 
-const roleLabels = { owner: 'Owner', coach: 'Coach', viewer: 'Viewer' }
+const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
 
 const myRole = (event, profile) => event.members.find((m) => m.user_id === profile?.id)?.role ?? null
 const ownerOf = (event) => event.members.find((m) => m.role === 'owner')?.user
@@ -24,10 +24,22 @@ function rightsFor(event, profile, siteAdmin) {
     edit: siteAdmin || (owner && editable),
     members: siteAdmin || (owner && editable),
     addMembers: open && (siteAdmin || owner),
-    addAthletes: open && (siteAdmin || owner || role === 'coach'),
-    removeAnyAthlete: siteAdmin || (owner && editable),
-    removeOwnAthletes: open && role === 'coach',
+    // Invite clubs and answer join and late-entry requests.
+    manageClubs: siteAdmin || (owner && editable),
+    open,
+    editable,
+    entriesOpen: open && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline)),
   }
+}
+
+const formatDeadline = (iso) =>
+  iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'None'
+
+// datetime-local inputs work in the browser's local time.
+function toLocalInput(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 
 // Events: site Admins create them and pick the Owner. The Owner fills in the poster and
@@ -274,6 +286,11 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
   const [editing, setEditing] = useState(null) // 'details' | 'times' | null
   const [email, setEmail] = useState(initialEmail)
   const [busy, setBusy] = useState(false)
+  const [clubs, setClubs] = useState([])
+
+  useEffect(() => {
+    api.listClubs().then(setClubs, () => setClubs([]))
+  }, [])
 
   const reload = useCallback(async () => {
     try {
@@ -380,13 +397,15 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
         <div><dt>Dates</dt><dd>{formatDateRange(event.start_date, event.end_date)}</dd></div>
         <div><dt>Location</dt><dd>{event.venue || '—'}</dd></div>
         <div><dt>Owner</dt><dd>{personName(ownerOf(event))}</dd></div>
+        <div><dt>Entry deadline</dt><dd>{formatDeadline(event.entry_deadline)}</dd></div>
         <div><dt>Your role</dt><dd>{siteAdmin ? <span className="badge">Site admin</span> : <RoleBadge role={may.role} />}</dd></div>
       </dl>
       {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
 
       <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
       <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
-      <EventAthletes event={event} may={may} profile={profile} onChange={reload} />
+      <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
+      <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
       <EventMembers event={event} may={may} onChange={reload} />
 
       {siteAdmin && (
@@ -429,7 +448,9 @@ function ChangeOwner({ event, busy, run }) {
 }
 
 function DetailsForm({ event, onCancel, onSaved }) {
-  const [form, setField] = useEventFields({ name: event.name, venue: event.venue ?? '', startDate: event.start_date, endDate: event.end_date })
+  const [form, setField] = useEventFields({
+    name: event.name, venue: event.venue ?? '', startDate: event.start_date, endDate: event.end_date, deadline: toLocalInput(event.entry_deadline),
+  })
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const lostDays = event.days.filter((d) => d.day < form.startDate || d.day > form.endDate)
@@ -441,7 +462,7 @@ function DetailsForm({ event, onCancel, onSaved }) {
     if (lostDays.length && !window.confirm(`The new dates drop the times for ${lostDays.map((d) => formatDay(d.day)).join(', ')}. Continue?`)) return
     setSaving(true)
     try {
-      await api.updateEventDetails(event.id, form)
+      await api.updateEventDetails(event.id, { ...form, entryDeadline: form.deadline ? new Date(form.deadline).toISOString() : '' })
       onSaved()
     } catch (err) {
       setError(err.message)
@@ -461,6 +482,15 @@ function DetailsForm({ event, onCancel, onSaved }) {
       <div className="row-form">
         <h2>Dates</h2>
         <DateFields form={form} setField={setField} />
+      </div>
+      <div className="row-form">
+        <h2>Entry deadline <span className="muted">(optional)</span></h2>
+        <label>
+          Entries close at
+          <input type="datetime-local" {...field('deadline')} />
+        </label>
+        {form.deadline && <button type="button" className="secondary" onClick={() => setField('deadline', '')}>No deadline</button>}
+        <p className="muted full">After the deadline, clubs can't enter athletes themselves; they can send you a late-entry request.</p>
       </div>
       {error && <p className="error">{error}</p>}
       <div className="form-actions">
@@ -651,26 +681,20 @@ function TimesForm({ event, onCancel, onSaved }) {
   )
 }
 
-function EventAthletes({ event, may, profile, onChange }) {
-  const canAdd = may.addAthletes
-  const canRemove = (athlete) => may.removeAnyAthlete || (may.removeOwnAthletes && athlete.added_by === profile?.id)
-  const showActions = may.removeAnyAthlete || may.removeOwnAthletes
-  const [allAthletes, setAllAthletes] = useState([])
+const clubStatusLabels = { accepted: 'In', requested: 'Asked to join', declined: 'Declined' }
+
+// Clubs in the event. The Owner invites clubs and answers requests; club owners ask to join.
+function EventClubs({ event, may, clubs, profile, onChange }) {
   const [choice, setChoice] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-
-  useEffect(() => {
-    if (canAdd) api.listAthletes().then(setAllAthletes, (err) => setError(err.message))
-  }, [canAdd])
-
-  const entered = useMemo(() => new Set(event.athletes.map((a) => a.id)), [event.athletes])
-  // Each athlete's age group, weight class and experience level for this event, in division order.
-  const athletes = useMemo(
-    () => event.athletes.map((a) => ({ ...a, categories: categorise(a, event.start_date) })).sort(compareByCategory),
-    [event.athletes, event.start_date],
-  )
-  const available = allAthletes.filter((a) => !entered.has(a.id))
+  const byClub = Object.fromEntries(event.clubs.map((ec) => [ec.club_id, ec]))
+  const ownedClubs = clubs.filter((c) => c.members.some((m) => m.user_id === profile?.id && m.role === 'owner' && m.status === 'active'))
+  const canJoin = ownedClubs.filter((c) => !['accepted', 'requested'].includes(byClub[c.id]?.status))
+  const invitable = clubs.filter((c) => byClub[c.id]?.status !== 'accepted')
+  const order = { requested: 0, accepted: 1, declined: 2 }
+  const rows = [...event.clubs].sort((a, b) => order[a.status] - order[b.status] || (a.club?.name ?? '').localeCompare(b.club?.name ?? ''))
+  const owns = (clubId) => ownedClubs.some((c) => c.id === clubId)
 
   async function run(action) {
     setBusy(true)
@@ -685,36 +709,190 @@ function EventAthletes({ event, may, profile, onChange }) {
     }
   }
 
-  function add(e) {
+  function invite(e) {
     e.preventDefault()
     if (!choice) return
     run(async () => {
-      await api.addEventAthlete(event.id, choice)
+      await api.inviteClub(event.id, choice)
       setChoice('')
     })
   }
+
+  function remove(ec) {
+    const entered = event.athletes.filter((a) => a.entry_club_id === ec.club_id).length
+    const question = ec.status === 'requested' && owns(ec.club_id) && !may.manageClubs
+      ? `Withdraw ${ec.club?.name}'s request to join?`
+      : `Take ${ec.club?.name} out of ${event.name}?${entered ? ` Its ${entered} entered athlete${entered === 1 ? ' is' : 's are'} withdrawn too.` : ''}`
+    if (!window.confirm(question)) return
+    run(() => api.removeEventClub(event.id, ec.club_id))
+  }
+
+  if (!may.manageClubs && rows.length === 0 && canJoin.length === 0) return null
+
+  return (
+    <section>
+      <h2>Clubs ({event.clubs.filter((ec) => ec.status === 'accepted').length})</h2>
+      {!may.open && <p className="muted">Clubs can join once the event is approved.</p>}
+      {may.manageClubs && may.open && (
+        <form onSubmit={invite} className="row-form">
+          <label>
+            Invite a club
+            <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+              <option value="">{invitable.length ? 'Choose a club…' : 'Every club is already in'}</option>
+              {invitable.map((c) => <option key={c.id} value={c.id}>{c.name}{byClub[c.id]?.status === 'requested' ? ' (asked to join)' : ''}</option>)}
+            </select>
+          </label>
+          <button type="submit" disabled={busy || !choice}>Invite</button>
+        </form>
+      )}
+      {may.open && canJoin.length > 0 && (
+        <div className="admin-actions">
+          {canJoin.map((c) => (
+            <button key={c.id} className="secondary" disabled={busy} onClick={() => run(() => api.requestToJoin(event.id, c.id))}>
+              Ask to join for {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
+      {rows.length > 0 && (
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr><th>Club</th><th>Status</th><th>Athletes entered</th><th /></tr>
+            </thead>
+            <tbody>
+              {rows.map((ec) => (
+                <tr key={ec.club_id}>
+                  <td>{ec.club?.name ?? '—'}</td>
+                  <td><span className={`badge club-${ec.status}`}>{clubStatusLabels[ec.status]}</span></td>
+                  <td>{ec.status === 'accepted' ? event.athletes.filter((a) => a.entry_club_id === ec.club_id).length : ''}</td>
+                  <td className="actions">
+                    {may.manageClubs && ec.status === 'requested' && (
+                      <>
+                        <button className="link" disabled={busy} onClick={() => run(() => api.decideJoinRequest(event.id, ec.club_id, true))}>Accept</button>
+                        <button className="link" disabled={busy} onClick={() => run(() => api.decideJoinRequest(event.id, ec.club_id, false))}>Decline</button>
+                      </>
+                    )}
+                    {(may.manageClubs || (owns(ec.club_id) && may.editable)) && ec.status !== 'declined' && (
+                      <button className="link" disabled={busy} onClick={() => remove(ec)}>
+                        {ec.status === 'requested' && !may.manageClubs ? 'Withdraw request' : may.manageClubs ? 'Remove' : 'Leave event'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// Entered athletes. Club owners enter and withdraw their own club's athletes and suggest opponents.
+function EventEntries({ event, may, clubs, profile, onChange }) {
+  const [allAthletes, setAllAthletes] = useState([])
+  const [form, setForm] = useState({ athleteId: '', opponentName: '', opponentClub: '', note: '' })
+  const [editing, setEditing] = useState(null) // athlete id whose suggestion is being edited
+  const [suggestion, setSuggestion] = useState({ name: '', club: '' })
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const inClubs = new Set(event.clubs.filter((ec) => ec.status === 'accepted').map((ec) => ec.club_id))
+  const ownedIds = new Set(clubs.filter((c) => c.members.some((m) => m.user_id === profile?.id && m.role === 'owner' && m.status === 'active')).map((c) => c.id))
+  const myEntryClubs = may.siteAdmin ? inClubs : new Set([...ownedIds].filter((id) => inClubs.has(id)))
+  const canEnter = may.open && myEntryClubs.size > 0
+  const late = canEnter && !may.entriesOpen && !may.siteAdmin
+  const canChange = (a) => may.siteAdmin || (ownedIds.has(a.entry_club_id) && may.editable)
+  const showActions = event.athletes.some(canChange)
+
+  useEffect(() => {
+    if (canEnter) api.listAthletes().then(setAllAthletes, (err) => setError(err.message))
+  }, [canEnter])
+
+  const entered = useMemo(() => new Set(event.athletes.map((a) => a.id)), [event.athletes])
+  const waitingLate = new Set(event.late_entries.filter((r) => r.status === 'pending').map((r) => r.athlete_id))
+  const available = allAthletes.filter((a) => myEntryClubs.has(a.club_id) && !entered.has(a.id) && !waitingLate.has(a.id))
+  // Each athlete's age group, weight class and experience level for this event, in division order.
+  const athletes = useMemo(
+    () => event.athletes.map((a) => ({ ...a, categories: categorise(a, event.start_date) })).sort(compareByCategory),
+    [event.athletes, event.start_date],
+  )
+
+  async function run(action) {
+    setBusy(true)
+    setError(null)
+    try {
+      await action()
+      await onChange()
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function enter(e) {
+    e.preventDefault()
+    if (!form.athleteId) return
+    const ok = await run(() =>
+      late
+        ? api.requestLateEntry(event.id, form.athleteId, form.note)
+        : api.enterAthlete(event.id, form.athleteId, form.opponentName, form.opponentClub),
+    )
+    if (ok) setForm({ athleteId: '', opponentName: '', opponentClub: '', note: '' })
+  }
+
+  function withdraw(a) {
+    if (!window.confirm(`Withdraw ${a.name} from ${event.name}?`)) return
+    run(() => api.withdrawAthlete(event.id, a.id))
+  }
+
+  async function saveSuggestion(a) {
+    const ok = await run(() => api.suggestOpponent(event.id, a.id, suggestion.name, suggestion.club))
+    if (ok) setEditing(null)
+  }
+
+  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  // Entries come back only for people allowed to see them (the Owner, site Admins, clubs that are in).
+  const canSeeEntries = may.siteAdmin || may.role === 'owner' || event.athletes.length > 0 || myEntryClubs.size > 0
+  if (!canSeeEntries && !canEnter) return null
 
   return (
     <section>
       <h2>Athletes ({event.athletes.length})</h2>
       {effectiveStatus(event) === 'requested' && <p className="muted">Athletes can be entered once the event is approved.</p>}
-      {canAdd && (
-        <form onSubmit={add} className="row-form">
+      {canEnter && (
+        <form onSubmit={enter} className="row-form">
+          <h2>{late ? 'Ask for a late entry' : 'Enter an athlete'}</h2>
+          {late && <p className="muted full">The entry deadline has passed. The event's Owner will accept or decline your request.</p>}
           <label>
-            Add an athlete
-            <select value={choice} onChange={(e) => setChoice(e.target.value)}>
-              <option value="">{available.length ? 'Choose an athlete…' : 'Every athlete is already entered'}</option>
+            Athlete
+            <select value={form.athleteId} onChange={(e) => setForm({ ...form, athleteId: e.target.value })}>
+              <option value="">{available.length ? 'Choose an athlete…' : 'All your club\'s athletes are entered'}</option>
               {available.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {[a.name, genderLabel(a.gender), formatWeight(a.weight_kg), a.club].filter((v) => v && v !== '—').join(' · ')}
+                  {[a.name, a.club, genderLabel(a.gender), formatWeight(a.weight_kg)].filter((v) => v && v !== '—').join(' · ')}
                 </option>
               ))}
             </select>
           </label>
-          <button type="submit" disabled={busy || !choice}>Add</button>
+          {late ? (
+            <label>Note <span className="muted">(optional)</span><input maxLength={500} {...field('note')} /></label>
+          ) : (
+            <>
+              <label>Suggested opponent <span className="muted">(optional)</span><input maxLength={100} placeholder="Name" {...field('opponentName')} /></label>
+              <label>Their club<input maxLength={100} placeholder="Club" {...field('opponentClub')} /></label>
+            </>
+          )}
+          <button type="submit" disabled={busy || !form.athleteId}>{late ? 'Send request' : 'Enter'}</button>
         </form>
       )}
       {error && <p className="error">{error}</p>}
+      <LateEntries event={event} may={may} ownedIds={ownedIds} profile={profile} run={run} busy={busy} />
       {event.athletes.length === 0 ? (
         <p className="muted">No athletes entered yet.</p>
       ) : (
@@ -726,7 +904,7 @@ function EventAthletes({ event, may, profile, onChange }) {
         <div className="table-scroll">
           <table>
             <thead>
-              <tr><th>Name</th><th>Age group</th><th>Gender</th><th>Weight class</th><th>Experience</th><th>Club</th><th>Coach</th>{showActions && <th />}</tr>
+              <tr><th>Name</th><th>Age group</th><th>Gender</th><th>Weight class</th><th>Experience</th><th>Club</th><th>Suggested opponent</th>{showActions && <th />}</tr>
             </thead>
             <tbody>
               {athletes.map((a) => (
@@ -737,13 +915,27 @@ function EventAthletes({ event, may, profile, onChange }) {
                   <td><WeightCell category={a.categories.weight} weightKg={a.weight_kg} /></td>
                   <td><ExperienceCell category={a.categories.experience} bouts={a.bouts} /></td>
                   <td>{a.club || '—'}</td>
-                  <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
+                  <td>
+                    {editing === a.id ? (
+                      <span className="inline-edit">
+                        <input aria-label="Opponent name" placeholder="Name" maxLength={100} value={suggestion.name} onChange={(e) => setSuggestion({ ...suggestion, name: e.target.value })} />
+                        <input aria-label="Opponent club" placeholder="Club" maxLength={100} value={suggestion.club} onChange={(e) => setSuggestion({ ...suggestion, club: e.target.value })} />
+                        <button className="link" disabled={busy} onClick={() => saveSuggestion(a)}>Save</button>
+                        <button className="link" onClick={() => setEditing(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      [a.suggested_opponent_name, a.suggested_opponent_club].filter(Boolean).join(', ') || '—'
+                    )}
+                  </td>
                   {showActions && (
                     <td className="actions">
-                      {canRemove(a) && (
-                        <button className="link" disabled={busy} onClick={() => run(() => api.removeEventAthlete(event.id, a.id))}>
-                          Remove
-                        </button>
+                      {canChange(a) && editing !== a.id && (
+                        <>
+                          <button className="link" onClick={() => { setEditing(a.id); setSuggestion({ name: a.suggested_opponent_name ?? '', club: a.suggested_opponent_club ?? '' }) }}>
+                            Suggest opponent
+                          </button>
+                          <button className="link" disabled={busy} onClick={() => withdraw(a)}>Withdraw</button>
+                        </>
                       )}
                     </td>
                   )}
@@ -755,6 +947,47 @@ function EventAthletes({ event, may, profile, onChange }) {
         </>
       )}
     </section>
+  )
+}
+
+const lateLabels = { pending: 'Waiting', accepted: 'Accepted', declined: 'Declined', cancelled: 'Withdrawn' }
+
+function LateEntries({ event, may, ownedIds, profile, run, busy }) {
+  const requests = event.late_entries
+  if (requests.length === 0) return null
+  const canCancel = (r) => may.siteAdmin || r.requested_by === profile?.id || ownedIds.has(r.club_id)
+  return (
+    <>
+      <h3>Late-entry requests</h3>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Athlete</th><th>Club</th><th>Note</th><th>Status</th><th /></tr>
+          </thead>
+          <tbody>
+            {requests.map((r) => (
+              <tr key={r.id}>
+                <td>{r.athlete?.name ?? '—'}</td>
+                <td>{r.club?.name ?? '—'}</td>
+                <td>{r.note || ''}</td>
+                <td><span className={`badge late-${r.status}`}>{lateLabels[r.status]}</span></td>
+                <td className="actions">
+                  {r.status === 'pending' && may.manageClubs && (
+                    <>
+                      <button className="link" disabled={busy} onClick={() => run(() => api.decideLateEntry(r.id, true))}>Accept</button>
+                      <button className="link" disabled={busy} onClick={() => run(() => api.decideLateEntry(r.id, false))}>Decline</button>
+                    </>
+                  )}
+                  {r.status === 'pending' && !may.manageClubs && canCancel(r) && (
+                    <button className="link" disabled={busy} onClick={() => run(() => api.cancelLateEntry(r.id))}>Withdraw</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
 
@@ -789,17 +1022,17 @@ function ExperienceCell({ category, bouts }) {
 }
 
 
-// Who's on the event: the Owner, plus Coaches and Viewers once the event is Active.
+// Who's on the event: the Owner, plus Viewers once the event is Active.
 // Only a site Admin changes the Owner (see ChangeOwner).
 function EventMembers({ event, may, onChange }) {
   const users = useActiveUsers(may.addMembers)
-  const [form, setForm] = useState({ userId: '', role: 'coach' })
+  const [form, setForm] = useState({ userId: '', role: 'viewer' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
   const memberIds = new Set(event.members.map((m) => m.user_id))
   const addable = users.filter((u) => !memberIds.has(u.id))
-  const order = ['owner', 'coach', 'viewer']
+  const order = ['owner', 'viewer']
   const members = [...event.members].sort(
     (a, b) => order.indexOf(a.role) - order.indexOf(b.role) || personName(a.user).localeCompare(personName(b.user)),
   )
@@ -830,25 +1063,18 @@ function EventMembers({ event, may, onChange }) {
     <section>
       <h2>People ({event.members.length})</h2>
       <p className="muted">
-        Coaches add athletes. Viewers can see the event.
+        Viewers can see the event's details and times. Clubs enter athletes through the Clubs section above.
         {effectiveStatus(event) === 'requested' && ' People can be added once the event is approved.'}
       </p>
       {may.addMembers && (
         <form onSubmit={add} className="row-form">
           <label>
-            Add a person
+            Add a viewer
             <select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })}>
               <option value="">{addable.length ? 'Choose a user…' : 'Everyone is already on this event'}</option>
               {addable.map((u) => (
                 <option key={u.id} value={u.id}>{u.name ? `${u.name} (${u.email})` : u.email}</option>
               ))}
-            </select>
-          </label>
-          <label>
-            As
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              <option value="coach">Coach</option>
-              <option value="viewer">Viewer</option>
             </select>
           </label>
           <button type="submit" disabled={busy || !form.userId}>Add</button>
@@ -865,21 +1091,7 @@ function EventMembers({ event, may, onChange }) {
               <tr key={m.user_id}>
                 <td>{m.user?.name || '—'}</td>
                 <td>{m.user?.email || '—'}</td>
-                <td>
-                  {may.members && m.role !== 'owner' ? (
-                    <select
-                      value={m.role}
-                      disabled={busy}
-                      aria-label={`Role for ${personName(m.user)}`}
-                      onChange={(e) => run(() => api.setEventMember(event.id, m.user_id, e.target.value))}
-                    >
-                      <option value="coach">Coach</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
-                  ) : (
-                    <RoleBadge role={m.role} />
-                  )}
-                </td>
+                <td><RoleBadge role={m.role} /></td>
                 {may.members && (
                   <td className="actions">
                     {m.role !== 'owner' && (
