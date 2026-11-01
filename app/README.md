@@ -36,6 +36,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    18. [`20261101100000_bout_approval_requests.sql`](../supabase/migrations/20261101100000_bout_approval_requests.sql)
    19. [`20261101110000_public_bouts.sql`](../supabase/migrations/20261101110000_public_bouts.sql)
    20. [`20261101120000_demo_accounts.sql`](../supabase/migrations/20261101120000_demo_accounts.sql): test data also makes three demo accounts (event-owner@demo.test, club-owner@demo.test, official@demo.test) that sign in with the code 123456; clearing test data deletes them. Needs 14-17 first
+   22. [`20261101140000_notifications.sql`](../supabase/migrations/20261101140000_notifications.sql): in-app alerts and notifications. Database triggers tell people when they're asked to approve a bout, asked whether they're available to officiate, asked to answer a join request, late entry, transfer or club invite, and when there's a comment on a bout they're part of or an answer to something they asked. To-dos clear for everyone once someone deals with them. Things already waiting become to-dos when it runs. Adds the table to Supabase Realtime so the bell updates live; if that fails, the app still refreshes every minute
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:

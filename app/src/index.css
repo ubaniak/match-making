@@ -706,3 +706,70 @@ body {
     align-items: flex-start;
   }
 }
+
+/* Notifications: the bell's drawer and the lists on Home. */
+.notification-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.notification-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notification-list > li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid transparent;
+}
+
+.notification-list > li.unread {
+  border-left-color: #000;
+}
+
+.notification-list > li:last-child {
+  border-bottom: 0;
+}
+
+.notification-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-body.ant-typography {
+  display: block;
+  font-size: 13px;
+}
+
+.notification-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.notification-meta .ant-typography {
+  font-size: 12px;
+}
+
+.notification-actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .notification-list > li {
+    flex-direction: column;
+  }
+}
