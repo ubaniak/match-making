@@ -78,6 +78,17 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
 
 The rules are enforced by row-level security in the database, not just hidden in the app.
 
+## Sign-in emails
+
+Supabase's built-in mailer sends only about 2 emails an hour. Turn on custom SMTP under Authentication > SMTP Settings (Resend: host `smtp.resend.com`, port `465`, username `resend`, an API key as the password), then raise the email limit under Authentication > Rate Limits. With custom SMTP you can also set the sender name, for example "Match Making".
+
+The email wording lives in `supabase/templates/`. In Authentication > Emails, paste each file's contents into the matching template:
+
+| File | Template | Subject |
+| --- | --- | --- |
+| `magic_link.html` | Magic Link | Your Match Making sign-in link |
+| `confirm_signup.html` | Confirm signup | Welcome to Match Making |
+
 ## Owner emails
 
 When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. Until that's set up, the event page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
