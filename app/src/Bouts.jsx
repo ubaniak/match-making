@@ -66,17 +66,17 @@ export default function EventBouts({ event, may, clubs, profile, onEntriesChange
     siteAdmin: may.siteAdmin,
     owner: may.siteAdmin || may.role === 'owner',
     official: may.siteAdmin || Boolean(officialRole),
-    // The CO, the Deputy and every official who accepted record the weigh-in.
-    weighIn: may.siteAdmin || Boolean(officialRole) || Boolean(data.acceptedOfficial),
+    // The CO and Deputy record every day's weigh-in; other officials only on the days they accepted.
+    weighInDays: data.acceptedDays ?? [],
     officialRole,
     ownedClubs,
     cardOpen: event.status === 'active',
   }
-  const seesBouts = rights.owner || rights.weighIn || event.athletes.length > 0
+  const seesBouts = rights.owner || rights.official || rights.weighInDays.length > 0 || event.athletes.length > 0
 
   return (
     <>
-      <EventOfficials event={event} may={may} officials={data.officials} busy={busy} run={run} />
+      <EventOfficials event={event} may={may} profile={profile} officials={data.officials} busy={busy} run={run} />
       <ErrorAlert>{error}</ErrorAlert>
       {seesBouts && ['active', 'done'].includes(event.status) && (
         <Card event={event} data={data} rights={rights} busy={busy} run={run} />
@@ -98,6 +98,7 @@ function Card({ event, data, rights, busy, run }) {
   const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
   const weighInStarted = weighIns.length > 0
   const canMatch = rights.cardOpen && (rights.official || (rights.owner && !weighInStarted))
+  const canWeighIn = rights.cardOpen && (rights.official || rights.weighInDays.includes(day))
   const dayBouts = data.bouts.filter((b) => b.day === day)
   const live = dayBouts.filter((b) => b.status !== 'cancelled').sort((a, b) => a.position - b.position)
   const cancelled = dayBouts.filter((b) => b.status === 'cancelled')
@@ -175,10 +176,10 @@ function Card({ event, data, rights, busy, run }) {
         />
       )}
 
-      {rights.weighIn && rights.cardOpen && (
+      {canWeighIn && (
         <WeighIn event={event} day={day} bouts={live} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
       )}
-      {!(rights.weighIn && rights.cardOpen) && weighIns.length > 0 && (
+      {!canWeighIn && weighIns.length > 0 && (
         <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
       )}
     </Section>

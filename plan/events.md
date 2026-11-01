@@ -45,16 +45,21 @@ Agreed with Bhavek on 2026-11-01.
   the automatic one can't go out.
 - An invitation can have an optional **respond by** date. After it, an unanswered invitation
   shows as **No response** and can't be accepted until the Owner re-invites.
-- The official accepts or declines from the Events page. They can change their answer until the
-  event's first day.
+- The official accepts or declines from the Events page. They accept for the parts they can work:
+  one day, some days or the whole event, and on a day with more than one bout session, the whole
+  day or just some sessions (for example only the evening). They can change their answer, days or
+  sessions until the event's first day.
 - The Owner can re-invite an official who declined or didn't respond, and can cancel an
   invitation or remove an official at any time.
 - The event shows how many officials accepted, declined and haven't answered, with a list of each.
-  Only the Owner and site Admins see the lists; an official sees their own invitation.
+  The Owner, site Admins, the Chief Official and the Deputy see the lists; any other official sees
+  only their own invitation.
 - The Chief Official and Deputy are chosen from the officials who accepted. An official who
   declines or is removed stops being CO or Deputy.
-- Every official who accepted can record the weigh-in (section 5).
-- **Later:** officials asking to join an event.
+- The lists show each accepted official's days and sessions, and how many officials are on each day.
+- Every official who accepted can record the weigh-in on any day they work, even for one session
+  (section 5). The CO and Deputy can record it on every day.
+- Officials can't ask to join an event: every official must be invited.
 
 ### Day times
 
@@ -128,7 +133,7 @@ applies them like this:
 
 ## 5. Weigh-in and medicals
 
-- On weigh-in day, any official who accepted the event's invitation (including the CO and Deputy)
+- On weigh-in day, any official who accepted that day (and the CO and Deputy on every day)
   records each athlete's actual weight and a medical **pass** or **fail** with a note.
 - Every bout is checked again against the actual weights. A bout that fails is cancelled and
   pulled off the card. An athlete who fails the medical or doesn't show up comes off their bouts
@@ -168,7 +173,6 @@ A site Admin can do anything on the site, including every action above.
 
 ## Later
 
-- Officials asking to join an event.
 - Assigning referees and judges to bouts.
 - Tournament mode (brackets across days).
 - Showing the approved bout list on the public page.
