@@ -3,6 +3,9 @@
 //                      Called right after a site Admin creates an event.
 //   { invitation_id }  emails an official their invitation to officiate. Called by the Owner or a
 //                      site Admin right after inviting.
+//   { bout_ids }       "Send for approval": emails everyone who still has to approve those bouts
+//                      (each corner's club Owners, the Chief Official and Deputy), one email per
+//                      person listing all their bouts. Called by the Owner, an official or a site Admin.
 // Sends through Resend
 // (https://resend.com). Setup steps are in app/README.md ("Owner emails").
 //
@@ -30,14 +33,16 @@ Deno.serve(async (req) => {
 
   let eventId: string | undefined
   let invitationId: string | undefined
+  let boutIds: string[] | undefined
   try {
     const body = await req.json()
     eventId = body.event_id
     invitationId = body.invitation_id
+    boutIds = Array.isArray(body.bout_ids) ? body.bout_ids : undefined
   } catch {
     // handled below
   }
-  if (!eventId && !invitationId) return json({ error: 'event_id or invitation_id is missing' }, 400)
+  if (!eventId && !invitationId && !boutIds?.length) return json({ error: 'event_id, invitation_id or bout_ids is missing' }, 400)
 
   // Act as the caller, so row-level security decides what they can see.
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -45,6 +50,7 @@ Deno.serve(async (req) => {
   })
 
   if (invitationId) return await sendInvitation(supabase, invitationId)
+  if (boutIds?.length) return await sendBoutApprovals(supabase, boutIds)
 
   const { data: isAdmin, error: adminError } = await supabase.rpc('is_site_admin')
   if (adminError || !isAdmin) return json({ error: 'Only a site Admin can send this email' }, 403)
@@ -127,4 +133,60 @@ async function sendInvitation(supabase: any, invitationId: string) {
 <p>${escape(ask)}</p>
 <p><a href="${escape(site)}">Sign in</a> with this email address and open Events.</p>`
   return await send(invite.email, `Officiating at ${invite.event_name}`, text, html)
+}
+
+// "Send for approval". request_bout_approvals checks the caller may send these bouts, marks them
+// sent and returns one row per bout, waiting side and person.
+// deno-lint-ignore no-explicit-any
+async function sendBoutApprovals(supabase: any, boutIds: string[]) {
+  const { data, error } = await supabase.rpc('request_bout_approvals', { p_bout_ids: boutIds })
+  if (error) return json({ error: error.message }, error.code === '42501' ? 403 : 500)
+  // deno-lint-ignore no-explicit-any
+  const rows = (data ?? []) as any[]
+  if (rows.length === 0) return json({ sent: 0 })
+
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  if (!apiKey) return json({ error: 'email is not set up yet' }, 501)
+  const from = Deno.env.get('EMAIL_FROM') ?? 'Match Making <onboarding@resend.dev>'
+  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const sideText: Record<string, string> = { red: 'red corner', blue: 'blue corner', official: 'official approval' }
+
+  // One email per person, listing each of their bouts once with the sides they approve for.
+  const people = new Map<string, { name: string | null; event: string; bouts: Map<string, { line: string; sides: string[] }> }>()
+  for (const r of rows) {
+    const person = people.get(r.recipient_email) ?? { name: r.recipient_name, event: r.event_name, bouts: new Map() }
+    people.set(r.recipient_email, person)
+    const red = r.red_club ? `${r.red_name} (${r.red_club})` : r.red_name
+    const blue = r.blue_club ? `${r.blue_name} (${r.blue_club})` : r.blue_name
+    const bout = person.bouts.get(r.bout_id) ?? { line: `${longDate(r.day)}, bout ${r.bout_number}: ${red} vs ${blue}`, sides: [] }
+    bout.sides.push(sideText[r.side] ?? r.side)
+    person.bouts.set(r.bout_id, bout)
+  }
+
+  const emails = [...people.entries()].map(([to, p]) => {
+    const greeting = p.name ? `Hi ${p.name},` : 'Hi,'
+    const lines = [...p.bouts.values()].map((b) => `${b.line} — ${b.sides.join(', ')}`)
+    const count = lines.length === 1 ? 'a bout' : `${lines.length} bouts`
+    const intro = `Please approve or reject ${count} at ${p.event}:`
+    const text = [greeting, '', intro, '', ...lines.map((l) => `- ${l}`), '', `Sign in and open the event's Bouts tab: ${site}`].join('\n')
+    const html = `<p>${escape(greeting)}</p>
+<p>${escape(intro)}</p>
+<ul>${lines.map((l) => `<li>${escape(l)}</li>`).join('')}</ul>
+<p><a href="${escape(site)}">Sign in</a> and open the event's Bouts tab.</p>`
+    return { from, to: [to], subject: `Bouts to approve at ${p.event}`, text, html }
+  })
+
+  // Resend's batch endpoint takes up to 100 emails a call.
+  for (let i = 0; i < emails.length; i += 100) {
+    const response = await fetch('https://api.resend.com/emails/batch', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(emails.slice(i, i + 100)),
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      return json({ error: `the email service said: ${detail.slice(0, 200)}`, sent: i }, 502)
+    }
+  }
+  return json({ sent: emails.length })
 }

@@ -8,8 +8,8 @@ import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
-import { Button, Card as AntCard, Collapse, Input, Space, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
+import { Alert, Button, Card as AntCard, Collapse, Input, Space, Tabs } from 'antd'
+import { ArrowDownOutlined, ArrowUpOutlined, SendOutlined } from '@ant-design/icons'
 import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
@@ -18,6 +18,10 @@ const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Official
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
 const personName = (user) => (user ? user.name || user.email : '—')
+const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
+const sentLabel = (iso) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+// A bout can be sent for approval while it's waiting for approval and has no result.
+const sendable = (b) => b.status === 'pending' && !b.winner
 
 function categoryText(athlete, eventDate) {
   if (!athlete?.date_of_birth) return ''
@@ -65,6 +69,42 @@ function Card({ event, data, rights, busy, run }) {
   const live = dayBouts.filter((b) => b.status !== 'cancelled').sort((a, b) => a.position - b.position)
   const cancelled = dayBouts.filter((b) => b.status === 'cancelled')
   const sessions = event.days.find((d) => d.day === day)?.sessions ?? []
+  const canSend = rights.cardOpen && (rights.owner || rights.official)
+  const [notice, setNotice] = useState(null) // the result of the last "Send for approval"
+  const waiting = data.bouts.filter(sendable)
+  const unsent = waiting.filter((b) => !b.approval_requested_at)
+
+  // Marks the bouts sent and emails everyone who still has to approve them, one email per person.
+  async function sendForApproval(list) {
+    const ids = list.map((b) => b.id)
+    let rows = []
+    const ok = await run(async () => {
+      rows = await api.requestBoutApprovals(ids)
+    })
+    if (!ok) return
+    const nobody = missingApprovers(list, rows, data.officials)
+    if (rows.length === 0) {
+      setNotice({ sent: 0, people: [], nobody })
+      return
+    }
+    const people = groupByPerson(rows)
+    try {
+      await api.emailBoutApprovals(ids)
+      setNotice({ sent: people.length, people: [], nobody })
+    } catch (err) {
+      setNotice({ sent: 0, people, nobody, reason: err.message })
+    }
+  }
+
+  async function sendAll() {
+    const list = unsent.length ? unsent : waiting
+    const what = unsent.length
+      ? `Send ${list.length} bout${list.length === 1 ? '' : 's'} that ${list.length === 1 ? "hasn't" : "haven't"} been sent yet for approval?`
+      : `Every waiting bout has been sent already. Send a reminder for all ${list.length}?`
+    if (await askConfirm(`${what} Each club Owner and official still to approve gets one email listing their bouts.`, { okText: 'Send' })) {
+      sendForApproval(list)
+    }
+  }
 
   function move(bout, delta) {
     const order = [...live]
@@ -80,7 +120,15 @@ function Card({ event, data, rights, busy, run }) {
   }
 
   return (
-    <Section title="Bouts">
+    <Section
+      title="Bouts"
+      extra={canSend && waiting.length > 0 && (
+        <Button type="primary" icon={<SendOutlined />} disabled={busy} onClick={sendAll}>
+          {unsent.length ? `Send all for approval (${unsent.length})` : `Send reminders (${waiting.length})`}
+        </Button>
+      )}
+    >
+      <SendNotice notice={notice} onDismiss={() => setNotice(null)} />
       {days.length > 1 && (
         <Tabs
           activeKey={day}
@@ -114,8 +162,8 @@ function Card({ event, data, rights, busy, run }) {
           {live.map((b, i) => (
             <BoutRow
               key={b.id} bout={b} index={i} count={live.length} event={event} athletes={athletes} weights={weights}
-              rights={rights} canMatch={canMatch} sessions={sessions} busy={busy} run={run}
-              onMove={(delta) => move(b, delta)} onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
+              rights={rights} canMatch={canMatch} canSend={canSend} sessions={sessions} busy={busy} run={run}
+              onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
             />
           ))}
         </div>
@@ -249,7 +297,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
 // One bout on the card
 // ---------------------------------------------------------------------------
 
-function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, sessions, busy, run, onMove, onSession, onRematch }) {
+function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, canSend, sessions, busy, run, onSend, onMove, onSession, onRematch }) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState('')
   const [result, setResult] = useState(null) // { winner, method, note } while recording
@@ -340,6 +388,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           <span>Bout {index + 1}</span>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
           {bout.needs_supervisor && <Badge>U17 v U19: needs the official's approval</Badge>}
+          {sendable(bout) && bout.approval_requested_at && <Badge muted title="Last sent for approval">Sent {sentLabel(bout.approval_requested_at)}</Badge>}
         </Space>
       }
       extra={order}
@@ -379,6 +428,11 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
         <Button size="small" onClick={() => setShowComments(!showComments)}>
           {showComments ? 'Hide comments' : `Comments (${bout.comments.length})`}
         </Button>
+        {canSend && sendable(bout) && (
+          <Button size="small" icon={<SendOutlined />} disabled={busy} onClick={onSend}>
+            {bout.approval_requested_at ? 'Send again' : 'Send for approval'}
+          </Button>
+        )}
         {canMatch && !hasResult && <Button size="small" disabled={busy} onClick={onRematch}>Re-match</Button>}
         {canMatch && !hasResult && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
         {rights.official && bout.status === 'approved' && !result && (
@@ -445,6 +499,99 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
         </div>
       )}
     </AntCard>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Send for approval
+// ---------------------------------------------------------------------------
+
+const approvalSideText = { red: 'red corner', blue: 'blue corner', official: 'official approval' }
+
+// One entry per person: { name, email, event, bouts: [{ line, sides }] }, each bout listed once.
+function groupByPerson(rows) {
+  const people = new Map()
+  for (const r of rows) {
+    if (!people.has(r.recipient_email)) people.set(r.recipient_email, { name: r.recipient_name, email: r.recipient_email, event: r.event_name, bouts: new Map() })
+    const bouts = people.get(r.recipient_email).bouts
+    const corner = (name, club) => (club ? `${name} (${club})` : name)
+    if (!bouts.has(r.bout_id)) {
+      bouts.set(r.bout_id, { line: `${formatDay(r.day)}, bout ${r.bout_number}: ${corner(r.red_name, r.red_club)} vs ${corner(r.blue_name, r.blue_club)}`, sides: [] })
+    }
+    bouts.get(r.bout_id).sides.push(approvalSideText[r.side])
+  }
+  return [...people.values()].map((p) => ({ ...p, bouts: [...p.bouts.values()] }))
+}
+
+// Approvals still needed that nobody could be told about: a club with no Owner, or no Chief
+// Official or Deputy yet.
+function missingApprovers(list, rows, officials) {
+  const told = new Set(rows.map((r) => `${r.bout_id}:${r.side}`))
+  const notes = new Set()
+  for (const b of list.filter(sendable)) {
+    const approved = new Set(b.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
+    for (const side of ['red', 'blue']) {
+      if (!approved.has(side) && !told.has(`${b.id}:${side}`)) {
+        const club = side === 'red' ? b.red_club?.name : b.blue_club?.name
+        notes.add(club ? `${club} has no club Owner with an email` : 'an athlete has no club')
+      }
+    }
+    if (!approved.has('official') && !told.has(`${b.id}:official`)) {
+      notes.add(officials.length ? 'the Chief Official and Deputy have no email' : 'the event has no Chief Official or Deputy yet')
+    }
+  }
+  return [...notes]
+}
+
+function approvalEmail(person) {
+  const lines = person.bouts.map((b) => `- ${b.line} — ${b.sides.join(', ')}`)
+  const count = lines.length === 1 ? 'a bout' : `${lines.length} bouts`
+  const body = [
+    person.name ? `Hi ${person.name},` : 'Hi,', '',
+    `Please approve or reject ${count} at ${person.event}:`, '',
+    ...lines, '',
+    `Sign in and open the event's Bouts tab: ${siteUrl()}`,
+  ].join('\n')
+  return `mailto:${encodeURIComponent(person.email)}?subject=${encodeURIComponent(`Bouts to approve at ${person.event}`)}&body=${encodeURIComponent(body)}`
+}
+
+// After "Send for approval": who was emailed, and a ready-made email per person if it didn't send.
+function SendNotice({ notice, onDismiss }) {
+  if (!notice) return null
+  const gaps = notice.nobody.length > 0 && <div>Nobody could be told for some approvals: {notice.nobody.join('; ')}.</div>
+  if (notice.people.length === 0) {
+    return (
+      <Alert
+        className="gap"
+        type={notice.sent ? 'info' : 'warning'}
+        showIcon
+        closable={{ onClose: onDismiss }}
+        title={notice.sent ? `Sent for approval: ${notice.sent} ${notice.sent === 1 ? 'person was' : 'people were'} emailed.` : 'Marked as sent, but there was no one to email.'}
+        description={gaps || undefined}
+      />
+    )
+  }
+  return (
+    <Alert
+      className="gap"
+      type="warning"
+      showIcon
+      closable={{ onClose: onDismiss }}
+      title={`The bouts are marked as sent, but the emails weren't sent automatically (${notice.reason}). Send each one from your email app:`}
+      description={
+        <>
+          <ul style={{ margin: '4px 0' }}>
+            {notice.people.map((p) => (
+              <li key={p.email}>
+                <a href={approvalEmail(p)}>Email {p.name || p.email}</a>{' '}
+                <Text type="secondary">({p.bouts.length} bout{p.bouts.length === 1 ? '' : 's'})</Text>
+              </li>
+            ))}
+          </ul>
+          {gaps}
+        </>
+      }
+    />
   )
 }
 

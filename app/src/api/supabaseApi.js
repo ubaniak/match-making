@@ -580,6 +580,18 @@ export const supabaseApi = {
     })
   },
 
+  // "Send for approval": marks the waiting bouts as sent and returns who still has to approve them,
+  // one row per bout, side and person ({ bout_id, side, recipient_name, recipient_email, event_name,
+  // day, bout_number, red_name, red_club, blue_name, blue_club }).
+  async requestBoutApprovals(boutIds) {
+    return (await rpc('request_bout_approvals', { p_bout_ids: boutIds })) ?? []
+  },
+
+  // Emails those people, one email each listing their bouts. Needs the send-event-email Edge Function.
+  async emailBoutApprovals(boutIds) {
+    await invokeEmail({ bout_ids: boutIds })
+  },
+
   async decideBout(boutId, side, approve, note) {
     await rpc('decide_bout', { p_bout_id: boutId, p_side: side, p_approve: approve, p_note: note || null })
   },
