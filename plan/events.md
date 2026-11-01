@@ -50,11 +50,12 @@ Agreed with Bhavek on 2026-11-01.
 - The Owner can re-invite an official who declined or didn't respond, and can cancel an
   invitation or remove an official at any time.
 - The event shows how many officials accepted, declined and haven't answered, with a list of each.
-  Only the Owner and site Admins see the lists; an official sees their own invitation.
+  The Owner, site Admins, the Chief Official and the Deputy see the lists; any other official sees
+  only their own invitation.
 - The Chief Official and Deputy are chosen from the officials who accepted. An official who
   declines or is removed stops being CO or Deputy.
 - Every official who accepted can record the weigh-in (section 5).
-- **Later:** officials asking to join an event.
+- Officials can't ask to join an event: every official must be invited.
 
 ### Day times
 
@@ -168,7 +169,6 @@ A site Admin can do anything on the site, including every action above.
 
 ## Later
 
-- Officials asking to join an event.
 - Assigning referees and judges to bouts.
 - Tournament mode (brackets across days).
 - Showing the approved bout list on the public page.

@@ -943,7 +943,7 @@ export const mockApi = {
 
   async listEventInvitations(eventId) {
     const current = data()
-    if (!isOwnerOf(current, eventId)) return []
+    if (!isOwnerOf(current, eventId) && !officialRole(current, eventId)) return []
     return current.officialInvitations
       .filter((i) => i.event_id === eventId)
       .map((i) => {

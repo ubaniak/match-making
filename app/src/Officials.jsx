@@ -49,15 +49,17 @@ function countAnswers(invitations, timeZone) {
 // ---------------------------------------------------------------------------
 
 // officials: the event's CO and Deputy rows. run: the bouts section's runner, which reloads them.
-export function EventOfficials({ event, may, officials, busy, run }) {
+export function EventOfficials({ event, may, profile, officials, busy, run }) {
   const manager = may.siteAdmin || may.role === 'owner'
+  // The Chief Official and Deputy see the lists too, but can't invite or remove.
+  const seesLists = manager || officials.some((o) => o.user_id === profile?.id)
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
     try {
-      if (manager) {
+      if (seesLists) {
         setInvitations(await api.listEventInvitations(event.id))
       }
       const own = await api.listMyInvitations()
@@ -66,7 +68,7 @@ export function EventOfficials({ event, may, officials, busy, run }) {
     } catch (err) {
       setError(err.message)
     }
-  }, [event.id, manager])
+  }, [event.id, seesLists])
 
   useEffect(() => {
     load()
@@ -80,19 +82,19 @@ export function EventOfficials({ event, may, officials, busy, run }) {
   const byRole = Object.fromEntries(officials.map((o) => [o.role, o]))
   const missing = ['chief', 'deputy'].filter((r) => !byRole[r])
   const counts = countAnswers(invitations, event.timezone)
-  const extra = manager && invitations.length > 0
+  const extra = seesLists && invitations.length > 0
     ? <Text type="secondary">{counts.accepted} accepted · {counts.declined} declined · {counts.waiting} waiting</Text>
     : null
 
   return (
-    <Section title={manager ? `Officials (${counts.accepted})` : 'Officials'} extra={extra}>
+    <Section title={seesLists ? `Officials (${counts.accepted})` : 'Officials'} extra={extra}>
       <ErrorAlert>{error}</ErrorAlert>
       {mine && <MyAnswer invitation={mine} event={event} busy={busy} act={act} />}
       {missing.length > 0 && (
         <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
       )}
-      {manager ? (
-        <Manage event={event} may={may} invitations={invitations} byRole={byRole} busy={busy} act={act} />
+      {seesLists ? (
+        <Manage event={event} may={may} manager={manager} invitations={invitations} byRole={byRole} busy={busy} act={act} />
       ) : (
         <AntCard size="small" className="form-card">
           <Space size="large" wrap>
@@ -132,13 +134,14 @@ function MyAnswer({ invitation, event, busy, act }) {
 }
 
 // Owner and site Admin view: invite, pick the CO and Deputy, see who answered what.
-function Manage({ event, may, invitations, byRole, busy, act }) {
+// The CO and Deputy get the same lists without the buttons.
+function Manage({ event, may, manager, invitations, byRole, busy, act }) {
   const [officialsList, setOfficialsList] = useState([])
   const [choice, setChoice] = useState([])
   const [respondBy, setRespondBy] = useState('')
   const [tab, setTab] = useState('accepted')
   const [email, setEmail] = useState(null) // { sent, failed: [{ name, email }], reason }
-  const canInvite = may.open
+  const canInvite = manager && may.open
 
   useEffect(() => {
     if (canInvite) api.listInvitableOfficials(event.id).then(setOfficialsList, () => setOfficialsList([]))
@@ -240,7 +243,7 @@ function Manage({ event, may, invitations, byRole, busy, act }) {
 
   return (
     <>
-      {effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
+      {manager && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}

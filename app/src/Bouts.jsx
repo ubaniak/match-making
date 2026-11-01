@@ -76,7 +76,7 @@ export default function EventBouts({ event, may, clubs, profile, onEntriesChange
 
   return (
     <>
-      <EventOfficials event={event} may={may} officials={data.officials} busy={busy} run={run} />
+      <EventOfficials event={event} may={may} profile={profile} officials={data.officials} busy={busy} run={run} />
       <ErrorAlert>{error}</ErrorAlert>
       {seesBouts && ['active', 'done'].includes(event.status) && (
         <Card event={event} data={data} rights={rights} busy={busy} run={run} />
