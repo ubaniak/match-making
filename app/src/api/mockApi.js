@@ -368,6 +368,25 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  // Mirrors check_athlete_delete (migration 13).
+  async deleteAthlete(athleteId) {
+    const current = data()
+    const athlete = current.athletes.find((a) => a.id === athleteId)
+    if (!athlete) throw new Error('That athlete no longer exists')
+    if (!isSiteAdmin() && clubRole(current, athlete.club_id) !== 'owner') throw new Error('You can\'t delete this athlete')
+    if (inOpenEvent(current, athleteId)) throw new Error('This athlete is entered in an Active event. Withdraw them first, or wait until the event is Done.')
+    if (current.bouts.some((b) => b.winner && [b.red_athlete_id, b.blue_athlete_id].includes(athleteId))) {
+      throw new Error('This athlete has bout results on record, so they can\'t be deleted.')
+    }
+    current.athletes = current.athletes.filter((a) => a.id !== athleteId)
+    current.eventAthletes = current.eventAthletes.filter((ea) => ea.athlete_id !== athleteId)
+    current.transfers = current.transfers.filter((t) => t.athlete_id !== athleteId)
+    current.lateEntries = current.lateEntries.filter((r) => r.athlete_id !== athleteId)
+    current.bouts = current.bouts.filter((b) => ![b.red_athlete_id, b.blue_athlete_id].includes(athleteId))
+    current.weighIns = current.weighIns.filter((w) => w.athlete_id !== athleteId)
+    write(DATA_KEY, current)
+  },
+
   async listClubs() {
     const current = data()
     return current.clubs

@@ -126,3 +126,14 @@ export function formatInZone(iso, timeZone) {
     timeZone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
   })
 }
+
+// Wall-clock times on an event day, moved into another zone for a "your time" line, e.g.
+// yourTimes('2026-11-14', ['08:00', '10:00'], 'America/Winnipeg', 'America/Toronto')
+//   -> '09:00–11:00 EST'. A time that lands on another date gets its short day in front.
+export function yourTimes(day, times, fromZone, toZone, sep = '–') {
+  const shown = times.map((time) => {
+    const [d, t] = isoToZonedInput(zonedInputToIso(`${day}T${time.slice(0, 5)}`, fromZone), toZone).split('T')
+    return d === day ? t : `${formatShortDay(d)} ${t}`
+  })
+  return `${shown.join(sep)} ${zoneAbbr(toZone, day)}`
+}

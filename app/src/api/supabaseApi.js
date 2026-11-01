@@ -115,6 +115,13 @@ export const supabaseApi = {
     if (error) throw error
     if (!data.length) throw new Error('You can\'t edit this athlete')
   },
+  // Club Owners and site Admins. Refused while the athlete is in an Active event or has results.
+  async deleteAthlete(athleteId) {
+    const { data, error } = await supabase.from('athletes').delete().eq('id', athleteId).select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('You can\'t delete this athlete')
+  },
+
 
   // Clubs, each with its members and athlete count.
   async listClubs() {

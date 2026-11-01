@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { DEFAULT_TIME_ZONE, formatDateRange, formatDay, zoneAbbr, zoneLabel } from './dates'
+import { DEFAULT_TIME_ZONE, browserTimeZone, formatDateRange, formatDay, yourTimes, zoneAbbr, zoneLabel } from './dates'
 
 // The public page: upcoming Active events, no sign-in needed. Never shows people or athletes.
 export default function PublicEvents({ signedIn }) {
@@ -34,6 +34,8 @@ export default function PublicEvents({ signedIn }) {
 function PublicEvent({ event }) {
   const poster = api.posterUrl(event.poster_path)
   const zone = event.timezone || DEFAULT_TIME_ZONE
+  const mine = browserTimeZone()
+  const away = mine !== zone
   return (
     <article className="public-event">
       {poster && <img className="poster" src={poster} alt={`Poster for ${event.name}`} />}
@@ -53,11 +55,16 @@ function PublicEvent({ event }) {
               <li key={d.day}>
                 <strong>{formatDay(d.day)}</strong>
                 <br />
-                Weigh-in {d.weigh_in_start}–{d.weigh_in_end}
+                Weigh-in {d.weigh_in_start}–{d.weigh_in_end} {zoneAbbr(zone, d.day)}
                 {d.sessions.map((s) => (
-                  <span key={s.starts_at}> · {s.label ? `${s.label} bouts` : 'Bouts'} from {s.starts_at}</span>
+                  <span key={s.starts_at}> · {s.label ? `${s.label} bouts` : 'Bouts'} from {s.starts_at} {zoneAbbr(zone, d.day)}</span>
                 ))}
-                {' '}{zoneAbbr(zone, d.day)}
+                {away && (
+                  <div className="muted">
+                    Your time: weigh-in {yourTimes(d.day, [d.weigh_in_start, d.weigh_in_end], zone, mine)}
+                    {d.sessions.map((s) => <span key={s.starts_at}> · {s.label ? `${s.label} bouts` : 'Bouts'} from {yourTimes(d.day, [s.starts_at], zone, mine)}</span>)}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
