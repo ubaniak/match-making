@@ -28,9 +28,10 @@ function useUsers() {
 
 // Clubs: site Admins create them and assign Owners. Owners invite people (a site Admin approves),
 // look after the club's athletes and accept transfers in.
-export default function ClubsPage({ profile, can }) {
+// clubId opens one club straight away (links from the Home page and alerts).
+export default function ClubsPage({ profile, can, clubId }) {
   const siteAdmin = can('users:manage')
-  const [view, setView] = useState({ name: 'list' })
+  const [view, setView] = useState(clubId ? { name: 'club', id: clubId } : { name: 'list' })
 
   return (
     <main className="panel">

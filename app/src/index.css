@@ -674,3 +674,35 @@ body {
     margin-left: 14px;
   }
 }
+
+/* Home page alerts: one row per thing waiting on you, its button on the right. */
+.alert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.alert-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.alert-list > li:last-child {
+  border-bottom: 0;
+}
+
+.alert-note.ant-typography {
+  display: block;
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .alert-list > li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -1,6 +1,6 @@
 // Shared Ant Design pieces in the scoreboard style. See .claude/skills/frontend-style/SKILL.md.
 // Light only: black on white, never a dark algorithm.
-import { App as AntApp, Alert, Button, Card, ConfigProvider, DatePicker, Form, Input, InputNumber, Select, Space, Tag, TimePicker, Typography } from 'antd'
+import { App as AntApp, Alert, Button, Card, Col, ConfigProvider, DatePicker, Form, Input, InputNumber, Row, Select, Space, Statistic, Tag, TimePicker, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { connectDialogs } from './dialogs'
 import { antdTheme } from './theme'
@@ -184,4 +184,28 @@ export function PageHeading({ title, subtitle, children }) {
 // "← Back" link above a detail page.
 export function BackLink({ onClick, children }) {
   return <Button type="link" className="back" onClick={onClick}>← {children}</Button>
+}
+
+// A row of small count cards: [{ key, title, value, note, onClick }]. A card with onClick is clickable.
+export function StatGrid({ stats }) {
+  return (
+    <Row gutter={[16, 16]} className="stats">
+      {stats.filter(Boolean).map((st) => (
+        <Col key={st.key} xs={12} md={8} xl={4}>
+          <Card
+            size="small"
+            className="stat-card"
+            hoverable={Boolean(st.onClick)}
+            onClick={st.onClick}
+            role={st.onClick ? 'button' : undefined}
+            tabIndex={st.onClick ? 0 : undefined}
+            onKeyDown={st.onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); st.onClick() } } : undefined}
+          >
+            <Statistic title={st.title} value={st.value} />
+            {st.note && <Text type="secondary" className="stat-note">{st.note}</Text>}
+          </Card>
+        </Col>
+      ))}
+    </Row>
+  )
 }
