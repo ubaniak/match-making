@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Checkbox, Col, Descriptions, Input, Modal, Row, Select, Space, Statistic, Tabs, Upload } from 'antd'
+import { Alert, Button, Card, Checkbox, Descriptions, Input, Modal, Select, Space, Tabs, Upload } from 'antd'
 import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
@@ -14,7 +14,7 @@ import {
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 import { askConfirm, dash, showError } from './dialogs'
-import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, Text, TimeInput, Title } from './ui'
+import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
 
@@ -87,9 +87,10 @@ function ZoneNote({ event }) {
 
 // Events: site Admins create them and pick the Owner. The Owner fills in the poster and
 // day times; a site Admin approves, cancels or closes the event.
-export default function EventsPage({ profile, can }) {
+// eventId and tab open one event straight away (links from the Home page and alerts).
+export default function EventsPage({ profile, can, eventId, tab }) {
   const siteAdmin = can('users:manage')
-  const [view, setView] = useState({ name: 'list' })
+  const [view, setView] = useState(eventId ? { name: 'event', id: eventId, tab } : { name: 'list' })
   const back = () => setView({ name: 'list' })
 
   return (
@@ -115,7 +116,7 @@ export default function EventsPage({ profile, can }) {
         </>
       )}
       {view.name === 'event' && (
-        <EventDetail id={view.id} email={view.email} profile={profile} siteAdmin={siteAdmin} onBack={back} />
+        <EventDetail id={view.id} email={view.email} initialTab={view.tab} profile={profile} siteAdmin={siteAdmin} onBack={back} />
       )}
     </main>
   )
@@ -324,14 +325,14 @@ function EmailNotice({ event, email, onDismiss }) {
   )
 }
 
-function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
+function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, onBack }) {
   const [event, setEvent] = useState(undefined)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // 'details' | 'times' | null
   const [email, setEmail] = useState(initialEmail)
   const [busy, setBusy] = useState(false)
   const [clubs, setClubs] = useState([])
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState(initialTab || 'dashboard')
 
   const loadClubs = useCallback(() => api.listClubs().then(setClubs, () => setClubs([])), [])
 
@@ -416,6 +417,69 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
     )
   }
 
+  // A link can ask for a tab that isn't there (yet): Bouts shows once the bouts have loaded.
+  const tabItems = [
+      {
+        key: 'dashboard',
+        label: 'Dashboard',
+        children: <Dashboard event={event} may={may} siteAdmin={siteAdmin} bouts={bouts} onOpenTab={setTab} />,
+      },
+      {
+        key: 'clubs',
+        label: `Clubs (${event.clubs.filter((ec) => ec.status === 'accepted').length})`,
+        children: (
+          <>
+            <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={() => Promise.all([reload(), loadClubs()])} />
+            <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
+          </>
+        ),
+      },
+      bouts.seesBouts && {
+        key: 'bouts',
+        label: 'Bouts',
+        children: <EventBouts event={event} bouts={bouts} />,
+      },
+      {
+        key: 'officials',
+        label: 'Officials',
+        children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} />,
+      },
+      (may.edit || siteAdmin) && {
+        key: 'settings',
+        label: 'Settings',
+        children: (
+          <>
+            <Section
+              title="Details"
+              extra={may.edit && <Button icon={<EditOutlined />} onClick={() => setEditing('details')}>Edit details</Button>}
+            >
+              <Descriptions
+                size="small"
+                column={{ xs: 1, sm: 2, md: 3 }}
+                items={[
+                  { key: 'name', label: 'Name', children: event.name },
+                  { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
+                  { key: 'venue', label: 'Location', children: dash(event.venue) },
+                  { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
+                  { key: 'deadline', label: 'Entry deadline', children: <Deadline event={event} /> },
+                ]}
+              />
+            </Section>
+            {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
+            <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
+            <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
+            <EventMembers event={event} may={may} onChange={reload} />
+            {siteAdmin && (
+              <Section title="Delete">
+                <Muted>Cancelling keeps a record of the event; deleting removes it for good.</Muted>
+                <Button danger onClick={remove}>Delete this event</Button>
+              </Section>
+            )}
+          </>
+        ),
+      },
+  ].filter(Boolean)
+
   return (
     <>
       {backLink}
@@ -447,69 +511,9 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
 
       <Tabs
         className="event-tabs"
-        activeKey={tab}
+        activeKey={tabItems.some((t) => t.key === tab) ? tab : 'dashboard'}
         onChange={setTab}
-        items={[
-          {
-            key: 'dashboard',
-            label: 'Dashboard',
-            children: <Dashboard event={event} may={may} siteAdmin={siteAdmin} bouts={bouts} onOpenTab={setTab} />,
-          },
-          {
-            key: 'clubs',
-            label: `Clubs (${event.clubs.filter((ec) => ec.status === 'accepted').length})`,
-            children: (
-              <>
-                <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={() => Promise.all([reload(), loadClubs()])} />
-                <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
-              </>
-            ),
-          },
-          bouts.seesBouts && {
-            key: 'bouts',
-            label: 'Bouts',
-            children: <EventBouts event={event} bouts={bouts} />,
-          },
-          {
-            key: 'officials',
-            label: 'Officials',
-            children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} />,
-          },
-          (may.edit || siteAdmin) && {
-            key: 'settings',
-            label: 'Settings',
-            children: (
-              <>
-                <Section
-                  title="Details"
-                  extra={may.edit && <Button icon={<EditOutlined />} onClick={() => setEditing('details')}>Edit details</Button>}
-                >
-                  <Descriptions
-                    size="small"
-                    column={{ xs: 1, sm: 2, md: 3 }}
-                    items={[
-                      { key: 'name', label: 'Name', children: event.name },
-                      { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
-                      { key: 'venue', label: 'Location', children: dash(event.venue) },
-                      { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
-                      { key: 'deadline', label: 'Entry deadline', children: <Deadline event={event} /> },
-                    ]}
-                  />
-                </Section>
-                {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
-                <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
-                <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
-                <EventMembers event={event} may={may} onChange={reload} />
-                {siteAdmin && (
-                  <Section title="Delete">
-                    <Muted>Cancelling keeps a record of the event; deleting removes it for good.</Muted>
-                    <Button danger onClick={remove}>Delete this event</Button>
-                  </Section>
-                )}
-              </>
-            ),
-          },
-        ].filter(Boolean)}
+        items={tabItems}
       />
     </>
   )
@@ -567,21 +571,7 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
           ]}
         />
       </Section>
-      <Row gutter={[16, 16]} className="stats">
-        {stats.map((st) => (
-          <Col key={st.key} xs={12} md={8} xl={4}>
-            <Card
-              size="small"
-              className="stat-card"
-              hoverable={Boolean(st.tab)}
-              onClick={st.tab ? () => onOpenTab(st.tab) : undefined}
-            >
-              <Statistic title={st.title} value={st.value} />
-              <Text type="secondary" className="stat-note">{st.note}</Text>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      <StatGrid stats={stats.map((st) => ({ ...st, onClick: st.tab ? () => onOpenTab(st.tab) : undefined }))} />
       <Schedule event={event} canEdit={false} />
       <Poster event={event} canEdit={false} />
     </>
