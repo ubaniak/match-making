@@ -127,7 +127,7 @@ Google sign-in sends no email, so it isn't affected by the email rate limit.
 
 ## Owner emails
 
-When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations and sends bouts for approval. Until that's set up, the event page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
+When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations, sends bouts for approval, and welcomes people a site Admin adds on Admin > Users (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
 
 1. Make a free account at https://resend.com and create an API key. To send to anyone, verify your own domain there; without one, Resend only delivers to your own address.
 2. In Supabase, open Edge Functions > Deploy a new function > Via editor (or open the existing `send-event-email` function to update it), name it `send-event-email`, paste in [`supabase/functions/send-event-email/index.ts`](../supabase/functions/send-event-email/index.ts), and deploy. (Or `supabase functions deploy send-event-email` with the CLI.)
