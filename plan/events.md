@@ -39,25 +39,30 @@ Event statuses are **Requested**, **Active**, **Done** and **Cancelled**.
 
 Agreed with Bhavek on 2026-11-01.
 
-- Once the event is **Active**, a site Admin or the event's Chief Official invites officials (the
-  event's Owner doesn't; Bhavek, 2026-11-01: "admins and the nominated CO"). Anyone on the
-  Officials list (Admin page) with an email can be invited; one who has never signed in gets a
-  sign-in invite as well. Each invitation is emailed, with a ready-made email to send by hand if
-  the automatic one can't go out.
+- Once the event is **Active**, a site Admin or any official on the event (one who accepted, plus
+  the Chief Official and Deputy) invites officials. The event's Owner doesn't (Bhavek,
+  2026-11-01: "admins and the nominated CO", then "an official is allowed to add other
+  officials"). Anyone on the Officials list (Admin page) with an email can be invited. Each
+  invitation is emailed, with a ready-made email to send by hand if the automatic one can't go out.
+- Someone not on the Officials list can be added from the event by name and email. They go
+  through the same onboarding as Admin > Add a user ("adding officials should go through the same
+  onboarding flow as users"): they're put on the Officials list, get an Official account (or
+  their existing account is linked), get the welcome email if they're new, then get the event
+  invitation.
 - An invitation can have an optional **respond by** date. After it, an unanswered invitation
-  shows as **No response** and can't be accepted until a site Admin or the Chief Official re-invites.
+  shows as **No response** and can't be accepted until someone who can invite re-invites.
 - The official accepts or declines from the Events page. They accept for the parts they can work:
   one day, some days or the whole event, and on a day with more than one bout session, the whole
   day or just some sessions (for example only the evening). They can change their answer, days or
   sessions until the event's first day.
-- A site Admin or the Chief Official can re-invite an official who declined or didn't respond,
-  and can cancel an invitation or remove an official at any time (the Chief Official can't remove
-  themselves). A site Admin picks the Chief Official from the officials who accepted; a site
-  Admin or the Chief Official picks the Deputy.
+- Anyone who can invite can re-invite an official who declined or didn't respond. Only a site
+  Admin or the Chief Official can cancel an invitation or remove an official (the Chief Official
+  can't remove themselves). A site Admin picks the Chief Official from the officials who
+  accepted; a site Admin or the Chief Official picks the Deputy.
 - The event shows how many officials accepted, declined and haven't answered, with a list of each.
-  The Owner, site Admins, the Chief Official and the Deputy see the lists (the Owner and the
-  Deputy can't change them), and the dashboard shows the count; any other official
-  sees only their own invitation.
+  The Owner, site Admins and the event's officials see the lists (the Owner can't change them),
+  and the dashboard shows the count. An official who hasn't accepted sees only their own
+  invitation.
 - The Chief Official and Deputy are chosen from the officials who accepted. An official who
   declines or is removed stops being CO or Deputy.
 - The lists show each accepted official's days and sessions, and how many officials are on each day.
@@ -165,7 +170,8 @@ applies them like this:
 | Create, approve, cancel, close event | ✓ | | | | |
 | Edit details, times, poster | ✓ | ✓ | | | |
 | Choose the CO | ✓ | | | | |
-| Invite and remove officials; choose the Deputy | ✓ | | | CO only | |
+| Invite officials (including someone new) | ✓ | | | ✓ | ✓ (accepted) |
+| Remove officials; choose the Deputy | ✓ | | | CO only | |
 | See the officials lists and count | ✓ | ✓ | | ✓ | |
 | Accept or decline an invitation | | | | ✓ | ✓ |
 | Invite clubs, accept join and late-entry requests | ✓ | ✓ | | | |
