@@ -28,6 +28,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    10. [`20261101020000_entries.sql`](../supabase/migrations/20261101020000_entries.sql): clubs joining events (invites and join requests), entering and withdrawing athletes, suggested opponents, the entry deadline and late-entry requests; event Coaches become Viewers
    11. [`20261101030000_event_timezones.sql`](../supabase/migrations/20261101030000_event_timezones.sql): each event has a time zone (picked by the site Admin; existing events get America/Winnipeg), and "today" for an event is today in its time zone, so events stay open and listed until local midnight; the Done job runs hourly
    12. [`20261101040000_bouts.sql`](../supabase/migrations/20261101040000_bouts.sql): bout matching: each event's Chief Official and Deputy, bouts with corner and official approvals, comments, the weigh-in and medicals, card order and results (a result adds one to both boxers' bout counts)
+   13. [`20261101050000_delete_athletes.sql`](../supabase/migrations/20261101050000_delete_athletes.sql): Club Owners and site Admins can delete athletes, except one entered in an Active event (withdraw them first) or one with a recorded bout result
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:

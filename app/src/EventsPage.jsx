@@ -5,7 +5,7 @@ import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { categorise, compareByCategory } from './categories'
 import {
   DEFAULT_TIME_ZONE, MAX_EVENT_DAYS, browserTimeZone, daysBetween, formatDateRange, formatDay, formatInZone, isoToZonedInput,
-  timeZoneOptions, zoneAbbr, zoneLabel, zonedInputToIso,
+  timeZoneOptions, yourTimes, zoneAbbr, zoneLabel, zonedInputToIso,
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 
@@ -51,13 +51,14 @@ function Deadline({ event }) {
   )
 }
 
-function TimeZoneSelect({ value, onChange }) {
+// day: the date the abbreviations are for (EST vs EDT), so they match the event's own label.
+function TimeZoneSelect({ value, onChange, day }) {
   const options = useMemo(() => timeZoneOptions(value), [value])
   return (
     <label>
       Time zone
       <select required value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((tz) => <option key={tz} value={tz}>{tz.replaceAll('_', ' ')} ({zoneAbbr(tz)})</option>)}
+        {options.map((tz) => <option key={tz} value={tz}>{tz.replaceAll('_', ' ')} ({zoneAbbr(tz, day || undefined)})</option>)}
       </select>
     </label>
   )
@@ -70,7 +71,7 @@ function ZoneNote({ event }) {
   return (
     <p className="muted">
       All times are in {zoneLabel(zone, event.start_date)}.
-      {mine !== zone && ` Your browser is on ${zoneLabel(mine)}.`}
+      {mine !== zone && ` Your browser is on ${zoneLabel(mine, event.start_date)}.`}
     </p>
   )
 }
@@ -273,7 +274,7 @@ function NewEventForm({ onCancel, onCreated }) {
           </select>
         </label>
         <p className="muted full">Only people who have signed in at least once can own an event.</p>
-        <TimeZoneSelect value={form.timezone} onChange={(tz) => setField('timezone', tz)} />
+        <TimeZoneSelect value={form.timezone} day={form.startDate} onChange={(tz) => setField('timezone', tz)} />
         <p className="muted full">Weigh-in and bout times are in this time zone. We picked your browser's; change it if the event is somewhere else.</p>
       </div>
       <div className="row-form">
@@ -521,7 +522,7 @@ function DetailsForm({ event, siteAdmin, onCancel, onSaved }) {
         <h2>Details</h2>
         <label>Name<input required {...field('name')} /></label>
         <label>Location <span className="muted">(optional)</span><input {...field('venue')} /></label>
-        {siteAdmin && <TimeZoneSelect value={form.timezone} onChange={(tz) => setField('timezone', tz)} />}
+        {siteAdmin && <TimeZoneSelect value={form.timezone} day={form.startDate} onChange={(tz) => setField('timezone', tz)} />}
       </div>
       <div className="row-form">
         <h2>Dates</h2>
@@ -582,6 +583,9 @@ function Poster({ event, canEdit, run, busy }) {
 function Schedule({ event, canEdit, onEdit }) {
   const days = daysBetween(event.start_date, event.end_date)
   const byDay = Object.fromEntries(event.days.map((d) => [d.day, d]))
+  const zone = zoneOf(event)
+  const mine = browserTimeZone()
+  const away = mine !== zone
   return (
     <section>
       <div className="heading-row">
@@ -603,8 +607,14 @@ function Schedule({ event, canEdit, onEdit }) {
               return (
                 <tr key={day}>
                   <td>{formatDay(day)}</td>
-                  <td>{d ? `${d.weigh_in_start}–${d.weigh_in_end} ${zoneAbbr(zoneOf(event), day)}` : <span className="muted">No bouts</span>}</td>
-                  <td>{d ? `${d.sessions.map((s) => (s.label ? `${s.label} ${s.starts_at}` : s.starts_at)).join(', ')} ${zoneAbbr(zoneOf(event), day)}` : ''}</td>
+                  <td>
+                    {d ? `${d.weigh_in_start}–${d.weigh_in_end} ${zoneAbbr(zone, day)}` : <span className="muted">No bouts</span>}
+                    {d && away && <div className="muted">{yourTimes(day, [d.weigh_in_start, d.weigh_in_end], zone, mine)} your time</div>}
+                  </td>
+                  <td>
+                    {d ? `${d.sessions.map((s) => (s.label ? `${s.label} ${s.starts_at}` : s.starts_at)).join(', ')} ${zoneAbbr(zone, day)}` : ''}
+                    {d && away && <div className="muted">{yourTimes(day, d.sessions.map((s) => s.starts_at), zone, mine, ', ')} your time</div>}
+                  </td>
                 </tr>
               )
             })}

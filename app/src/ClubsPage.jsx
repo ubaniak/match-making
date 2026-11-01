@@ -394,6 +394,15 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
                         <button className="link" onClick={() => { setError(null); setEditing(null); setMoving({ athlete: a, mode: 'transfer' }) }}>Transfer</button>
                       )}
                       {may.siteAdmin && <button className="link" onClick={() => { setError(null); setEditing(null); setMoving({ athlete: a, mode: 'move' }) }}>Move</button>}
+                      {may.manage && (
+                        <button
+                          className="link danger"
+                          disabled={busy}
+                          onClick={() => window.confirm(`Delete ${a.name}? This can't be undone.`) && run(() => api.deleteAthlete(a.id))}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
