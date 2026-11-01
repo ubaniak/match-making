@@ -185,6 +185,15 @@ export const supabaseApi = {
   },
 
 
+  // Site Admin only: load or remove the TEST events, clubs and athletes. Each returns counts.
+  async seedTestData() {
+    return rpc('seed_test_data')
+  },
+
+  async clearTestData() {
+    return rpc('clear_test_data')
+  },
+
   // Clubs, each with its members and athlete count.
   async listClubs() {
     const { data, error } = await supabase
