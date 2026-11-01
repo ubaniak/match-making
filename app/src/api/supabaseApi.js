@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline,
+const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline, timezone,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
@@ -270,23 +270,27 @@ export const supabaseApi = {
   },
 
   // Site Admins only. The event starts as Requested. Returns its id.
-  async createEvent({ name, venue, startDate, endDate, ownerId }) {
+  async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
     const { data, error } = await supabase.rpc('create_event', {
       p_name: name,
       p_venue: venue,
       p_start_date: startDate,
       p_end_date: endDate,
       p_owner_id: ownerId,
+      p_timezone: timezone,
     })
     if (error) throw error
     return data
   },
 
   // entryDeadline: an ISO timestamp, or '' for no deadline.
-  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline }) {
+  // timezone: only a site Admin can change it; leave it out to keep the current one.
+  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline, timezone }) {
+    const changes = { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null }
+    if (timezone) changes.timezone = timezone
     const { data, error } = await supabase
       .from('events')
-      .update({ name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null })
+      .update(changes)
       .eq('id', eventId)
       .select('id')
     if (error) throw error
