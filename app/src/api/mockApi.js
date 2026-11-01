@@ -4,6 +4,7 @@
 // The demo admin can also preview the app as one of the sample users (see viewAs).
 
 import { athleteProblems } from '../athletes'
+import { ageCategory, experienceCategory } from '../categories'
 import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
 import { testClubs, testRoster } from './testRoster'
@@ -180,6 +181,34 @@ const myDays = (current, eventId) => (current.officialInvitations ?? []).find((i
   && current.officials.find((o) => o.id === i.official_id)?.user_id === currentUserId())?.days ?? []
 const userAccepted = (current, eventId, userId) => (current.officialInvitations ?? []).some((i) => i.event_id === eventId && i.status === 'accepted'
   && current.officials.find((o) => o.id === i.official_id)?.user_id === userId)
+// Approved bouts for the public page, as migration 19's list_public_events: card numbers count every
+// live bout that day; corners show name, club and categories only (never weight or birthdate).
+function publicBouts(current, eventId, eventDate, days) {
+  const live = (current.bouts ?? []).filter((b) => b.event_id === eventId && b.status !== 'cancelled')
+    .sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position)
+  const corner = (athleteId, clubId) => {
+    const a = current.athletes.find((x) => x.id === athleteId)
+    const gender = { male: 'Male', female: 'Female' }[a?.gender]
+    return {
+      name: a?.name ?? 'Unknown',
+      club: current.clubs.find((c) => c.id === clubId)?.name ?? null,
+      categories: [ageCategory(a?.date_of_birth, eventDate)?.label, gender, experienceCategory(a?.bouts)?.label].filter(Boolean).join(' · ') || null,
+    }
+  }
+  const numbers = new Map()
+  return live.flatMap((b) => {
+    const number = (numbers.get(b.day) ?? 0) + 1
+    numbers.set(b.day, number)
+    if (b.status !== 'approved') return []
+    const starts = b.session_starts_at?.slice(0, 5) ?? null
+    const session = days.find((d) => d.day === b.day)?.sessions.find((s) => s.starts_at === starts)
+    return [{
+      id: b.id, day: b.day, number, session_starts_at: starts, session_label: session?.label || null,
+      red: corner(b.red_athlete_id, b.red_club_id), blue: corner(b.blue_athlete_id, b.blue_club_id),
+    }]
+  })
+}
+
 function canSee(current, eventId) {
   const event = current.events.find((e) => e.id === eventId)
   return Boolean(event) && (isSiteAdmin() || Boolean(roleOn(current, eventId)) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
@@ -776,7 +805,7 @@ export const mockApi = {
   async listPublicEvents() {
     return data().events
       .filter((e) => e.status === 'active' && e.end_date >= todayIso(e.timezone ?? DEFAULT_TIME_ZONE))
-      .map(({ id, name, venue, start_date, end_date, poster_path, days, timezone }) => ({ id, name, venue, start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE }))
+      .map(({ id, name, venue, start_date, end_date, poster_path, days, timezone }) => ({ id, name, venue, start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE, bouts: publicBouts(data(), id, start_date, days) }))
       .sort((a, b) => a.start_date.localeCompare(b.start_date) || a.name.localeCompare(b.name))
   },
 

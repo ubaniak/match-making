@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { Button, Card, Layout } from 'antd'
 import { api } from './api'
 import { DEFAULT_TIME_ZONE, browserTimeZone, formatDateRange, formatDay, yourTimes, zoneAbbr, zoneLabel } from './dates'
-import { ErrorAlert, Muted, PageHeading, Paragraph, Text, Title } from './ui'
+import { Badge, ErrorAlert, Muted, PageHeading, Paragraph, Text, Title } from './ui'
 
-// The public page: upcoming Active events, no sign-in needed. Never shows people or athletes.
+// The public page: upcoming Active events, no sign-in needed. Shows approved bouts (boxer, club,
+// categories) but never entry lists, weights, birthdates or anyone's contact details.
 export default function PublicEvents({ signedIn }) {
   const [events, setEvents] = useState(null)
   const [error, setError] = useState(null)
@@ -80,6 +81,44 @@ function PublicEvent({ event }) {
           </>
         )}
       </div>
+      {event.bouts?.length > 0 && <PublicBouts event={event} />}
     </Card>
+  )
+}
+
+// The event's fully approved bouts, by day. They can still change, so the caveat stays prominent.
+function PublicBouts({ event }) {
+  const days = [...new Set(event.bouts.map((b) => b.day))]
+  const corner = (side, c) => (
+    <div className={`corner ${side}`}>
+      <Text strong>{c.name}</Text>
+      <Text type="secondary">{c.club ?? '—'}</Text>
+      {c.categories && <Text type="secondary">{c.categories}</Text>}
+    </div>
+  )
+  return (
+    <div className="public-bouts">
+      <div className="public-bouts-heading">
+        <Title level={4} style={{ margin: 0 }}>Approved bouts</Title>
+        <Badge strong>Subject to change</Badge>
+      </div>
+      <Muted>Bouts can change or be cancelled up to fight time, including after the weigh-in.</Muted>
+      {days.map((day) => (
+        <div key={day}>
+          {(days.length > 1 || event.start_date !== event.end_date) && <Title level={5} style={{ margin: '12px 0 8px' }}>{formatDay(day)}</Title>}
+          <div className="bout-list">
+            {event.bouts.filter((b) => b.day === day).map((b) => (
+              <Card key={b.id} size="small" className="bout" title={`Bout ${b.number}`} extra={b.session_starts_at && <Text type="secondary">{b.session_label ? `${b.session_label} · ` : ''}{b.session_starts_at}</Text>}>
+                <div className="bout-corners">
+                  {corner('red', b.red)}
+                  <span className="vs">vs</span>
+                  {corner('blue', b.blue)}
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }

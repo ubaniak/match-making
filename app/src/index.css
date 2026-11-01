@@ -287,7 +287,7 @@ body {
   gap: 8px;
 }
 
-.public-event .ant-card-body {
+.public-event > .ant-card-body {
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
@@ -296,6 +296,25 @@ body {
 .public-event .poster {
   max-width: min(100%, 240px);
   margin: 0;
+}
+
+.public-bouts {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.public-bouts-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.public-bouts .bout.ant-card {
+  box-shadow: none;
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
 }
 
 .day-list {
