@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Card, Input, Layout, Select, Spin } from 'antd'
-import { CalendarOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
+import { CalendarOutlined, GoogleOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { useAuth } from './auth'
 import AdminPage from './AdminPage'
@@ -133,39 +133,83 @@ function SignedOutCard({ title, children }) {
   )
 }
 
+// Google shows only once it's switched on in Supabase and the build has VITE_GOOGLE_SIGN_IN=true.
+const googleEnabled = import.meta.env.VITE_GOOGLE_SIGN_IN === 'true'
+
 function Login() {
   const [email, setEmail] = useState('')
   const [sentTo, setSentTo] = useState(null)
+  const [code, setCode] = useState('')
   const [error, setError] = useState(null)
-  const [sending, setSending] = useState(false)
+  const [busy, setBusy] = useState(false)
 
-  async function sendLink(event) {
-    event.preventDefault()
+  async function run(action) {
     setError(null)
-    setSending(true)
+    setBusy(true)
     try {
-      await api.sendMagicLink(email.trim())
-      setSentTo(email.trim())
+      await action()
     } catch (err) {
       setError(err.message)
     } finally {
-      setSending(false)
+      setBusy(false)
     }
+  }
+
+  function sendCode(event) {
+    event.preventDefault()
+    run(async () => {
+      await api.sendMagicLink(email.trim())
+      setCode('')
+      setSentTo(email.trim())
+    })
+  }
+
+  function verifyCode(event) {
+    event.preventDefault()
+    run(() => api.verifyEmailCode(sentTo, code.trim()))
   }
 
   if (sentTo) {
     return (
       <SignedOutCard title="Check your email">
-        <Paragraph>We sent a sign-in link to <strong>{sentTo}</strong>. Open it on this device to sign in.</Paragraph>
-        <Button onClick={() => setSentTo(null)}>Use a different email</Button>
+        <form onSubmit={verifyCode} className="login-form">
+          <Paragraph>We sent a sign-in code to <strong>{sentTo}</strong>. Type it below, or click the link in the same email.</Paragraph>
+          <Input
+            size="large"
+            required
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6,10}"
+            maxLength={10}
+            placeholder="6-digit code"
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+            autoFocus
+          />
+          <Button type="primary" htmlType="submit" size="large" block loading={busy} style={{ marginTop: 12 }}>
+            Sign in
+          </Button>
+        </form>
+        <ErrorAlert>{error}</ErrorAlert>
+        <Button type="link" onClick={() => { setSentTo(null); setError(null) }} style={{ paddingLeft: 0, marginTop: 8 }}>
+          Use a different email
+        </Button>
       </SignedOutCard>
     )
   }
 
   return (
     <SignedOutCard title="Match Making">
-      <form onSubmit={sendLink} className="login-form">
-        <Paragraph>Enter your email and we'll send you a sign-in link.</Paragraph>
+      {googleEnabled && (
+        <>
+          <Button size="large" block icon={<GoogleOutlined />} disabled={busy} onClick={() => run(() => api.signInWithGoogle())}>
+            Continue with Google
+          </Button>
+          <Divider plain>or</Divider>
+        </>
+      )}
+      <form onSubmit={sendCode} className="login-form">
+        <Paragraph>Enter your email and we'll send you a sign-in code.</Paragraph>
         <Input
           size="large"
           type="email"
@@ -175,8 +219,8 @@ function Login() {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
-        <Button type="primary" htmlType="submit" size="large" block loading={sending} style={{ marginTop: 12 }}>
-          {sending ? 'Sending…' : 'Email me a sign-in link'}
+        <Button type="primary" htmlType="submit" size="large" block loading={busy} style={{ marginTop: 12 }}>
+          {busy ? 'Sending…' : 'Email me a code'}
         </Button>
       </form>
       <ErrorAlert>{error}</ErrorAlert>

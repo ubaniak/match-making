@@ -63,6 +63,24 @@ export const supabaseApi = {
     if (error) throw error
   },
 
+  // Same email carries a 6-digit code and a link; either one signs you in.
+  async verifyEmailCode(email, code) {
+    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' })
+    if (error?.code === 'otp_expired' || /expired or is invalid/i.test(error?.message ?? '')) {
+      throw new Error('That code is wrong or has expired. Use the newest email, or go back and send a new code.')
+    }
+    if (error) throw error
+  },
+
+  // Sends the browser to Google, which comes back here signed in.
+  async signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL },
+    })
+    if (error) throw error
+  },
+
   async loadMe(userId) {
     const [profileResult, permissionsResult] = await Promise.all([
       supabase.from('profiles').select('id, email, name, role_id, status, roles(name)').eq('id', userId).maybeSingle(),

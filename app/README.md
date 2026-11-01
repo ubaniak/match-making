@@ -42,7 +42,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    ```sql
    update profiles set role_id = 'admin' where email = 'you@example.com';
    ```
-4. **Turn on the email link sign-in.** Under Authentication > Sign In / Providers, check that Email is enabled (it is by default). The app sends a magic link, so no password settings matter.
+4. **Turn on email sign-in.** Under Authentication > Sign In / Providers, check that Email is enabled (it is by default). The app emails a 6-digit code plus a link (either one signs you in), so no password settings matter. Google sign-in is optional; see "Google sign-in" below.
 5. **Allow the GitHub Pages address.** Under Authentication > URL Configuration:
    - Set **Site URL** to `https://ubaniak.github.io/match-making/`
    - Under **Redirect URLs**, add `https://ubaniak.github.io/match-making/**` and, for local dev, `http://localhost:5173/**`
@@ -54,7 +54,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key
 
    They're variables rather than secrets because the key ends up in the page's JavaScript anyway; it's safe to share because row-level security protects the data. Then rebuild the site: Actions > Deploy to GitHub Pages > Run workflow on `main` (or push any commit). Demo mode switches off once the new build is live.
-8. **Sign in.** Open https://ubaniak.github.io/match-making/, enter your email, and click the link in the email. You should see the Admin tab.
+8. **Sign in.** Open https://ubaniak.github.io/match-making/, enter your email, and type the code from the email (or click its link). You should see the Admin tab.
 
 Supabase's built-in email sender only allows a few emails an hour, which is fine for testing. Before real users rely on it, add your own SMTP server under Authentication > Emails > SMTP Settings. If a sign-in email doesn't arrive, check spam, then Authentication > Users and the project's Auth logs.
 
@@ -92,8 +92,28 @@ The email wording lives in `supabase/templates/`. In Authentication > Emails, pa
 
 | File | Template | Subject |
 | --- | --- | --- |
-| `magic_link.html` | Magic Link | Your Match Making sign-in link |
+| `magic_link.html` | Magic Link | Your Match Making sign-in code |
 | `confirm_signup.html` | Confirm signup | Welcome to Match Making |
+
+Each email shows a 6-digit code and a sign-in link. The code is what the sign-in page asks for, and it works when the email is opened on a different device. The link still works too, which is handy in development. If the emails show a link but no code, the templates haven't been pasted in yet. Code length is set under Authentication > Sign In / Providers > Email > Email OTP Length (keep it at 6).
+
+## Google sign-in
+
+The "Continue with Google" button stays hidden until you finish these steps. Invites, officials and athletes still match people by email, and Google only ever hands over a verified address, so nothing else changes. Someone who first signed in by email and later uses Google with the same address lands in the same account.
+
+1. **Create the Google client.** In [Google Cloud Console](https://console.cloud.google.com/), create a project (or pick one), then go to APIs & Services > OAuth consent screen (Google Auth Platform):
+   - App name `Match Making`, your email as support and developer contact.
+   - Audience: **External**. Scopes: just the defaults (`email`, `profile`, `openid`).
+   - Publish the app (Audience > Publish app). While it's in "Testing", only test users you list can sign in.
+2. **Make the credentials.** APIs & Services > Credentials > Create credentials > OAuth client ID:
+   - Application type **Web application**.
+   - Authorized JavaScript origins: `https://ubaniak.github.io` and `http://localhost:5173`
+   - Authorized redirect URIs: `https://lybhzxdqdsqtwsxmolcg.supabase.co/auth/v1/callback`
+   - Copy the **Client ID** and **Client secret**.
+3. **Turn it on in Supabase.** Authentication > Sign In / Providers > Google: enable it and paste the Client ID and Client secret. Save. (The Redirect URLs from step 5 above already cover where Google sends people back.)
+4. **Show the button.** In GitHub, Settings > Secrets and variables > Actions > Variables, add `VITE_GOOGLE_SIGN_IN` = `true`, then rerun the Deploy to GitHub Pages workflow. For local dev, put `VITE_GOOGLE_SIGN_IN=true` in `app/.env.local`.
+
+Google sign-in sends no email, so it isn't affected by the email rate limit.
 
 ## Owner emails
 
