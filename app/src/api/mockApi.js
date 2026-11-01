@@ -456,6 +456,10 @@ export const mockApi = {
     ].sort(byName)
   },
 
+  async emailNewUser() {
+    throw new Error('Demo mode doesn\'t send email')
+  },
+
   async updateUser(user, { name, email, roleId, status }) {
     if (user.id === ADMIN_ID) throw new Error('In demo mode the demo admin can\'t be changed')
     const current = data()

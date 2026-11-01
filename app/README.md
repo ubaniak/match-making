@@ -127,7 +127,7 @@ Google sign-in sends no email, so it isn't affected by the email rate limit.
 
 ## Owner emails
 
-When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations and sends bouts for approval. Until that's set up, the event page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
+When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations, sends bouts for approval, and welcomes people a site Admin adds on Admin > Users (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
 
 It sends through a Gmail account for now, so no domain is needed:
 

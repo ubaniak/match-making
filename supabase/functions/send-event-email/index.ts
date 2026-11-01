@@ -1,4 +1,4 @@
-// Sends the app's event emails through Resend:
+// Sends the app's emails:
 //   { event_id }       emails the Owner "You have Requested an event" with a link to the site.
 //                      Called right after a site Admin creates an event.
 //   { invitation_id }  emails an official their invitation to officiate. Called by a site Admin or
@@ -6,6 +6,8 @@
 //   { bout_ids }       "Send for approval": emails everyone who still has to approve those bouts
 //                      (each corner's club Owners, the Chief Official and Deputy), one email per
 //                      person listing all their bouts. Called by the Owner, an official or a site Admin.
+//   { user_email }     welcomes someone a site Admin just added on Admin > Users: says which account
+//                      they have and how to sign in. Site Admins only.
 // Sends through Gmail (or any SMTP server) when SMTP_USER and SMTP_PASS are set, otherwise
 // through Resend (https://resend.com). Setup steps are in app/README.md ("Owner emails").
 //
@@ -39,15 +41,19 @@ Deno.serve(async (req) => {
   let eventId: string | undefined
   let invitationId: string | undefined
   let boutIds: string[] | undefined
+  let userEmail: string | undefined
   try {
     const body = await req.json()
     eventId = body.event_id
     invitationId = body.invitation_id
     boutIds = Array.isArray(body.bout_ids) ? body.bout_ids : undefined
+    userEmail = typeof body.user_email === 'string' ? body.user_email.trim().toLowerCase() : undefined
   } catch {
     // handled below
   }
-  if (!eventId && !invitationId && !boutIds?.length) return json({ error: 'event_id, invitation_id or bout_ids is missing' }, 400)
+  if (!eventId && !invitationId && !boutIds?.length && !userEmail) {
+    return json({ error: 'event_id, invitation_id, bout_ids or user_email is missing' }, 400)
+  }
 
   // Act as the caller, so row-level security decides what they can see.
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
@@ -56,6 +62,7 @@ Deno.serve(async (req) => {
 
   if (invitationId) return await sendInvitation(supabase, invitationId)
   if (boutIds?.length) return await sendBoutApprovals(supabase, boutIds)
+  if (userEmail) return await sendWelcome(supabase, userEmail)
 
   const { data: isAdmin, error: adminError } = await supabase.rpc('is_site_admin')
   if (adminError || !isAdmin) return json({ error: 'Only a site Admin can send this email' }, 403)
@@ -93,6 +100,43 @@ async function send(to: string, subject: string, text: string, html: string) {
   const result = await deliver([{ to, subject, text, html }])
   if (result.error) return json({ error: result.error }, result.status)
   return json({ sent: true })
+}
+
+// "You've been added". Only site Admins can read every profile and invite, so a missing row also
+// means the caller isn't allowed.
+// deno-lint-ignore no-explicit-any
+async function sendWelcome(supabase: any, email: string) {
+  const { data: isAdmin, error: adminError } = await supabase.rpc('is_site_admin')
+  if (adminError || !isAdmin) return json({ error: 'Only a site Admin can send this email' }, 403)
+
+  const [profile, invite] = await Promise.all([
+    supabase.from('profiles').select('name, roles(name)').eq('email', email).maybeSingle(),
+    supabase.from('invites').select('name, roles(name)').eq('email', email).maybeSingle(),
+  ])
+  const person = profile.data ?? invite.data
+  if (!person) return json({ error: 'There is no user with that email' }, 404)
+
+  const site = appUrl()
+  const account = accountPhrase(person.roles?.name)
+  const greeting = person.name ? `Hi ${person.name},` : 'Hi,'
+  const text = [
+    greeting,
+    '',
+    `You've been added to Match Making as ${account}.`,
+    '',
+    `To sign in, open ${site} and enter this email address (${email}). We'll email you a 6-digit code to type in. There's no password.`,
+  ].join('\n')
+  const html = `<p>${escape(greeting)}</p>
+<p>You've been added to Match Making as ${escape(account)}.</p>
+<p>To sign in, open <a href="${escape(site)}">${escape(site)}</a> and enter this email address (${escape(email)}). We'll email you a 6-digit code to type in. There's no password.</p>`
+  return await send(email, 'You\'ve been added to Match Making', text, html)
+}
+
+// roles.name is plural ("Admins", "Officials"); the email says "an Admin", "an Official".
+function accountPhrase(roleName?: string) {
+  const singular = (roleName ?? 'Users').replace(/s$/, '')
+  if (singular === 'Public') return 'a Public account (an Admin will give you access)'
+  return `${/^[AEIOU]/.test(singular) ? 'an' : 'a'} ${singular}`
 }
 
 type Email = { to: string; subject: string; text: string; html: string }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Input, Popconfirm, Space, Tabs } from 'antd'
-import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { Alert, Button, Input, Popconfirm, Space, Tabs } from 'antd'
+import { DeleteOutlined, EditOutlined, MailOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
 import CsvImport from './CsvImport'
@@ -17,6 +17,45 @@ const accountTypes = [
 ]
 const accountAs = { admin: 'an Admin', user: 'a User', official: 'an Official', public: 'a Public account' }
 const blankUser = { name: '', email: '', roleId: 'user' }
+
+const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
+
+// Emails someone how to sign in. Never throws: returns { sent } or { sent: false, reason } so the
+// page can offer a "send it from your email app" link instead.
+async function sendWelcome(user) {
+  try {
+    await api.emailNewUser(user.email)
+    return { ...user, sent: true }
+  } catch (err) {
+    return { ...user, sent: false, reason: err.message }
+  }
+}
+
+// The result of a welcome email, with a filled-in email to send by hand when it couldn't be sent.
+function WelcomeNotice({ welcome, onDismiss }) {
+  if (!welcome) return null
+  const who = welcome.name || welcome.email
+  if (welcome.sent) {
+    return <Alert className="gap" type="info" showIcon closable={{ onClose: onDismiss }} title={`We emailed ${who} how to sign in.`} />
+  }
+  const body = [
+    `Hi ${welcome.name || ''},`.trim(),
+    '',
+    `You've been added to Match Making as ${accountAs[welcome.roleId] ?? 'a User'}.`,
+    '',
+    `To sign in, open ${siteUrl()} and enter this email address (${welcome.email}). You'll get a 6-digit code by email to type in. There's no password.`,
+  ].join('\n')
+  const mailto = `mailto:${encodeURIComponent(welcome.email)}?subject=${encodeURIComponent('You\'ve been added to Match Making')}&body=${encodeURIComponent(body)}`
+  return (
+    <Alert
+      className="gap"
+      type="warning"
+      showIcon
+      closable={{ onClose: onDismiss }}
+      title={<>The email to {who} wasn't sent automatically ({welcome.reason}). <a href={mailto}>Send it from your email app</a></>}
+    />
+  )
+}
 
 // An Official account should also be on the Officials list, so they can be picked for events.
 // Adds them there unless that email is already listed.
@@ -169,28 +208,33 @@ function Users() {
   const [message, setMessage] = useState(null)
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(null) // the user row being edited
+  const [welcome, setWelcome] = useState(null) // the last welcome email: who, and whether it went
+  const [emailing, setEmailing] = useState(null) // email of the row whose welcome is sending
   const changes = useRunner(reload)
 
   async function addUser(event) {
     event.preventDefault()
     setSaving(true)
     setMessage(null)
+    setWelcome(null)
     let data
     let listed = false
     try {
       data = await api.addUser(form)
       if (form.roleId === 'official') listed = await ensureOfficial(form)
     } catch (err) {
-      return setMessage({ error: true, text: err.message })
-    } finally {
       setSaving(false)
+      return setMessage({ error: true, text: err.message })
     }
+    const added = { name: form.name.trim(), email: form.email.trim().toLowerCase(), roleId: form.roleId }
+    setWelcome(await sendWelcome(added))
+    setSaving(false)
     const role = accountAs[form.roleId] ?? 'a User'
     const officialNote = listed ? ' They are on the Officials list too.' : ''
     setMessage({
       text: data === 'updated'
         ? `${form.email} already had an account and is now ${role}.${officialNote}`
-        : `${form.email} is added as ${role}. They can sign in with that email.${officialNote}`,
+        : `${form.email} is added as ${role}.${officialNote}`,
     })
     setForm(blankUser)
     reload()
@@ -205,13 +249,29 @@ function Users() {
       key: 'actions',
       className: 'actions',
       render: (_, u) => (
-        <RowActions
-          name={u.name || u.email}
-          busy={changes.busy}
-          onEdit={() => { changes.setError(null); setEditing(u) }}
-          deleteText={u.id ? 'Their account is removed for good. To keep their history, disable them instead.' : 'The invite is withdrawn.'}
-          onDelete={() => changes.run(() => api.deleteUser(u))}
-        />
+        <Space size={4}>
+          <Button
+            size="small"
+            shape="circle"
+            icon={<MailOutlined />}
+            aria-label={`Email ${u.name || u.email} how to sign in`}
+            title="Email how to sign in"
+            loading={emailing === u.email}
+            disabled={Boolean(emailing)}
+            onClick={async () => {
+              setEmailing(u.email)
+              setWelcome(await sendWelcome({ name: u.name, email: u.email, roleId: u.role_id }))
+              setEmailing(null)
+            }}
+          />
+          <RowActions
+            name={u.name || u.email}
+            busy={changes.busy}
+            onEdit={() => { changes.setError(null); setEditing(u) }}
+            deleteText={u.id ? 'Their account is removed for good. To keep their history, disable them instead.' : 'The invite is withdrawn.'}
+            onDelete={() => changes.run(() => api.deleteUser(u))}
+          />
+        </Space>
       ),
     },
   ]
@@ -228,7 +288,9 @@ function Users() {
         <Field label="Account"><Pick value={form.roleId} onChange={(roleId) => setForm({ ...form, roleId })} options={accountTypes} /></Field>
       </FormCard>
       <FormMessage message={message} />
+      <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
       <Muted>
+        Adding someone emails them how to sign in; the envelope on their row sends it again.
         Account sets what they can do across the site: Admins manage everything, Officials are also added to the Officials list.
         Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
       </Muted>

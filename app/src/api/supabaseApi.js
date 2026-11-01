@@ -138,6 +138,12 @@ export const supabaseApi = {
     return data
   },
 
+  // Emails someone "You've been added to Match Making" with how to sign in. Site Admins only.
+  // Needs the send-event-email Edge Function.
+  async emailNewUser(email) {
+    await invokeEmail({ user_email: email })
+  },
+
   // user: a row from listUsers. Accounts change name, account type and status; invites change
   // name, email and account type.
   async updateUser(user, { name, email, roleId, status }) {
