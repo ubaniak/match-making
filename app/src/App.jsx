@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
-import { CalendarOutlined, GoogleOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
+import { CalendarOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { useAuth } from './auth'
 import AdminPage from './AdminPage'
 import ClubsPage from './ClubsPage'
 import EventsPage from './EventsPage'
+import HomePage from './HomePage'
 import PublicEvents from './PublicEvents'
 import { Badge, ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
-const pageIcons = { events: <CalendarOutlined />, clubs: <TeamOutlined />, admin: <SettingOutlined /> }
+const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, admin: <SettingOutlined /> }
 
 export default function App() {
   const { session, profile, can, loading } = useAuth()
-  const [page, setPage] = useState('events')
+  const [page, setPage] = useState('home')
   // Bumped on every tab click so clicking the current tab again goes back to its list.
   const [visit, setVisit] = useState(0)
+  // Where a link from Home (or an alert) asked to go: { eventId, tab } or { clubId }.
+  const [target, setTarget] = useState({})
   const hash = useHash()
 
   // The public page needs no sign-in.
@@ -28,11 +31,23 @@ export default function App() {
   if (!session) return api.mode === 'mock' ? <MockLogin /> : <Login />
 
   const pages = [
+    ['home', 'Home'],
     can('pages:read') && ['events', 'Events'],
     can('pages:read') && ['clubs', 'Clubs'],
     can('users:manage') && ['admin', 'Admin'],
   ].filter(Boolean)
   const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
+  // A link only counts for the user who clicked it (demo mode can switch users).
+  const linked = target.userId === profile?.id ? target : {}
+
+  // Go to a page, optionally straight to one event (and tab) or club:
+  // open({ page: 'events', eventId, tab }) or open({ page: 'clubs', clubId }).
+  function open({ page: next, ...rest }) {
+    setPage(next)
+    setTarget({ ...rest, userId: profile?.id })
+    setVisit((v) => v + 1)
+    window.scrollTo(0, 0)
+  }
 
   return (
     <Layout className="page">
@@ -48,7 +63,7 @@ export default function App() {
                   type="button"
                   className={current === key ? 'pill active' : 'pill'}
                   aria-current={current === key ? 'page' : undefined}
-                  onClick={() => { setPage(key); setVisit((v) => v + 1) }}
+                  onClick={() => open({ page: key })}
                 >
                   {pageIcons[key]}
                   <span className="pill-label">{label}</span>
@@ -64,10 +79,10 @@ export default function App() {
         </div>
       </Layout.Header>
       <Layout.Content id="main-content">
-        {current === 'events' && <EventsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} />}
-        {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} />}
+        {current === 'home' && <HomePage key={`${profile?.id}-${visit}`} profile={profile} can={can} onOpen={open} />}
+        {current === 'events' && <EventsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} eventId={linked.eventId} tab={linked.tab} />}
+        {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} clubId={linked.clubId} />}
         {current === 'admin' && <AdminPage key={visit} />}
-        {!current && <Hello profile={profile} email={session.user.email} />}
       </Layout.Content>
     </Layout>
   )
@@ -276,19 +291,5 @@ function MockLogin() {
       <ErrorAlert>{error}</ErrorAlert>
       {publicLink}
     </SignedOutCard>
-  )
-}
-
-function Hello({ profile, email }) {
-  return (
-    <main className="panel">
-      <Card>
-        <Title level={2} style={{ marginTop: 0 }}>Hello world</Title>
-        <Paragraph>Signed in as {email}</Paragraph>
-        {profile?.role_id === 'public' && (
-          <Muted>You don't have a role yet. Ask an Admin to add you as a user.</Muted>
-        )}
-      </Card>
-    </main>
   )
 }
