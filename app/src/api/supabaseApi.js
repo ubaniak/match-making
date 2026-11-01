@@ -431,7 +431,7 @@ export const supabaseApi = {
   async listPublicEvents() {
     const { data, error } = await supabase.rpc('list_public_events')
     if (error) throw error
-    return data.map((e) => ({ ...e, days: tidyDays(e.days) }))
+    return data.map((e) => ({ ...e, days: tidyDays(e.days), bouts: e.bouts ?? [] }))
   },
 
   async deleteEvent(eventId) {
