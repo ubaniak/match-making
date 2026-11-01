@@ -9,6 +9,8 @@ import PublicEvents from './PublicEvents'
 export default function App() {
   const { session, profile, can, loading } = useAuth()
   const [page, setPage] = useState('events')
+  // Bumped on every tab click so clicking the current tab again goes back to its list.
+  const [visit, setVisit] = useState(0)
   const hash = useHash()
 
   // The public page needs no sign-in.
@@ -35,7 +37,7 @@ export default function App() {
         {pages.length > 1 && (
           <nav className="nav">
             {pages.map(([key, label]) => (
-              <button key={key} className={current === key ? 'tab active' : 'tab'} onClick={() => setPage(key)}>{label}</button>
+              <button key={key} className={current === key ? 'tab active' : 'tab'} onClick={() => { setPage(key); setVisit((v) => v + 1) }}>{label}</button>
             ))}
           </nav>
         )}
@@ -45,9 +47,9 @@ export default function App() {
         </span>
         <button className="secondary" onClick={() => api.signOut()}>Sign out</button>
       </header>
-      {current === 'events' && <EventsPage key={profile?.id} profile={profile} can={can} />}
-      {current === 'clubs' && <ClubsPage key={profile?.id} profile={profile} can={can} />}
-      {current === 'admin' && <AdminPage />}
+      {current === 'events' && <EventsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} />}
+      {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} />}
+      {current === 'admin' && <AdminPage key={visit} />}
       {!current && <Hello profile={profile} email={session.user.email} />}
     </div>
   )

@@ -356,7 +356,7 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
           {...moving}
           clubs={clubs.filter((c) => c.id !== club.id)}
           busy={busy}
-          onCancel={() => setMoving(null)}
+          onCancel={() => { setError(null); setMoving(null) }}
           onSubmit={async (toClubId, extra) => {
             const ok = await run(() =>
               moving.mode === 'move'
@@ -387,13 +387,13 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
                   <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
                   {may.member && (
                     <td className="actions">
-                      {may.manage && <button className="link" onClick={() => { setMoving(null); setEditing(a.id) }}>Edit</button>}
+                      {may.manage && <button className="link" onClick={() => { setError(null); setMoving(null); setEditing(a.id) }}>Edit</button>}
                       {waiting.has(a.id) ? (
                         <span className="muted"> Transfer waiting</span>
                       ) : (
-                        <button className="link" onClick={() => { setEditing(null); setMoving({ athlete: a, mode: 'transfer' }) }}>Transfer</button>
+                        <button className="link" onClick={() => { setError(null); setEditing(null); setMoving({ athlete: a, mode: 'transfer' }) }}>Transfer</button>
                       )}
-                      {may.siteAdmin && <button className="link" onClick={() => { setEditing(null); setMoving({ athlete: a, mode: 'move' }) }}>Move</button>}
+                      {may.siteAdmin && <button className="link" onClick={() => { setError(null); setEditing(null); setMoving({ athlete: a, mode: 'move' }) }}>Move</button>}
                     </td>
                   )}
                 </tr>

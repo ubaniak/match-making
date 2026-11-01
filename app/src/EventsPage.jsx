@@ -64,8 +64,9 @@ export default function EventsPage({ profile, can }) {
           <button className="link back" onClick={back}>← All events</button>
           <h1>New event</h1>
           <p className="muted">
-            The event starts as Requested. Its Owner gets an email asking them to add the poster and the weigh-in and bout
-            times. Approve it whenever you're ready.
+            The event starts as Requested. Its Owner is asked by email to add the poster and the weigh-in and bout times.
+            If the email can't be sent automatically, you'll get a ready-made one to send yourself. Approve it whenever
+            you're ready.
           </p>
           <NewEventForm onCancel={back} onCreated={(id, email) => setView({ name: 'event', id, email })} />
         </>
@@ -732,7 +733,7 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
   return (
     <section>
       <h2>Clubs ({event.clubs.filter((ec) => ec.status === 'accepted').length})</h2>
-      {!may.open && <p className="muted">Clubs can join once the event is approved.</p>}
+      {effectiveStatus(event) === 'requested' && <p className="muted">Clubs can join once the event is approved.</p>}
       {may.manageClubs && may.open && (
         <form onSubmit={invite} className="row-form">
           <label>
@@ -872,7 +873,7 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
           <label>
             Athlete
             <select value={form.athleteId} onChange={(e) => setForm({ ...form, athleteId: e.target.value })}>
-              <option value="">{available.length ? 'Choose an athlete…' : 'All your club\'s athletes are entered'}</option>
+              <option value="">{available.length ? 'Choose an athlete…' : may.siteAdmin ? 'Every athlete in the event\'s clubs is entered' : 'All your club\'s athletes are entered'}</option>
               {available.map((a) => (
                 <option key={a.id} value={a.id}>
                   {[a.name, a.club, genderLabel(a.gender), formatWeight(a.weight_kg)].filter((v) => v && v !== '—').join(' · ')}
@@ -932,7 +933,7 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
                       {canChange(a) && editing !== a.id && (
                         <>
                           <button className="link" onClick={() => { setEditing(a.id); setSuggestion({ name: a.suggested_opponent_name ?? '', club: a.suggested_opponent_club ?? '' }) }}>
-                            Suggest opponent
+                            {a.suggested_opponent_name || a.suggested_opponent_club ? 'Edit suggestion' : 'Suggest opponent'}
                           </button>
                           <button className="link" disabled={busy} onClick={() => withdraw(a)}>Withdraw</button>
                         </>
