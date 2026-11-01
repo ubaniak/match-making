@@ -608,3 +608,34 @@ td.actions button.link + span,
 td.actions span + button.link {
   margin-left: 0.75rem;
 }
+
+/* Entries (stage 3) */
+.badge.club-accepted,
+.badge.late-accepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.club-requested,
+.badge.late-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge.club-declined,
+.badge.late-declined {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.inline-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.inline-edit input {
+  width: 8rem;
+  padding: 0.25rem 0.4rem;
+}
