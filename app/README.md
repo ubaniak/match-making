@@ -26,6 +26,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    8. [`20261101000000_event_lifecycle.sql`](../supabase/migrations/20261101000000_event_lifecycle.sql): event statuses (Requested, Active, Done, Cancelled), only site Admins create events, weigh-in windows and bout sessions, posters, the public page, and no more event-level Admin
    9. [`20261101010000_clubs.sql`](../supabase/migrations/20261101010000_clubs.sql): clubs, club Owners and Coaches, invites approved by a site Admin, athletes linked to a club (existing club names become clubs), and transfer requests
    10. [`20261101020000_entries.sql`](../supabase/migrations/20261101020000_entries.sql): clubs joining events (invites and join requests), entering and withdrawing athletes, suggested opponents, the entry deadline and late-entry requests; event Coaches become Viewers
+   11. [`20261101030000_event_timezones.sql`](../supabase/migrations/20261101030000_event_timezones.sql): each event has a time zone (picked by the site Admin; existing events get America/Winnipeg), and "today" for an event is today in its time zone, so events stay open and listed until local midnight; the Done job runs hourly
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
@@ -97,9 +98,9 @@ When a site Admin creates an event, the app asks the `send-event-email` Edge Fun
 2. In Supabase, open Edge Functions > Deploy a new function > Via editor, name it `send-event-email`, paste in [`supabase/functions/send-event-email/index.ts`](../supabase/functions/send-event-email/index.ts), and deploy. (Or `supabase functions deploy send-event-email` with the CLI.)
 3. Under Edge Functions > Secrets add `RESEND_API_KEY`, and `EMAIL_FROM` (e.g. `Match Making <events@your-domain>`) once your domain is verified.
 
-## Nightly Done job
+## Done job
 
-The event lifecycle migration schedules `close_finished_events()` every day at 08:05 UTC with pg_cron. If the migration printed a notice that pg_cron wasn't available, turn it on under Database > Extensions and run the `cron.schedule` line from that notice. Until then the app still shows past events as Done.
+`close_finished_events()` runs at 5 past every hour with pg_cron (migration 11), so each event turns Done soon after midnight in its own time zone. If the migration printed a notice that pg_cron wasn't available, turn it on under Database > Extensions and run the `cron.schedule` line from that notice. Until then the app still shows past events as Done.
 
 ## Run locally
 

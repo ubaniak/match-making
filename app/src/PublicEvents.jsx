@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import { formatDateRange, formatDay } from './dates'
+import { DEFAULT_TIME_ZONE, formatDateRange, formatDay, zoneAbbr, zoneLabel } from './dates'
 
 // The public page: upcoming Active events, no sign-in needed. Never shows people or athletes.
 export default function PublicEvents({ signedIn }) {
@@ -33,6 +33,7 @@ export default function PublicEvents({ signedIn }) {
 
 function PublicEvent({ event }) {
   const poster = api.posterUrl(event.poster_path)
+  const zone = event.timezone || DEFAULT_TIME_ZONE
   return (
     <article className="public-event">
       {poster && <img className="poster" src={poster} alt={`Poster for ${event.name}`} />}
@@ -45,6 +46,8 @@ function PublicEvent({ event }) {
         {event.days.length === 0 ? (
           <p className="muted">Times to be announced.</p>
         ) : (
+          <>
+          <p className="muted">Times are in {zoneLabel(zone, event.start_date)}.</p>
           <ul className="day-list">
             {event.days.map((d) => (
               <li key={d.day}>
@@ -54,9 +57,11 @@ function PublicEvent({ event }) {
                 {d.sessions.map((s) => (
                   <span key={s.starts_at}> · {s.label ? `${s.label} bouts` : 'Bouts'} from {s.starts_at}</span>
                 ))}
+                {' '}{zoneAbbr(zone, d.day)}
               </li>
             ))}
           </ul>
+          </>
         )}
       </div>
     </article>

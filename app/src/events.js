@@ -7,7 +7,7 @@ export const statusLabels = { requested: 'Requested', active: 'Active', done: 'D
 // Events turn Done the day after their end date. The nightly job does it in the database;
 // this covers the hours before it runs (and demo mode).
 export function effectiveStatus(event) {
-  if ((event.status === 'requested' || event.status === 'active') && event.end_date < todayIso()) return 'done'
+  if ((event.status === 'requested' || event.status === 'active') && event.end_date < todayIso(event.timezone)) return 'done'
   return event.status
 }
 

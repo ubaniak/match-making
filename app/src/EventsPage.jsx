@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { categorise, compareByCategory } from './categories'
-import { MAX_EVENT_DAYS, daysBetween, formatDateRange, formatDay } from './dates'
+import {
+  DEFAULT_TIME_ZONE, MAX_EVENT_DAYS, browserTimeZone, daysBetween, formatDateRange, formatDay, formatInZone, isoToZonedInput,
+  timeZoneOptions, zoneAbbr, zoneLabel, zonedInputToIso,
+} from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
@@ -32,14 +35,43 @@ function rightsFor(event, profile, siteAdmin) {
   }
 }
 
-const formatDeadline = (iso) =>
-  iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'None'
+const zoneOf = (event) => event.timezone || DEFAULT_TIME_ZONE
 
-// datetime-local inputs work in the browser's local time.
-function toLocalInput(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+// Shown in the event's time zone, plus the viewer's own time when their browser is elsewhere.
+function Deadline({ event }) {
+  if (!event.entry_deadline) return 'None'
+  const zone = zoneOf(event)
+  const mine = browserTimeZone()
+  return (
+    <>
+      {formatInZone(event.entry_deadline, zone)}
+      {mine !== zone && <span className="muted"> ({formatInZone(event.entry_deadline, mine)} your time)</span>}
+    </>
+  )
+}
+
+function TimeZoneSelect({ value, onChange }) {
+  const options = useMemo(() => timeZoneOptions(value), [value])
+  return (
+    <label>
+      Time zone
+      <select required value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((tz) => <option key={tz} value={tz}>{tz.replaceAll('_', ' ')} ({zoneAbbr(tz)})</option>)}
+      </select>
+    </label>
+  )
+}
+
+// One line saying which time zone an event's times are in.
+function ZoneNote({ event }) {
+  const zone = zoneOf(event)
+  const mine = browserTimeZone()
+  return (
+    <p className="muted">
+      All times are in {zoneLabel(zone, event.start_date)}.
+      {mine !== zone && ` Your browser is on ${zoneLabel(mine)}.`}
+    </p>
+  )
 }
 
 // Events: site Admins create them and pick the Owner. The Owner fills in the poster and
@@ -193,7 +225,7 @@ function useEventFields(initial) {
 }
 
 function NewEventForm({ onCancel, onCreated }) {
-  const [form, setField] = useEventFields({ name: '', venue: '', startDate: '', endDate: '', ownerId: '' })
+  const [form, setField] = useEventFields({ name: '', venue: '', startDate: '', endDate: '', ownerId: '', timezone: browserTimeZone() })
   const users = useActiveUsers()
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -240,6 +272,8 @@ function NewEventForm({ onCancel, onCreated }) {
           </select>
         </label>
         <p className="muted full">Only people who have signed in at least once can own an event.</p>
+        <TimeZoneSelect value={form.timezone} onChange={(tz) => setField('timezone', tz)} />
+        <p className="muted full">Weigh-in and bout times are in this time zone. We picked your browser's; change it if the event is somewhere else.</p>
       </div>
       <div className="row-form">
         <h2>Dates</h2>
@@ -347,7 +381,7 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
       <>
         {backLink}
         <h1>Edit {event.name}</h1>
-        <DetailsForm event={event} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />
+        <DetailsForm event={event} siteAdmin={siteAdmin} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />
       </>
     )
   }
@@ -398,7 +432,8 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
         <div><dt>Dates</dt><dd>{formatDateRange(event.start_date, event.end_date)}</dd></div>
         <div><dt>Location</dt><dd>{event.venue || '—'}</dd></div>
         <div><dt>Owner</dt><dd>{personName(ownerOf(event))}</dd></div>
-        <div><dt>Entry deadline</dt><dd>{formatDeadline(event.entry_deadline)}</dd></div>
+        <div><dt>Time zone</dt><dd>{zoneLabel(zoneOf(event), event.start_date)}</dd></div>
+        <div><dt>Entry deadline</dt><dd><Deadline event={event} /></dd></div>
         <div><dt>Your role</dt><dd>{siteAdmin ? <span className="badge">Site admin</span> : <RoleBadge role={may.role} />}</dd></div>
       </dl>
       {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
@@ -448,9 +483,10 @@ function ChangeOwner({ event, busy, run }) {
   )
 }
 
-function DetailsForm({ event, onCancel, onSaved }) {
+function DetailsForm({ event, siteAdmin, onCancel, onSaved }) {
   const [form, setField] = useEventFields({
-    name: event.name, venue: event.venue ?? '', startDate: event.start_date, endDate: event.end_date, deadline: toLocalInput(event.entry_deadline),
+    name: event.name, venue: event.venue ?? '', startDate: event.start_date, endDate: event.end_date, timezone: zoneOf(event),
+    deadline: isoToZonedInput(event.entry_deadline, zoneOf(event)),
   })
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -463,7 +499,11 @@ function DetailsForm({ event, onCancel, onSaved }) {
     if (lostDays.length && !window.confirm(`The new dates drop the times for ${lostDays.map((d) => formatDay(d.day)).join(', ')}. Continue?`)) return
     setSaving(true)
     try {
-      await api.updateEventDetails(event.id, { ...form, entryDeadline: form.deadline ? new Date(form.deadline).toISOString() : '' })
+      await api.updateEventDetails(event.id, {
+        ...form,
+        timezone: siteAdmin ? form.timezone : undefined,
+        entryDeadline: zonedInputToIso(form.deadline, form.timezone),
+      })
       onSaved()
     } catch (err) {
       setError(err.message)
@@ -479,6 +519,7 @@ function DetailsForm({ event, onCancel, onSaved }) {
         <h2>Details</h2>
         <label>Name<input required {...field('name')} /></label>
         <label>Location <span className="muted">(optional)</span><input {...field('venue')} /></label>
+        {siteAdmin && <TimeZoneSelect value={form.timezone} onChange={(tz) => setField('timezone', tz)} />}
       </div>
       <div className="row-form">
         <h2>Dates</h2>
@@ -487,7 +528,7 @@ function DetailsForm({ event, onCancel, onSaved }) {
       <div className="row-form">
         <h2>Entry deadline <span className="muted">(optional)</span></h2>
         <label>
-          Entries close at
+          Entries close at ({zoneAbbr(form.timezone, form.endDate)})
           <input type="datetime-local" {...field('deadline')} />
         </label>
         {form.deadline && <button type="button" className="secondary" onClick={() => setField('deadline', '')}>No deadline</button>}
@@ -548,6 +589,8 @@ function Schedule({ event, canEdit, onEdit }) {
       {event.days.length === 0 ? (
         <p className="muted">No times yet. Each day with bouts needs a weigh-in and at least one bout session.</p>
       ) : (
+        <>
+        <ZoneNote event={event} />
         <table>
           <thead>
             <tr><th>Day</th><th>Weigh-in</th><th>Bout sessions</th></tr>
@@ -558,13 +601,14 @@ function Schedule({ event, canEdit, onEdit }) {
               return (
                 <tr key={day}>
                   <td>{formatDay(day)}</td>
-                  <td>{d ? `${d.weigh_in_start}–${d.weigh_in_end}` : <span className="muted">No bouts</span>}</td>
-                  <td>{d ? d.sessions.map((s) => (s.label ? `${s.label} ${s.starts_at}` : s.starts_at)).join(', ') : ''}</td>
+                  <td>{d ? `${d.weigh_in_start}–${d.weigh_in_end} ${zoneAbbr(zoneOf(event), day)}` : <span className="muted">No bouts</span>}</td>
+                  <td>{d ? `${d.sessions.map((s) => (s.label ? `${s.label} ${s.starts_at}` : s.starts_at)).join(', ')} ${zoneAbbr(zoneOf(event), day)}` : ''}</td>
                 </tr>
               )
             })}
           </tbody>
         </table>
+        </>
       )}
     </section>
   )
@@ -614,6 +658,7 @@ function TimesForm({ event, onCancel, onSaved }) {
 
   return (
     <form onSubmit={save} className="event-form">
+      <ZoneNote event={event} />
       <p className="muted">
         Each day with bouts has one weigh-in and one or more bout sessions. The weigh-in lasts at least 2 hours and ends at least
         3 hours before that day's first bout.

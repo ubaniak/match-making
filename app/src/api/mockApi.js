@@ -4,7 +4,7 @@
 // The demo admin can also preview the app as one of the sample users (see viewAs).
 
 import { athleteProblems } from '../athletes'
-import { addDays, daysBetween, todayIso } from '../dates'
+import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
@@ -12,7 +12,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v6' // v6: event clubs, entries and late-entry requests
+const DATA_KEY = 'mock-data-v7' // v7: event time zones
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -48,7 +48,7 @@ function seed() {
     events: [
       {
         id: 'event-1', name: 'Eastside Winter Box Cup', venue: 'Eastside Leisure Centre',
-        start_date: start, end_date: addDays(start, 1), status: 'active', poster_path: null, entry_deadline: null,
+        start_date: start, end_date: addDays(start, 1), status: 'active', poster_path: null, entry_deadline: null, timezone: DEFAULT_TIME_ZONE,
         days: [
           { day: start, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions: [{ starts_at: '13:00', label: 'Afternoon' }, { starts_at: '18:30', label: 'Evening' }] },
           { day: addDays(start, 1), weigh_in_start: '08:30', weigh_in_end: '10:30', sessions: [{ starts_at: '14:00', label: '' }] },
@@ -56,7 +56,7 @@ function seed() {
       },
       {
         id: 'event-2', name: 'Riverside Club Show', venue: 'Riverside Boxing Club',
-        start_date: single, end_date: single, status: 'requested', poster_path: null, entry_deadline: null,
+        start_date: single, end_date: single, status: 'requested', poster_path: null, entry_deadline: null, timezone: DEFAULT_TIME_ZONE,
         days: [],
       },
     ],
@@ -522,7 +522,7 @@ export const mockApi = {
   },
 
   // Mirrors create_event.
-  async createEvent({ name, venue, startDate, endDate, ownerId }) {
+  async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
     requireSiteAdmin('Only a site Admin can create events')
     const current = data()
     if (!name.trim()) throw new Error('Give the event a name')
@@ -531,6 +531,7 @@ export const mockApi = {
     const event = {
       id: crypto.randomUUID(), name: name.trim(), venue: venue.trim() || null,
       start_date: startDate, end_date: endDate, status: 'requested', poster_path: null, days: [],
+      timezone: timezone || DEFAULT_TIME_ZONE,
     }
     current.events.push(event)
     current.eventMembers.push({ event_id: event.id, user_id: ownerId, role: 'owner' })
@@ -538,9 +539,13 @@ export const mockApi = {
     return event.id
   },
 
-  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline }) {
+  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline, timezone }) {
     const current = data()
     const event = requireEditor(current, eventId)
+    if (timezone && timezone !== (event.timezone ?? DEFAULT_TIME_ZONE)) {
+      requireSiteAdmin('Only a site Admin can change an event\'s time zone')
+      event.timezone = timezone
+    }
     if (!name.trim()) throw new Error('Give the event a name')
     if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
     Object.assign(event, { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null })
@@ -615,10 +620,9 @@ export const mockApi = {
   },
 
   async listPublicEvents() {
-    const today = todayIso()
     return data().events
-      .filter((e) => e.status === 'active' && e.end_date >= today)
-      .map(({ id, name, venue, start_date, end_date, poster_path, days }) => ({ id, name, venue, start_date, end_date, poster_path, days }))
+      .filter((e) => e.status === 'active' && e.end_date >= todayIso(e.timezone ?? DEFAULT_TIME_ZONE))
+      .map(({ id, name, venue, start_date, end_date, poster_path, days, timezone }) => ({ id, name, venue, start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE }))
       .sort((a, b) => a.start_date.localeCompare(b.start_date) || a.name.localeCompare(b.name))
   },
 
