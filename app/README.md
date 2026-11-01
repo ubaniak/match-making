@@ -26,6 +26,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    8. [`20261101000000_event_lifecycle.sql`](../supabase/migrations/20261101000000_event_lifecycle.sql): event statuses (Requested, Active, Done, Cancelled), only site Admins create events, weigh-in windows and bout sessions, posters, the public page, and no more event-level Admin
    9. [`20261101010000_clubs.sql`](../supabase/migrations/20261101010000_clubs.sql): clubs, club Owners and Coaches, invites approved by a site Admin, athletes linked to a club (existing club names become clubs), and transfer requests
    10. [`20261101020000_entries.sql`](../supabase/migrations/20261101020000_entries.sql): clubs joining events (invites and join requests), entering and withdrawing athletes, suggested opponents, the entry deadline and late-entry requests; event Coaches become Viewers
+   11. [`20261101030000_local_dates.sql`](../supabase/migrations/20261101030000_local_dates.sql): "today" means today in Winnipeg (America/Winnipeg), not UTC, so events stay open and listed until midnight local time
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:
