@@ -6,7 +6,7 @@ import { api } from './api'
 import { formatWeight } from './athletes'
 import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
-import { checkMatch } from './matching'
+import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
 import { Button, Card as AntCard, Collapse, Input, Space, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
@@ -159,14 +159,41 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
   const red = byId[redId]
   const blue = byId[blueId]
   const check = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
-  const options = (other) => event.athletes.filter((a) => a.id !== other).map((a) => {
+  const [bestOnly, setBestOnly] = useState(false)
+  const label = (a, note) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${note ? ` (${note})` : ''}`
+  const plain = (other) => event.athletes.filter((a) => a.id !== other).map((a) => {
     const busyThatDay = taken.has(a.id)
-    return {
-      value: a.id,
-      disabled: busyThatDay,
-      label: `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${busyThatDay ? ' (already boxing this day)' : ''}`,
-    }
+    return { value: a.id, disabled: busyThatDay, label: label(a, busyThatDay && 'already boxing this day') }
   })
+  // Best match: with the other corner picked, only opponents the rules allow, closest first. With
+  // neither corner picked, only athletes who have at least one such opponent.
+  const best = (other, current) => {
+    const free = event.athletes.filter((a) => !taken.has(a.id))
+    let list
+    if (byId[other]) {
+      list = bestOpponents(byId[other], free, event.start_date, weights, taken).map(({ athlete, check }) => ({
+        value: athlete.id,
+        label: label(athlete, check.needsSupervisor ? "needs the Chief Official" : check.warnings.length ? `${check.warnings.length} warning${check.warnings.length === 1 ? '' : 's'}` : 'good match'),
+      }))
+    } else {
+      list = free.flatMap((a) => {
+        const n = bestOpponents(a, free, event.start_date, weights, taken).length
+        return n ? [{ value: a.id, label: label(a, `${n} possible opponent${n === 1 ? '' : 's'}`) }] : []
+      })
+    }
+    // Keep the athlete already in this corner, so the picker never shows a bare id.
+    if (byId[current] && !list.some((o) => o.value === current)) list.unshift({ value: current, misfit: true, label: label(byId[current], "doesn't fit") })
+    return list
+  }
+  const options = (other, current) => (bestOnly ? best(other, current) : plain(other))
+  const redOptions = options(blueId, redId)
+  const blueOptions = options(redId, blueId)
+  const fits = (opts) => opts.filter((o) => !o.misfit).length
+  const bestNote = !bestOnly ? null
+    : red && !blue ? `${fits(blueOptions)} athlete${fits(blueOptions) === 1 ? '' : 's'} fit${fits(blueOptions) === 1 ? 's' : ''} ${red.name}, closest first.`
+    : blue && !red ? `${fits(redOptions)} athlete${fits(redOptions) === 1 ? '' : 's'} fit${fits(redOptions) === 1 ? 's' : ''} ${blue.name}, closest first.`
+    : !red && !blue ? 'Pick a boxer to see only the opponents who fit them, closest first.'
+    : null
 
   async function save(e) {
     e.preventDefault()
@@ -191,11 +218,21 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
         </>
       }
     >
+      <FullRow>
+        <Space wrap>
+          <Button type={bestOnly ? 'primary' : 'default'} aria-pressed={bestOnly} onClick={() => setBestOnly(!bestOnly)}>
+            Best match{bestOnly ? ': on' : ''}
+          </Button>
+          <Muted>
+            {bestNote ?? (bestOnly ? 'Showing only athletes who fit the match rules.' : 'Hides opponents who break the match rules, are from the same club, or are already boxing this day.')}
+          </Muted>
+        </Space>
+      </FullRow>
       <Field label={<span className="corner-label red">Red corner</span>}>
-        <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={options(blueId)} />
+        <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={redOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
       <Field label={<span className="corner-label blue">Blue corner</span>}>
-        <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={options(redId)} />
+        <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={blueOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
       {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
       {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
