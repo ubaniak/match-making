@@ -7,6 +7,7 @@ import AdminPage from './AdminPage'
 import ClubsPage from './ClubsPage'
 import EventsPage from './EventsPage'
 import HomePage from './HomePage'
+import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
 import { Badge, ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
@@ -50,41 +51,44 @@ export default function App() {
   }
 
   return (
-    <Layout className="page">
-      {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
-      <Layout.Header className="app-header">
-        <div className="app-header-inner">
-          <span className="brand">Match Making</span>
-          {pages.length > 1 ? (
-            <nav className="pill-nav" aria-label="Pages">
-              {pages.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={current === key ? 'pill active' : 'pill'}
-                  aria-current={current === key ? 'page' : undefined}
-                  onClick={() => open({ page: key })}
-                >
-                  {pageIcons[key]}
-                  <span className="pill-label">{label}</span>
-                </button>
-              ))}
-            </nav>
-          ) : <span style={{ flex: 1 }} />}
-          <span className="who">
-            <Text className="who-name">{profile?.name || session.user.email}</Text>
-            {profile && <Badge>{profile.roles?.name}</Badge>}
-            <Button icon={<LogoutOutlined />} onClick={() => api.signOut()}>Sign out</Button>
-          </span>
-        </div>
-      </Layout.Header>
-      <Layout.Content id="main-content">
-        {current === 'home' && <HomePage key={`${profile?.id}-${visit}`} profile={profile} can={can} onOpen={open} />}
-        {current === 'events' && <EventsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} eventId={linked.eventId} tab={linked.tab} />}
-        {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} clubId={linked.clubId} />}
-        {current === 'admin' && <AdminPage key={visit} />}
-      </Layout.Content>
-    </Layout>
+    <NotificationsProvider userId={profile?.id}>
+      <Layout className="page">
+        {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
+        <Layout.Header className="app-header">
+          <div className="app-header-inner">
+            <span className="brand">Match Making</span>
+            {pages.length > 1 ? (
+              <nav className="pill-nav" aria-label="Pages">
+                {pages.map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={current === key ? 'pill active' : 'pill'}
+                    aria-current={current === key ? 'page' : undefined}
+                    onClick={() => open({ page: key })}
+                  >
+                    {pageIcons[key]}
+                    <span className="pill-label">{label}</span>
+                  </button>
+                ))}
+              </nav>
+            ) : <span style={{ flex: 1 }} />}
+            <span className="who">
+              <NotificationBell onOpen={open} />
+              <Text className="who-name">{profile?.name || session.user.email}</Text>
+              {profile && <Badge>{profile.roles?.name}</Badge>}
+              <Button icon={<LogoutOutlined />} onClick={() => api.signOut()}>Sign out</Button>
+            </span>
+          </div>
+        </Layout.Header>
+        <Layout.Content id="main-content">
+          {current === 'home' && <HomePage key={`${profile?.id}-${visit}`} profile={profile} can={can} onOpen={open} />}
+          {current === 'events' && <EventsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} eventId={linked.eventId} tab={linked.tab} />}
+          {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} clubId={linked.clubId} />}
+          {current === 'admin' && <AdminPage key={visit} />}
+        </Layout.Content>
+      </Layout>
+    </NotificationsProvider>
   )
 }
 

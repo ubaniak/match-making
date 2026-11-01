@@ -101,9 +101,27 @@ function seed() {
         after_weigh_in: false, made_by: 'user-1', made_at: new Date().toISOString(),
         approvals: [{ side: 'red', decision: 'approved', note: null, override: false, decided_by: 'user-1', decided_at: new Date().toISOString() }],
         comments: [],
+        approval_requested_at: new Date().toISOString(), approval_requested_by: 'user-1',
       },
     ],
     weighIns: [],
+    notifications: [
+      {
+        id: 'note-1', user_id: ADMIN_ID, kind: 'member_request', title: 'Approve Priya Shah as coach of Eastside BC',
+        body: 'Invited by Maria Lopez', event_id: null, club_id: 'club-1', bout_id: null, tab: null,
+        action_key: 'member:club-1:user-3', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
+      },
+      {
+        id: 'note-2', user_id: 'user-2', kind: 'bout_approval', title: 'Approve bout: Ali Hassan vs Marco Ruiz',
+        body: `Eastside Winter Box Cup · ${label(start)} · blue corner`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
+        action_key: 'bout:bout-1:blue', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
+      },
+      {
+        id: 'note-3', user_id: 'user-3', kind: 'bout_approval', title: 'Approve bout: Ali Hassan vs Marco Ruiz',
+        body: `Eastside Winter Box Cup · ${label(start)} · official approval`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
+        action_key: 'bout:bout-1:official', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
+      },
+    ],
   }
 }
 
@@ -130,6 +148,7 @@ function read(key) {
 }
 function write(key, value) {
   memory[key] = value
+  if (key === DATA_KEY) setTimeout(() => noteListeners.forEach((callback) => callback()), 0)
   try {
     if (value === null) localStorage.removeItem(key)
     else localStorage.setItem(key, JSON.stringify(value))
@@ -319,6 +338,48 @@ function withMembers(current, event) {
     .map((m) => ({ ...m, user: findUser(current, m.user_id) }))
   return { ...event, members, athlete_count: current.eventAthletes.filter((ea) => ea.event_id === event.id).length }
 }
+
+// ---------------------------------------------------------------------------
+// Notifications: mirrors migration 22 (20261101140000_notifications.sql)
+// ---------------------------------------------------------------------------
+
+const noteListeners = new Set()
+
+// One notification per person, never to whoever is acting. `key` makes it a to-do.
+function notify(current, userIds, kind, title, { body, eventId, clubId, boutId, tab, key } = {}) {
+  current.notifications ??= []
+  const actor = currentUserId()
+  for (const userId of new Set(userIds.filter(Boolean))) {
+    if (userId === actor) continue
+    current.notifications.push({
+      id: crypto.randomUUID(), user_id: userId, kind, title, body: body ? body.slice(0, 300) : null,
+      event_id: eventId ?? null, club_id: clubId ?? null, bout_id: boutId ?? null, tab: tab ?? null,
+      action_key: key ?? null, needs_action: Boolean(key), actor_id: actor, created_at: now(), read_at: null, done_at: null,
+    })
+  }
+}
+
+// Marks open to-dos with this key done; a key ending in '%' matches every key starting with it.
+function resolveNotes(current, key) {
+  const match = key.endsWith('%') ? (k) => k?.startsWith(key.slice(0, -1)) : (k) => k === key
+  for (const n of current.notifications ?? []) {
+    if (!n.done_at && match(n.action_key)) Object.assign(n, { done_at: now(), read_at: n.read_at ?? now() })
+  }
+}
+
+const eventOwnerIds = (current, eventId) => current.eventMembers.filter((m) => m.event_id === eventId && m.role === 'owner').map((m) => m.user_id)
+const eventOfficialIds = (current, eventId) => (current.eventOfficials ?? []).filter((o) => o.event_id === eventId).map((o) => o.user_id)
+const clubPeopleIds = (current, clubId, coaches = false) => current.clubMembers
+  .filter((m) => m.club_id === clubId && m.status === 'active' && (m.role === 'owner' || (coaches && m.role === 'coach'))).map((m) => m.user_id)
+const athleteName = (current, id) => current.athletes.find((a) => a.id === id)?.name ?? null
+const eventName = (current, id) => current.events.find((e) => e.id === id)?.name ?? 'the event'
+const personName = (current, id) => findUser(current, id)?.name || findUser(current, id)?.email || 'Someone'
+const boutLabel = (current, b) => `${athleteName(current, b.red_athlete_id) ?? 'Red'} vs ${athleteName(current, b.blue_athlete_id) ?? 'Blue'}`
+const boutWhere = (current, b) => `${eventName(current, b.event_id)} · ${label(b.day)}`
+const boutPeople = (current, b) => [
+  ...eventOwnerIds(current, b.event_id), ...eventOfficialIds(current, b.event_id),
+  ...clubPeopleIds(current, b.red_club_id, true), ...clubPeopleIds(current, b.blue_club_id, true),
+]
 
 export const mockApi = {
   mode: 'mock',
@@ -535,6 +596,13 @@ export const mockApi = {
       club_id: clubId, user_id: userId, role, status: approved ? 'active' : 'pending',
       invited_by: currentUserId(), invited_at: new Date().toISOString(),
     })
+    if (approved) {
+      notify(current, [userId], 'member_answer', `You are now ${role === 'owner' ? 'an Owner' : 'a Coach'} of ${clubName(current, clubId)}`, { clubId })
+    } else {
+      notify(current, [ADMIN_ID], 'member_request', `Approve ${personName(current, userId)} as ${role} of ${clubName(current, clubId)}`, {
+        body: `Invited by ${personName(current, currentUserId())}`, clubId, key: `member:${clubId}:${userId}`,
+      })
+    }
     write(DATA_KEY, current)
   },
 
@@ -542,7 +610,12 @@ export const mockApi = {
     requireSiteAdmin('Only a site Admin can approve club members')
     const current = data()
     const member = current.clubMembers.find((m) => m.club_id === clubId && m.user_id === userId)
-    if (member) member.status = 'active'
+    if (member?.status === 'pending') {
+      member.status = 'active'
+      resolveNotes(current, `member:${clubId}:${userId}`)
+      notify(current, [userId], 'member_answer', `You are now ${member.role === 'owner' ? 'an Owner' : 'a Coach'} of ${clubName(current, clubId)}`, { clubId })
+      notify(current, [member.invited_by], 'member_answer', `${personName(current, userId)} was approved for ${clubName(current, clubId)}`, { clubId })
+    }
     write(DATA_KEY, current)
   },
 
@@ -558,6 +631,7 @@ export const mockApi = {
     const current = data()
     if (!isSiteAdmin() && clubRole(current, clubId) !== 'owner') throw new Error('Only the club\'s Owners can remove people')
     current.clubMembers = current.clubMembers.filter((m) => !(m.club_id === clubId && m.user_id === userId))
+    resolveNotes(current, `member:${clubId}:${userId}`)
     write(DATA_KEY, current)
   },
 
@@ -578,9 +652,13 @@ export const mockApi = {
     if (toClubId === athlete.club_id) throw new Error('The athlete is already in that club')
     if (inOpenEvent(current, athleteId)) throw new Error(LOCKED)
     if (current.transfers.some((t) => t.athlete_id === athleteId && t.status === 'pending')) throw new Error('This athlete already has a transfer request waiting')
-    current.transfers.push({
+    const transfer = {
       id: crypto.randomUUID(), athlete_id: athleteId, from_club_id: athlete.club_id, to_club_id: toClubId,
       status: 'pending', note: note?.trim() || null, requested_by: currentUserId(), requested_at: new Date().toISOString(),
+    }
+    current.transfers.push(transfer)
+    notify(current, clubPeopleIds(current, toClubId), 'transfer', `Transfer request: ${athlete.name} to ${clubName(current, toClubId)}`, {
+      body: `From ${clubName(current, athlete.club_id) ?? 'no club'}${transfer.note ? `: "${transfer.note}"` : ''}`, clubId: toClubId, key: `transfer:${transfer.id}`,
     })
     write(DATA_KEY, current)
   },
@@ -596,6 +674,9 @@ export const mockApi = {
       current.athletes.find((a) => a.id === transfer.athlete_id).club_id = transfer.to_club_id
     }
     Object.assign(transfer, { status: accept ? 'accepted' : 'declined', decided_by: currentUserId(), decided_at: new Date().toISOString() })
+    resolveNotes(current, `transfer:${transfer.id}`)
+    notify(current, [transfer.requested_by, ...clubPeopleIds(current, transfer.from_club_id)], 'transfer_answer',
+      `${clubName(current, transfer.to_club_id)} ${transfer.status} the transfer of ${athleteName(current, transfer.athlete_id)}`, { clubId: transfer.from_club_id })
     write(DATA_KEY, current)
   },
 
@@ -607,6 +688,7 @@ export const mockApi = {
       throw new Error('Only whoever asked, or the club\'s Owner, can withdraw this request')
     }
     Object.assign(transfer, { status: 'cancelled', decided_by: currentUserId(), decided_at: new Date().toISOString() })
+    resolveNotes(current, `transfer:${transfer.id}`)
     write(DATA_KEY, current)
   },
 
@@ -943,8 +1025,15 @@ export const mockApi = {
     if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner or a site Admin can invite clubs')
     if (!eventOpen(event)) throw new Error('Clubs can be invited once the event is Active')
     const existing = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId)
+    const was = existing?.status
     if (existing) existing.status = 'accepted'
     else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'accepted', requested_at: now() })
+    if (was !== 'accepted') {
+      resolveNotes(current, `join:${eventId}:${clubId}`)
+      notify(current, clubPeopleIds(current, clubId, true), 'join_answer', `${clubName(current, clubId)} is in ${event.name}`, {
+        body: 'You can now enter athletes.', eventId, clubId, tab: 'clubs',
+      })
+    }
     write(DATA_KEY, current)
   },
 
@@ -957,6 +1046,9 @@ export const mockApi = {
     if (existing?.status === 'accepted') throw new Error('That club is already in this event')
     if (existing) Object.assign(existing, { status: 'requested', requested_at: now() })
     else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'requested', requested_at: now() })
+    notify(current, eventOwnerIds(current, eventId), 'join_request', `${clubName(current, clubId)} asked to join ${event.name}`, {
+      eventId, clubId, tab: 'clubs', key: `join:${eventId}:${clubId}`,
+    })
     write(DATA_KEY, current)
   },
 
@@ -966,6 +1058,11 @@ export const mockApi = {
     const request = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId && ec.status === 'requested')
     if (!request) throw new Error('That request is no longer waiting')
     request.status = accept ? 'accepted' : 'declined'
+    resolveNotes(current, `join:${eventId}:${clubId}`)
+    notify(current, clubPeopleIds(current, clubId, true), 'join_answer',
+      `${clubName(current, clubId)}${accept ? ' is in ' : ' was declined by '}${eventName(current, eventId)}`, {
+        body: accept ? 'You can now enter athletes.' : null, eventId, clubId, tab: 'clubs',
+      })
     write(DATA_KEY, current)
   },
 
@@ -979,6 +1076,7 @@ export const mockApi = {
       if (r.event_id === eventId && r.club_id === clubId && r.status === 'pending') r.status = 'cancelled'
     })
     current.eventClubs = current.eventClubs.filter((ec) => !(ec.event_id === eventId && ec.club_id === clubId))
+    resolveNotes(current, `join:${eventId}:${clubId}`)
     write(DATA_KEY, current)
   },
 
@@ -1023,9 +1121,13 @@ export const mockApi = {
     if (current.lateEntries.some((r) => r.event_id === eventId && r.athlete_id === athleteId && r.status === 'pending')) {
       throw new Error('There is already a late-entry request waiting for that athlete')
     }
-    current.lateEntries.push({
+    const request = {
       id: crypto.randomUUID(), event_id: eventId, athlete_id: athleteId, club_id: clubId, note: note?.trim() || null,
       status: 'pending', requested_by: currentUserId(), requested_at: now(),
+    }
+    current.lateEntries.push(request)
+    notify(current, eventOwnerIds(current, eventId), 'late_entry', `Late entry: ${athleteName(current, athleteId)} for ${event.name}`, {
+      body: `${clubName(current, clubId) ?? ''}${request.note ? `: "${request.note}"` : ''}`, eventId, clubId, tab: 'clubs', key: `late:${request.id}`,
     })
     write(DATA_KEY, current)
   },
@@ -1042,6 +1144,11 @@ export const mockApi = {
       }
     }
     request.status = accept ? 'accepted' : 'declined'
+    resolveNotes(current, `late:${request.id}`)
+    notify(current, [request.requested_by, ...clubPeopleIds(current, request.club_id)], 'late_entry_answer',
+      `Late entry ${request.status}: ${athleteName(current, request.athlete_id)}`, {
+        body: eventName(current, request.event_id), eventId: request.event_id, clubId: request.club_id, tab: 'clubs',
+      })
     write(DATA_KEY, current)
   },
 
@@ -1053,7 +1160,50 @@ export const mockApi = {
       throw new Error('Only the club\'s Owners can withdraw this request')
     }
     request.status = 'cancelled'
+    resolveNotes(current, `late:${request.id}`)
     write(DATA_KEY, current)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Notifications
+  // ---------------------------------------------------------------------------
+
+  async listNotifications() {
+    const userId = currentUserId()
+    return (data().notifications ?? [])
+      .filter((n) => n.user_id === userId)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, 200)
+  },
+
+  // ids: the notifications to mark read, or null for all of them.
+  async markNotificationsRead(ids) {
+    const current = data()
+    const userId = currentUserId()
+    for (const n of current.notifications ?? []) {
+      if (n.user_id === userId && !n.read_at && (!ids || ids.includes(n.id))) n.read_at = now()
+    }
+    write(DATA_KEY, current)
+  },
+
+  async markNotificationUnread(id) {
+    const current = data()
+    const note = (current.notifications ?? []).find((n) => n.id === id && n.user_id === currentUserId())
+    if (note) note.read_at = null
+    write(DATA_KEY, current)
+  },
+
+  async deleteNotifications(ids) {
+    const current = data()
+    const userId = currentUserId()
+    current.notifications = (current.notifications ?? []).filter((n) => !(n.user_id === userId && ids.includes(n.id)))
+    write(DATA_KEY, current)
+  },
+
+  // Calls back whenever the demo data changes. Returns a function that stops it.
+  subscribeNotifications(userId, callback) {
+    noteListeners.add(callback)
+    return () => noteListeners.delete(callback)
   },
 
   resetDemoData() {
@@ -1158,6 +1308,11 @@ export const mockApi = {
       }
       Object.assign(invite, { status: 'pending', respond_by: respondBy || null, invited_at: now(), responded_at: null })
       sent.push(invite.id)
+      resolveNotes(current, `invitation:${invite.id}`)
+      notify(current, [current.officials.find((o) => o.id === officialId)?.user_id], 'availability', `Are you available for ${event.name}?`, {
+        body: `${label(event.start_date)}${event.end_date > event.start_date ? ` to ${label(event.end_date)}` : ''}${event.venue ? ` · ${event.venue}` : ''}${respondBy ? `. Please answer by ${label(respondBy)}` : ''}`,
+        eventId, tab: 'officials', key: `invitation:${invite.id}`,
+      })
     }
     write(DATA_KEY, current)
     return sent
@@ -1190,6 +1345,10 @@ export const mockApi = {
     invite.sessions = accept && parts.length ? parts : null
     invite.responded_at = now()
     if (!accept) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === event.id && o.user_id === official.user_id))
+    resolveNotes(current, `invitation:${invite.id}`)
+    notify(current, eventOwnerIds(current, event.id), 'invitation_answer', `${official.name} ${invite.status} ${event.name}`, {
+      body: accept ? `Days: ${chosen.map(label).join(', ')}` : null, eventId: event.id, tab: 'officials',
+    })
     write(DATA_KEY, current)
   },
 
@@ -1200,6 +1359,7 @@ export const mockApi = {
     requireEditor(current, invite.event_id)
     const userId = current.officials.find((o) => o.id === invite.official_id)?.user_id
     current.officialInvitations = current.officialInvitations.filter((i) => i.id !== invitationId)
+    resolveNotes(current, `invitation:${invitationId}`)
     if (userId) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === invite.event_id && o.user_id === userId))
     write(DATA_KEY, current)
   },
@@ -1238,6 +1398,7 @@ export const mockApi = {
       approval_requested_at: null, approval_requested_by: null,
     }
     let bout = old
+    if (bout) resolveNotes(current, `bout:${bout.id}:%`)
     if (bout) {
       if (bout.day !== day) Object.assign(bout, { day, position: nextPosition, session_starts_at: null })
       Object.assign(bout, fields)
@@ -1279,6 +1440,11 @@ export const mockApi = {
           : clubMembers(current, side === 'red' ? b.red_club_id : b.blue_club_id)
             .filter((m) => m.role === 'owner' && m.status === 'active').map((m) => m.user)
         for (const u of people.filter((x) => x?.email)) rows.push({ ...base, side, recipient_name: u.name, recipient_email: u.email })
+        resolveNotes(current, `bout:${b.id}:${side}`)
+        notify(current, people.map((u) => u?.id), 'bout_approval', `Approve bout: ${boutLabel(current, b)}`, {
+          body: `${boutWhere(current, b)} · ${side === 'official' ? 'official approval' : `${side} corner`}`,
+          eventId: b.event_id, boutId: b.id, tab: 'bouts', key: `bout:${b.id}:${side}`,
+        })
       }
     }
     write(DATA_KEY, current)
@@ -1305,8 +1471,22 @@ export const mockApi = {
       }
     }
     bout.approvals = bout.approvals.filter((a) => a.side !== side)
+    const before = bout.status
     bout.approvals.push({ side, decision: approve ? 'approved' : 'rejected', note: note?.trim() || null, override, decided_by: currentUserId(), decided_at: now() })
     refreshBoutStatus(bout)
+    resolveNotes(current, `bout:${bout.id}:${side}`)
+    if (bout.status !== 'pending') resolveNotes(current, `bout:${bout.id}:%`)
+    if (!approve) {
+      const who = side === 'official' ? 'The officials' : clubName(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) ?? `The ${side} corner`
+      notify(current, [...eventOwnerIds(current, bout.event_id), ...eventOfficialIds(current, bout.event_id),
+        ...clubPeopleIds(current, bout.red_club_id), ...clubPeopleIds(current, bout.blue_club_id)],
+      'bout_decision', `${who} rejected ${boutLabel(current, bout)}`, {
+        body: `${boutWhere(current, bout)}${note?.trim() ? `: "${note.trim()}"` : ''}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
+      })
+    } else if (bout.status === 'approved' && before !== 'approved') {
+      notify(current, [...clubPeopleIds(current, bout.red_club_id, true), ...clubPeopleIds(current, bout.blue_club_id, true), ...eventOwnerIds(current, bout.event_id)],
+        'bout_decision', `Bout approved: ${boutLabel(current, bout)}`, { body: boutWhere(current, bout), eventId: bout.event_id, boutId: bout.id, tab: 'bouts' })
+    }
     write(DATA_KEY, current)
   },
 
@@ -1316,6 +1496,10 @@ export const mockApi = {
     if (!canMatch(current, bout.event_id, bout.day)) throw new Error('Only the event\'s Owner (before the weigh-in) or officials can cancel bouts')
     if (bout.winner) throw new Error('This bout has a result, so it can\'t be cancelled')
     Object.assign(bout, { status: 'cancelled', cancel_reason: reason?.trim() || null, cancelled_at: now() })
+    resolveNotes(current, `bout:${bout.id}:%`)
+    notify(current, boutPeople(current, bout), 'bout_cancelled', `Bout cancelled: ${boutLabel(current, bout)}`, {
+      body: `${boutWhere(current, bout)}${bout.cancel_reason ? ` · ${bout.cancel_reason}` : ''}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
+    })
     write(DATA_KEY, current)
   },
 
@@ -1336,6 +1520,9 @@ export const mockApi = {
     if (!isInBout(current, bout)) throw new Error('Only people involved in this bout can comment on it')
     if (!body?.trim()) throw new Error('Write a comment first')
     bout.comments.push({ id: crypto.randomUUID(), body: body.trim(), created_at: now(), author_id: currentUserId() })
+    notify(current, boutPeople(current, bout), 'bout_comment', `${personName(current, currentUserId())} commented on ${boutLabel(current, bout)}`, {
+      body: `"${body.trim()}"`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
+    })
     write(DATA_KEY, current)
   },
 
