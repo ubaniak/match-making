@@ -2,9 +2,10 @@
 --   * The Chief Official and Deputy also see who accepted, declined or hasn't answered an
 --     event's officials invitations. Inviting, re-inviting and removing stay with the Owner
 --     and site Admins.
---   * On a multi-day event an official accepts for the days they can work: one day, some days
---     or the whole event. They can change their days until the event's first day. An official
---     records the weigh-in only on their own days (the CO and Deputy on every day).
+--   * An official accepts for the parts of the event they can work: whole days, or single bout
+--     sessions on a day (for example only the evening session). They can change this until the
+--     event's first day. An official records the weigh-in only on days they work (the CO and
+--     Deputy on every day).
 --
 -- Officials who already accepted are kept on every day of their event.
 
@@ -12,7 +13,10 @@
 -- Days
 -- ---------------------------------------------------------------------------
 
-alter table public.official_invitations add column days date[];
+-- days: every day the official works. sessions: 'YYYY-MM-DD HH:MM' keys (day and start time
+-- of a bout session). A day with no keys in sessions is the whole day; a day with keys is only
+-- those sessions.
+alter table public.official_invitations add column days date[], add column sessions text[];
 
 update public.official_invitations i
 set days = (select array_agg(d::date order by d) from public.events e, generate_series(e.start_date, e.end_date, interval '1 day') d where e.id = i.event_id)
@@ -45,7 +49,7 @@ drop function public.list_event_invitations(uuid);
 create function public.list_event_invitations(p_event_id uuid)
 returns table (
   id uuid, official_id uuid, name text, email text, user_id uuid, status text, respond_by date,
-  invited_at timestamptz, responded_at timestamptz, days date[]
+  invited_at timestamptz, responded_at timestamptz, days date[], sessions text[]
 )
 language plpgsql stable security definer set search_path = public
 as $$
@@ -54,7 +58,7 @@ begin
     return;
   end if;
   return query
-    select i.id, i.official_id, o.name, o.invite_email, o.user_id, i.status, i.respond_by, i.invited_at, i.responded_at, i.days
+    select i.id, i.official_id, o.name, o.invite_email, o.user_id, i.status, i.respond_by, i.invited_at, i.responded_at, i.days, i.sessions
     from public.official_invitations i
     join public.officials o on o.id = i.official_id
     where i.event_id = p_event_id
@@ -77,12 +81,13 @@ drop function public.list_my_invitations();
 create function public.list_my_invitations()
 returns table (
   id uuid, event_id uuid, event_name text, venue text, start_date date, end_date date, timezone text,
-  event_status text, status text, respond_by date, invited_at timestamptz, responded_at timestamptz, days date[]
+  event_status text, status text, respond_by date, invited_at timestamptz, responded_at timestamptz, days date[],
+  sessions text[]
 )
 language sql stable security definer set search_path = public
 as $$
   select i.id, e.id, e.name, e.venue, e.start_date, e.end_date, e.timezone, e.status,
-    i.status, i.respond_by, i.invited_at, i.responded_at, i.days
+    i.status, i.respond_by, i.invited_at, i.responded_at, i.days, i.sessions
   from public.official_invitations i
   join public.officials o on o.id = i.official_id
   join public.events e on e.id = i.event_id
@@ -90,9 +95,12 @@ as $$
   order by e.start_date desc, e.name
 $$;
 
--- Accept (for p_days, or every day when null) or decline. Accepting again changes the days.
+-- Accept or decline. p_days: the days worked (null: every day). p_sessions: 'YYYY-MM-DD HH:MM'
+-- keys for days worked only in part. Accepting again changes the days and sessions.
 drop function public.respond_to_invitation(uuid, boolean);
-create function public.respond_to_invitation(p_invitation_id uuid, p_accept boolean, p_days date[] default null) returns void
+create function public.respond_to_invitation(
+  p_invitation_id uuid, p_accept boolean, p_days date[] default null, p_sessions text[] default null
+) returns void
 language plpgsql security definer set search_path = public
 as $$
 declare
@@ -100,6 +108,7 @@ declare
   v_event public.events;
   v_user uuid;
   v_days date[];
+  v_sessions text[];
 begin
   select * into v_inv from public.official_invitations where id = p_invitation_id;
   if not found then
@@ -129,11 +138,24 @@ begin
     if exists (select 1 from unnest(v_days) d where d < v_event.start_date or d > v_event.end_date) then
       raise exception 'Pick days of the event' using errcode = '22023';
     end if;
+    select array_agg(distinct k order by k) into v_sessions from unnest(p_sessions) k;
+    if exists (
+      select 1 from unnest(v_sessions) k
+      where k !~ '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$'
+         or not (left(k, 10)::date = any (v_days))
+         or not exists (
+           select 1 from public.event_bout_sessions s
+           where s.event_id = v_event.id and s.day = left(k, 10)::date and to_char(s.starts_at, 'HH24:MI') = right(k, 5)
+         )
+    ) then
+      raise exception 'Pick bout sessions of the days you work' using errcode = '22023';
+    end if;
   end if;
 
   update public.official_invitations
   set status = case when p_accept then 'accepted' else 'declined' end,
       days = case when p_accept then v_days else null end,
+      sessions = case when p_accept then v_sessions else null end,
       responded_at = now()
   where id = p_invitation_id;
 
@@ -199,7 +221,7 @@ revoke execute on function public.list_event_invitations(uuid) from public, anon
 grant execute on function public.list_event_invitations(uuid) to authenticated;
 revoke execute on function public.list_my_invitations() from public, anon;
 grant execute on function public.list_my_invitations() to authenticated;
-revoke execute on function public.respond_to_invitation(uuid, boolean, date[]) from public, anon;
-grant execute on function public.respond_to_invitation(uuid, boolean, date[]) to authenticated;
+revoke execute on function public.respond_to_invitation(uuid, boolean, date[], text[]) from public, anon;
+grant execute on function public.respond_to_invitation(uuid, boolean, date[], text[]) to authenticated;
 revoke execute on function public.my_official_days(uuid) from public, anon;
 grant execute on function public.my_official_days(uuid) to authenticated;

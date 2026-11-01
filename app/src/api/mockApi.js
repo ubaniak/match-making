@@ -995,7 +995,7 @@ export const mockApi = {
     return sent
   },
 
-  async respondToInvitation(invitationId, accept, days) {
+  async respondToInvitation(invitationId, accept, days, sessions) {
     const current = data()
     const invite = current.officialInvitations.find((i) => i.id === invitationId)
     if (!invite) throw new Error('That invitation has been cancelled')
@@ -1008,12 +1008,18 @@ export const mockApi = {
       throw new Error('The respond-by date has passed. Ask the event\'s Owner to invite you again.')
     }
     let chosen = null
+    let parts = null
     if (accept) {
       chosen = [...new Set(days?.length ? days : daysBetween(event.start_date, event.end_date))].sort()
       if (chosen.some((d) => d < event.start_date || d > event.end_date)) throw new Error('Pick days of the event')
+      parts = [...new Set(sessions ?? [])].sort()
+      const real = (key) => chosen.includes(key.slice(0, 10))
+        && (event.days.find((d) => d.day === key.slice(0, 10))?.sessions ?? []).some((x) => x.starts_at === key.slice(11))
+      if (!parts.every(real)) throw new Error('Pick bout sessions of the days you work')
     }
     invite.status = accept ? 'accepted' : 'declined'
     invite.days = chosen
+    invite.sessions = accept && parts.length ? parts : null
     invite.responded_at = now()
     if (!accept) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === event.id && o.user_id === official.user_id))
     write(DATA_KEY, current)

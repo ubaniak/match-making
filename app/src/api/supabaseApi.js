@@ -502,8 +502,12 @@ export const supabaseApi = {
   },
 
   // days: the days accepted ('YYYY-MM-DD'); left out means every day of the event.
-  async respondToInvitation(invitationId, accept, days) {
-    await rpc('respond_to_invitation', { p_invitation_id: invitationId, p_accept: accept, p_days: accept && days?.length ? days : null })
+  // sessions: 'YYYY-MM-DD HH:mm' keys for days worked only in some bout sessions.
+  async respondToInvitation(invitationId, accept, days, sessions) {
+    await rpc('respond_to_invitation', {
+      p_invitation_id: invitationId, p_accept: accept,
+      p_days: accept && days?.length ? days : null, p_sessions: accept && sessions?.length ? sessions : null,
+    })
   },
 
   async cancelInvitation(invitationId) {

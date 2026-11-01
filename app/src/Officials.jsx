@@ -2,7 +2,7 @@
 // invites officials, officials accept or decline, and the CO and Deputy are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card as AntCard, Checkbox, Modal, Select, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Checkbox, Modal, Segmented, Select, Space, Tabs } from 'antd'
 import DataTable from './DataTable'
 import { api } from './api'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
@@ -44,44 +44,103 @@ function countAnswers(invitations, timeZone) {
   return counts
 }
 
-// The days an accepted official works, as text: "All days", or "Sat, Nov 15, Sun, Nov 16".
+const sessionKey = (day, startsAt) => `${day} ${startsAt.slice(0, 5)}`
+const sessionName = (session) => `${session.starts_at.slice(0, 5)}${session.label ? ` ${session.label}` : ''}`
+
+// What an accepted official works, as text: "All days", "Whole event", or
+// "Sun, Nov 15 (18:30 Evening), Mon, Nov 16". Sessions show by start time and label when known.
 function daysText(invitation, event) {
   const all = daysBetween(event.start_date, event.end_date)
   const days = (invitation.days ?? all).filter((d) => all.includes(d))
-  if (all.length > 1 && days.length === all.length) return 'All days'
-  return days.map(formatShortDay).join(', ')
+  const sessions = invitation.sessions ?? []
+  if (sessions.length === 0 && days.length === all.length) return all.length > 1 ? 'All days' : 'Whole event'
+  return days.map((d) => {
+    const times = sessions.filter((k) => k.startsWith(d)).map((k) => {
+      const time = k.slice(11)
+      const session = event.days?.find((x) => x.day === d)?.sessions?.find((x) => x.starts_at.slice(0, 5) === time)
+      return session ? sessionName(session) : time
+    })
+    return times.length ? `${formatShortDay(d)} (${times.join(', ')})` : formatShortDay(d)
+  }).join(', ')
 }
 
-// Accepting: a multi-day event asks which days. onDone(days) or onDone(null) when cancelled.
+// Accepting asks which days, and on days with more than one bout session, whole day or which
+// sessions. ask(event, invitation) resolves to { days, sessions } or null when cancelled.
+// The event needs its days and sessions; pass { id } alone and they are loaded.
 function useAcceptDays() {
-  const [asking, setAsking] = useState(null) // { event, days, resolve }
-  function ask(event, current) {
+  const [asking, setAsking] = useState(null) // { event, all, picked: { [day]: 'all' | [times] }, resolve }
+  async function ask(eventOrId, invitation) {
+    const event = eventOrId.days ? eventOrId : await api.getEvent(eventOrId.id)
     const all = daysBetween(event.start_date, event.end_date)
-    if (all.length <= 1) return Promise.resolve(all)
-    return new Promise((resolve) => setAsking({ event, all, days: current?.length ? current.filter((d) => all.includes(d)) : all, resolve }))
+    const sessionsOf = (d) => event.days?.find((x) => x.day === d)?.sessions ?? []
+    if (all.length <= 1 && sessionsOf(all[0]).length <= 1) return { days: all, sessions: [] }
+    const picked = {}
+    const days = invitation?.status === 'accepted' && invitation.days?.length ? invitation.days : all
+    for (const d of days.filter((x) => all.includes(x))) {
+      const times = (invitation?.sessions ?? []).filter((k) => k.startsWith(d)).map((k) => k.slice(11))
+      picked[d] = times.length ? times : 'all'
+    }
+    return new Promise((resolve) => setAsking({ event, all, sessionsOf, picked, resolve }))
   }
   function close(value) {
     asking?.resolve(value)
     setAsking(null)
   }
+  function result() {
+    const days = asking.all.filter((d) => asking.picked[d] && (asking.picked[d] === 'all' || asking.picked[d].length))
+    const sessions = days.flatMap((d) => (asking.picked[d] === 'all' ? [] : asking.picked[d].map((t) => sessionKey(d, t))))
+    return { days, sessions }
+  }
+  const pick = (d, value) => setAsking({ ...asking, picked: { ...asking.picked, [d]: value } })
+  const ready = asking ? result().days.length > 0 : false
+
   const dialog = (
     <Modal
       open={Boolean(asking)}
-      title="Which days can you officiate?"
+      title="When can you officiate?"
       okText="Accept"
-      okButtonProps={{ disabled: !asking?.days.length }}
-      onOk={() => close(asking.days)}
+      okButtonProps={{ disabled: !ready }}
+      onOk={() => close(result())}
       onCancel={() => close(null)}
     >
       {asking && (
         <>
-          <Muted>{asking.event.name ?? asking.event.event_name} runs {formatDateRange(asking.event.start_date, asking.event.end_date)}. Pick one day, some days or all of them.</Muted>
-          <Checkbox.Group
-            style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}
-            value={asking.days}
-            onChange={(days) => setAsking({ ...asking, days })}
-            options={asking.all.map((d) => ({ value: d, label: formatDay(d) }))}
-          />
+          <Muted>
+            {asking.event.name} runs {formatDateRange(asking.event.start_date, asking.event.end_date)}. Pick the days you can
+            work, and on a day with more than one bout session, the whole day or just some sessions. Working any part of a day
+            lets you record that day's weigh-in.
+          </Muted>
+          <Space orientation="vertical" size="middle" style={{ width: '100%', marginTop: 12 }}>
+            {asking.all.map((d) => {
+              const sessions = asking.sessionsOf(d)
+              const value = asking.picked[d]
+              return (
+                <div key={d}>
+                  <Checkbox checked={Boolean(value)} onChange={(e) => pick(d, e.target.checked ? 'all' : undefined)}>
+                    {formatDay(d)}
+                  </Checkbox>
+                  {value && sessions.length > 1 && (
+                    <div style={{ marginLeft: 24, marginTop: 8 }}>
+                      <Segmented
+                        size="small"
+                        value={value === 'all' ? 'all' : 'some'}
+                        onChange={(mode) => pick(d, mode === 'all' ? 'all' : [])}
+                        options={[{ value: 'all', label: 'Whole day' }, { value: 'some', label: 'Some sessions' }]}
+                      />
+                      {value !== 'all' && (
+                        <Checkbox.Group
+                          style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}
+                          value={value}
+                          onChange={(times) => pick(d, times)}
+                          options={sessions.map((x) => ({ value: x.starts_at.slice(0, 5), label: sessionName(x) }))}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </Space>
         </>
       )}
     </Modal>
@@ -160,11 +219,12 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
 function MyAnswer({ invitation, event, busy, act }) {
   const answer = answerOf(invitation, event.timezone)
   const open = canAnswer(invitation, event)
-  const multiDay = daysBetween(event.start_date, event.end_date).length > 1
+  // Something to choose: more than one day, or more than one bout session.
+  const choice = daysBetween(event.start_date, event.end_date).length > 1 || event.days.some((d) => d.sessions.length > 1)
   const { ask, dialog } = useAcceptDays()
   async function accept() {
-    const days = await ask(event, invitation.days)
-    if (days) act(() => api.respondToInvitation(invitation.id, true, days))
+    const parts = await ask(event, invitation)
+    if (parts) act(() => api.respondToInvitation(invitation.id, true, parts.days, parts.sessions))
   }
   return (
     <AntCard size="small" className="form-card gap">
@@ -172,9 +232,9 @@ function MyAnswer({ invitation, event, busy, act }) {
       <Space wrap>
         <Text>You're invited to officiate this event.</Text>
         <AnswerBadge answer={answer} />
-        {answer === 'accepted' && multiDay && <Text type="secondary">{daysText(invitation, event)}</Text>}
+        {answer === 'accepted' && choice && <Text type="secondary">{daysText(invitation, event)}</Text>}
         {invitation.respond_by && answer === 'pending' && <Text type="secondary">Please answer by {formatDay(invitation.respond_by)}.</Text>}
-        {open && (answer !== 'accepted' || multiDay) && (
+        {open && (answer !== 'accepted' || choice) && (
           <Button size="small" type={answer === 'accepted' ? 'default' : 'primary'} disabled={busy} onClick={accept}>{answer === 'accepted' ? 'Change days' : 'Accept'}</Button>
         )}
         {open && answer !== 'declined' && (
@@ -270,7 +330,7 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
         </Space>
       ),
     },
-    multiDay && {
+    (multiDay || event.days.some((d) => d.sessions.length > 1)) && {
       title: 'Days', key: 'days', value: (i) => (i.status === 'accepted' ? daysText(i, event) : ''),
       render: (_, i) => (i.status === 'accepted' ? daysText(i, event) : '—'),
     },
@@ -435,15 +495,20 @@ export function MyInvitations({ onOpen }) {
   const shown = rows.filter((i) => effectiveStatus(eventOf(i)) === 'active')
 
   async function answer(i, accept) {
-    let days = null
+    setError(null)
+    let parts = null
     if (accept) {
-      days = await ask({ ...eventOf(i), name: i.event_name }, i.days)
-      if (!days) return
+      try {
+        parts = await ask({ id: i.event_id }, i)
+      } catch (err) {
+        setError(err.message)
+        return
+      }
+      if (!parts) return
     }
     setBusy(true)
-    setError(null)
     try {
-      await api.respondToInvitation(i.id, accept, days)
+      await api.respondToInvitation(i.id, accept, parts?.days, parts?.sessions)
       await load()
     } catch (err) {
       setError(err.message)
@@ -464,7 +529,7 @@ export function MyInvitations({ onOpen }) {
       render: (_, i) => (
         <Space size={4} wrap>
           <AnswerBadge answer={answerOf(i, i.timezone)} />
-          {i.status === 'accepted' && i.start_date !== i.end_date && <Text type="secondary">{daysText(i, eventOf(i))}</Text>}
+          {i.status === 'accepted' && (i.start_date !== i.end_date || i.sessions?.length > 0) && <Text type="secondary">{daysText(i, eventOf(i))}</Text>}
         </Space>
       ),
     },
@@ -474,11 +539,10 @@ export function MyInvitations({ onOpen }) {
       render: (_, i) => {
         if (!canAnswer(i, eventOf(i))) return null
         const current = answerOf(i, i.timezone)
-        const multiDay = i.start_date !== i.end_date
         return (
           <Space>
             {current !== 'accepted' && <Button size="small" type="primary" disabled={busy} onClick={() => answer(i, true)}>Accept</Button>}
-            {current === 'accepted' && multiDay && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days</Button>}
+            {current === 'accepted' && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days</Button>}
             {current !== 'declined' && <Button size="small" disabled={busy} onClick={() => answer(i, false)}>Decline</Button>}
           </Space>
         )
@@ -490,7 +554,7 @@ export function MyInvitations({ onOpen }) {
     <Section title="Your invitations to officiate">
       {dialog}
       <ErrorAlert>{error}</ErrorAlert>
-      <Muted>On a multi-day event, accept for the days you can work. You can change your answer or your days until the event's first day.</Muted>
+      <Muted>Accept for the days, or the bout sessions, you can work. You can change your answer or your days until the event's first day.</Muted>
       <DataTable rowKey="id" columns={columns} dataSource={shown} />
     </Section>
   )
