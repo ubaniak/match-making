@@ -129,3 +129,31 @@ export function checkMatch(a, b, eventDate, weights = {}) {
 
   return { blocks, warnings, needsSupervisor }
 }
+
+// How far apart two boxers are, for sorting "Best match" opponents: lower is closer. A kilo, a bout
+// and a year of age each count about the same; a U17 v U19 pairing (needs the Chief Official) sorts
+// after every pairing that doesn't.
+export function matchDistance(a, b, eventDate, weights = {}, check = checkMatch(a, b, eventDate, weights)) {
+  const kg = Math.abs(Number(weights[a.id] ?? a.weight_kg) - Number(weights[b.id] ?? b.weight_kg))
+  const bouts = Math.abs(Number(a.bouts) - Number(b.bouts))
+  const years = monthsApart(a.date_of_birth, b.date_of_birth) / 12
+  return (check.needsSupervisor ? 1000 : 0) + kg + bouts + years
+}
+
+const clubOf = (x) => x.entry_club_id ?? x.club_id ?? null
+
+// "Best match": the opponents `athlete` can actually box, closest first. Leaves out anyone the rules
+// block, anyone already boxing that day (taken: Set of athlete ids), and anyone from the same club.
+// Returns [{ athlete, check, distance }].
+export function bestOpponents(athlete, candidates, eventDate, weights = {}, taken = new Set()) {
+  if (!athlete) return []
+  return candidates
+    .filter((b) => b.id !== athlete.id && !taken.has(b.id))
+    .filter((b) => !clubOf(athlete) || clubOf(athlete) !== clubOf(b))
+    .map((b) => {
+      const check = checkMatch(athlete, b, eventDate, weights)
+      return { athlete: b, check, distance: check.blocks.length ? Infinity : matchDistance(athlete, b, eventDate, weights, check) }
+    })
+    .filter((m) => m.check.blocks.length === 0)
+    .sort((x, y) => x.distance - y.distance)
+}
