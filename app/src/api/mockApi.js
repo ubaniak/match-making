@@ -12,7 +12,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v7' // v7: event time zones
+const DATA_KEY = 'mock-data-v8' // v8: officials and bouts
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -24,12 +24,15 @@ function seed() {
       { id: 'user-1', email: 'maria.lopez@example.com', name: 'Maria Lopez', state: 'Active' },
       { id: 'user-2', email: 'dave.okafor@example.com', name: 'Dave Okafor', state: 'Active' },
       { id: 'user-3', email: 'priya.shah@example.com', name: 'Priya Shah', state: 'Active' },
+      { id: 'user-4', email: 'kim.lee@example.com', name: 'Kim Lee', state: 'Active' },
       { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
     ],
     athletes: [
       { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club_id: 'club-1', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
       { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', gender: 'female', weight_kg: 51, bouts: 3, club_id: 'club-1', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
       { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', gender: 'male', weight_kg: 74.2, bouts: 27, club_id: 'club-2', invite_email: null, user_id: null, coach_id: 'user-2' },
+      { id: 'athlete-4', name: 'Marco Ruiz', date_of_birth: '2003-08-21', gender: 'male', weight_kg: 61.8, bouts: 14, club_id: 'club-2', invite_email: null, user_id: null, coach_id: 'user-2' },
+      { id: 'athlete-5', name: 'Ben Clarke', date_of_birth: '2004-01-09', gender: 'male', weight_kg: 73, bouts: 22, club_id: 'club-1', invite_email: null, user_id: null, coach_id: 'user-1' },
     ],
     clubs: [
       { id: 'club-1', name: 'Eastside BC' },
@@ -67,12 +70,30 @@ function seed() {
     ],
     eventClubs: [
       { event_id: 'event-1', club_id: 'club-1', status: 'accepted', requested_at: new Date().toISOString() },
-      { event_id: 'event-1', club_id: 'club-2', status: 'requested', requested_at: new Date().toISOString() },
+      { event_id: 'event-1', club_id: 'club-2', status: 'accepted', requested_at: new Date().toISOString() },
     ],
     eventAthletes: [
-      { event_id: 'event-1', athlete_id: 'athlete-1', club_id: 'club-1', added_by: 'user-1', suggested_opponent_name: 'Tom Becker', suggested_opponent_club: 'Riverside Boxing' },
+      { event_id: 'event-1', athlete_id: 'athlete-1', club_id: 'club-1', added_by: 'user-1', suggested_opponent_name: 'Marco Ruiz', suggested_opponent_club: 'Riverside Boxing' },
+      { event_id: 'event-1', athlete_id: 'athlete-3', club_id: 'club-2', added_by: 'user-2' },
+      { event_id: 'event-1', athlete_id: 'athlete-4', club_id: 'club-2', added_by: 'user-2' },
+      { event_id: 'event-1', athlete_id: 'athlete-5', club_id: 'club-1', added_by: 'user-1' },
     ],
     lateEntries: [],
+    eventOfficials: [
+      { event_id: 'event-1', role: 'chief', user_id: 'user-3' },
+      { event_id: 'event-1', role: 'deputy', user_id: 'user-4' },
+    ],
+    bouts: [
+      {
+        id: 'bout-1', event_id: 'event-1', day: start, session_starts_at: null, position: 1,
+        red_athlete_id: 'athlete-1', blue_athlete_id: 'athlete-4', red_club_id: 'club-1', blue_club_id: 'club-2',
+        status: 'pending', needs_supervisor: false, warnings: ['Different weight classes, 1.3 kg apart', 'Open vs Open, 2 bouts apart'],
+        after_weigh_in: false, made_by: 'user-1', made_at: new Date().toISOString(),
+        approvals: [{ side: 'red', decision: 'approved', note: null, override: false, decided_by: 'user-1', decided_at: new Date().toISOString() }],
+        comments: [],
+      },
+    ],
+    weighIns: [],
   }
 }
 
@@ -137,11 +158,15 @@ function roleOn(current, eventId) {
 // Mirrors can_read_event and can_read_entries.
 const inEventClub = (current, eventId) =>
   current.eventClubs.some((ec) => ec.event_id === eventId && ec.status === 'accepted' && clubRole(current, ec.club_id))
+// The signed-in user's official role on an event: 'chief', 'deputy' or null.
+const officialRole = (current, eventId) =>
+  (current.eventOfficials ?? []).find((o) => o.event_id === eventId && o.user_id === currentUserId())?.role ?? null
+const isOfficial = (current, eventId) => isSiteAdmin() || Boolean(officialRole(current, eventId))
 function canSee(current, eventId) {
   const event = current.events.find((e) => e.id === eventId)
-  return Boolean(event) && (isSiteAdmin() || Boolean(roleOn(current, eventId)) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
+  return Boolean(event) && (isSiteAdmin() || Boolean(roleOn(current, eventId)) || Boolean(officialRole(current, eventId)) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
 }
-const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId)
+const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId) || Boolean(officialRole(current, eventId))
 const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
 const eventOpen = (event) => effectiveStatus(event) === 'active'
 const entriesOpen = (event) => eventOpen(event) && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline))
@@ -198,6 +223,41 @@ function requireEditor(current, eventId) {
     throw new Error('Only the event\'s Owner or a site Admin can change it, and only while it is Requested or Active')
   }
   return event
+}
+
+
+// ---------------------------------------------------------------------------
+// Bouts: mirrors migration 12 (20261101040000_bouts.sql)
+// ---------------------------------------------------------------------------
+
+const weighInStarted = (current, eventId, day) => current.weighIns.some((w) => w.event_id === eventId && w.day === day)
+const canMatch = (current, eventId, day) =>
+  isOfficial(current, eventId) || (roleOn(current, eventId) === 'owner' && !weighInStarted(current, eventId, day))
+const cardOpen = (event) => event.status === 'active'
+const isInBout = (current, bout) =>
+  isSiteAdmin() || roleOn(current, bout.event_id) === 'owner' || Boolean(officialRole(current, bout.event_id)) ||
+  Boolean(clubRole(current, bout.red_club_id)) || Boolean(clubRole(current, bout.blue_club_id))
+
+function findBout(current, boutId) {
+  const bout = current.bouts.find((b) => b.id === boutId)
+  if (!bout) throw new Error('That bout no longer exists')
+  return bout
+}
+
+function refreshBoutStatus(bout) {
+  if (bout.status === 'cancelled') return
+  const rejected = bout.approvals.some((a) => a.decision === 'rejected')
+  const approved = bout.approvals.filter((a) => a.decision === 'approved').length
+  bout.status = rejected ? 'rejected' : approved === 3 ? 'approved' : 'pending'
+}
+
+function cancelAthleteBouts(current, eventId, athleteId, day, reason) {
+  for (const b of current.bouts ?? []) {
+    if (b.event_id === eventId && b.status !== 'cancelled' && !b.winner && (day == null || b.day === day) &&
+        [b.red_athlete_id, b.blue_athlete_id].includes(athleteId)) {
+      Object.assign(b, { status: 'cancelled', cancel_reason: reason, cancelled_at: now() })
+    }
+  }
 }
 
 function requireSiteAdmin(message) {
@@ -747,6 +807,7 @@ export const mockApi = {
     if (!isSiteAdmin() && clubRole(current, entry.club_id) !== 'owner') throw new Error('Only the athlete\'s club Owners can withdraw them')
     if (!isSiteAdmin() && !stillRunning(event)) throw new Error('This event is over, so its entries can\'t change')
     current.eventAthletes = current.eventAthletes.filter((ea) => ea !== entry)
+    cancelAthleteBouts(current, eventId, athleteId, null, 'Withdrawn from the event')
     write(DATA_KEY, current)
   },
 
@@ -793,5 +854,174 @@ export const mockApi = {
 
   resetDemoData() {
     write(DATA_KEY, null)
+  },
+
+  // ---------------------------------------------------------------------------
+  // Bouts (stage 4)
+  // ---------------------------------------------------------------------------
+
+  async getBouts(eventId) {
+    const current = data()
+    if (!canSee(current, eventId)) return { officials: [], bouts: [], weighIns: [] }
+    const officials = current.eventOfficials
+      .filter((o) => o.event_id === eventId)
+      .map((o) => ({ ...o, user: findUser(current, o.user_id) }))
+    if (!canSeeEntries(current, eventId)) return { officials, bouts: [], weighIns: [] }
+    const athlete = (id) => {
+      const a = current.athletes.find((x) => x.id === id)
+      return a ? { id: a.id, name: a.name } : null
+    }
+    const bouts = current.bouts
+      .filter((b) => b.event_id === eventId)
+      .sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position)
+      .map((b) => ({
+        ...b,
+        red: athlete(b.red_athlete_id), blue: athlete(b.blue_athlete_id),
+        red_club: { id: b.red_club_id, name: clubName(current, b.red_club_id) },
+        blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
+        comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
+      }))
+    return { officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId) }
+  },
+
+  async setEventOfficial(eventId, role, userId) {
+    const current = data()
+    requireEditor(current, eventId)
+    current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === eventId && o.role === role))
+    if (userId) {
+      if (current.eventOfficials.some((o) => o.event_id === eventId && o.user_id === userId)) {
+        throw new Error('The Chief Official and the Deputy must be different people')
+      }
+      current.eventOfficials.push({ event_id: eventId, role, user_id: userId })
+    }
+    write(DATA_KEY, current)
+  },
+
+  async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings }) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    const old = id ? findBout(current, id) : null
+    if (old?.winner) throw new Error('This bout has a result, so it can\'t be re-matched')
+    if ((old && !canMatch(current, eventId, old.day)) || !canMatch(current, eventId, day)) {
+      throw new Error(roleOn(current, eventId) === 'owner'
+        ? 'The weigh-in for that day has started, so only the Chief Official or Deputy can make bouts'
+        : 'Only the event\'s Owner or officials can make bouts')
+    }
+    if (!cardOpen(event)) throw new Error('Bouts can be made only while the event is Active')
+    if (!day || day < event.start_date || day > event.end_date) throw new Error('Pick a day of the event')
+    if (!redId || !blueId || redId === blueId) throw new Error('Pick two different athletes')
+    const red = current.eventAthletes.find((ea) => ea.event_id === eventId && ea.athlete_id === redId)
+    const blue = current.eventAthletes.find((ea) => ea.event_id === eventId && ea.athlete_id === blueId)
+    if (!red || !blue) throw new Error('Both athletes must be entered in the event')
+    const gender = (aid) => current.athletes.find((a) => a.id === aid)?.gender
+    if (gender(redId) !== gender(blueId)) throw new Error('Male and female athletes can\'t box each other')
+    if (current.bouts.some((b) => b.event_id === eventId && b.day === day && b.status !== 'cancelled' && b.id !== id &&
+        [b.red_athlete_id, b.blue_athlete_id].some((x) => x === redId || x === blueId))) {
+      throw new Error('One of these athletes already has a bout that day')
+    }
+    const nextPosition = Math.max(0, ...current.bouts.filter((b) => b.event_id === eventId && b.day === day).map((b) => b.position)) + 1
+    const fields = {
+      red_athlete_id: redId, blue_athlete_id: blueId, red_club_id: red.club_id, blue_club_id: blue.club_id,
+      needs_supervisor: Boolean(needsSupervisor), warnings: warnings ?? [], after_weigh_in: weighInStarted(current, eventId, day),
+      status: 'pending', cancel_reason: null, cancelled_at: null, made_by: currentUserId(), made_at: now(), approvals: [],
+    }
+    let bout = old
+    if (bout) {
+      if (bout.day !== day) Object.assign(bout, { day, position: nextPosition, session_starts_at: null })
+      Object.assign(bout, fields)
+    } else {
+      bout = { id: crypto.randomUUID(), event_id: eventId, day, session_starts_at: null, position: nextPosition, comments: [], ...fields }
+      current.bouts.push(bout)
+    }
+    write(DATA_KEY, current)
+    return bout.id
+  },
+
+  async decideBout(boutId, side, approve, note) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
+    if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
+    let override = false
+    if (side === 'official') {
+      if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy gives the official approval')
+    } else {
+      const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
+      if (clubRole(current, club) !== 'owner' && !isSiteAdmin()) {
+        if (bout.after_weigh_in && officialRole(current, bout.event_id)) override = true
+        else throw new Error('Only that corner\'s club Owners can approve for it')
+      }
+    }
+    bout.approvals = bout.approvals.filter((a) => a.side !== side)
+    bout.approvals.push({ side, decision: approve ? 'approved' : 'rejected', note: note?.trim() || null, override, decided_by: currentUserId(), decided_at: now() })
+    refreshBoutStatus(bout)
+    write(DATA_KEY, current)
+  },
+
+  async cancelBout(boutId, reason) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!canMatch(current, bout.event_id, bout.day)) throw new Error('Only the event\'s Owner (before the weigh-in) or officials can cancel bouts')
+    if (bout.winner) throw new Error('This bout has a result, so it can\'t be cancelled')
+    Object.assign(bout, { status: 'cancelled', cancel_reason: reason?.trim() || null, cancelled_at: now() })
+    write(DATA_KEY, current)
+  },
+
+  async setCardOrder(eventId, day, order) {
+    const current = data()
+    if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner sets the order of the card')
+    if (!cardOpen(findEvent(current, eventId))) throw new Error('The card can change only while the event is Active')
+    order.forEach(({ id, session }, i) => {
+      const bout = current.bouts.find((b) => b.id === id && b.event_id === eventId && b.day === day)
+      if (bout) Object.assign(bout, { position: i + 1, session_starts_at: session || null })
+    })
+    write(DATA_KEY, current)
+  },
+
+  async addBoutComment(boutId, body) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!isInBout(current, bout)) throw new Error('Only people involved in this bout can comment on it')
+    if (!body?.trim()) throw new Error('Write a comment first')
+    bout.comments.push({ id: crypto.randomUUID(), body: body.trim(), created_at: now(), author_id: currentUserId() })
+    write(DATA_KEY, current)
+  },
+
+  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    if (!isOfficial(current, eventId)) throw new Error('Only the Chief Official or Deputy records the weigh-in')
+    if (!cardOpen(event)) throw new Error('The weigh-in can be recorded only while the event is Active')
+    if (!current.eventAthletes.some((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)) throw new Error('That athlete isn\'t entered in the event')
+    const kg = weightKg === '' || weightKg == null ? null : Number(weightKg)
+    if (medical === 'pass' && kg == null) throw new Error('Enter the athlete\'s weight')
+    current.weighIns = current.weighIns.filter((w) => !(w.event_id === eventId && w.day === day && w.athlete_id === athleteId))
+    current.weighIns.push({ event_id: eventId, day, athlete_id: athleteId, weight_kg: kg, medical, note: note?.trim() || null, recorded_at: now() })
+    if (medical === 'fail') cancelAthleteBouts(current, eventId, athleteId, day, 'Failed the medical')
+    if (medical === 'absent') cancelAthleteBouts(current, eventId, athleteId, day, 'Didn\'t come to the weigh-in')
+    write(DATA_KEY, current)
+  },
+
+  async recordResult(boutId, winner, method, note) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy records results')
+    if (bout.status !== 'approved') throw new Error('Only approved bouts get a result')
+    if (!['red', 'blue'].includes(winner) || !method) throw new Error('Pick the winner and how they won')
+    if (!bout.winner) {
+      for (const a of current.athletes) if ([bout.red_athlete_id, bout.blue_athlete_id].includes(a.id)) a.bouts = (a.bouts ?? 0) + 1
+    }
+    Object.assign(bout, { winner, method, result_note: note?.trim() || null, result_by: currentUserId(), result_at: now() })
+    write(DATA_KEY, current)
+  },
+
+  async clearResult(boutId) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy changes results')
+    if (!bout.winner) return
+    for (const a of current.athletes) if ([bout.red_athlete_id, bout.blue_athlete_id].includes(a.id)) a.bouts = Math.max((a.bouts ?? 0) - 1, 0)
+    Object.assign(bout, { winner: null, method: null, result_note: null, result_by: null, result_at: null })
+    write(DATA_KEY, current)
   },
 }
