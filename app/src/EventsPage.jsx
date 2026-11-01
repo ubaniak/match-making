@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Checkbox, Descriptions, Input, Space, Upload } from 'antd'
+import { Alert, Button, Card, Checkbox, Col, Descriptions, Input, Row, Space, Statistic, Tabs, Upload } from 'antd'
 import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
-import EventBouts from './Bouts'
+import { EventBouts, EventOfficialsTab } from './Bouts'
+import { useEventBouts } from './useEventBouts'
 import { MyInvitations } from './Officials'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { categorise, compareByCategory } from './categories'
@@ -330,6 +331,7 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
   const [email, setEmail] = useState(initialEmail)
   const [busy, setBusy] = useState(false)
   const [clubs, setClubs] = useState([])
+  const [tab, setTab] = useState('dashboard')
 
   useEffect(() => {
     api.listClubs().then(setClubs, () => setClubs([]))
@@ -360,6 +362,15 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
       setBusy(false)
     }
   }
+
+  // Officials, bouts and weigh-ins, shared by the Dashboard, Bouts and Officials tabs.
+  const bouts = useEventBouts({
+    event: event ?? { id, status: null, athletes: [] },
+    may: event ? rightsFor(event, profile, siteAdmin) : { siteAdmin, role: null },
+    clubs,
+    profile,
+    onEntriesChange: reload,
+  })
 
   const backLink = <BackLink onClick={onBack}>All events</BackLink>
 
@@ -406,9 +417,7 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
   return (
     <>
       {backLink}
-      <PageHeading title={<>{event.name} <StatusBadge status={status} /></>} subtitle={formatDateRange(event.start_date, event.end_date)}>
-        {may.edit && <Button icon={<EditOutlined />} onClick={() => setEditing('details')}>Edit details</Button>}
-      </PageHeading>
+      <PageHeading title={<>{event.name} <StatusBadge status={status} /></>} subtitle={formatDateRange(event.start_date, event.end_date)} />
       <EmailNotice event={event} email={email} onDismiss={() => setEmail(null)} />
       <ErrorAlert>{error}</ErrorAlert>
 
@@ -428,37 +437,151 @@ function EventDetail({ id, email: initialEmail, profile, siteAdmin, onBack }) {
         </Space>
       )}
       {status === 'requested' && !siteAdmin && (
-        <Muted>A site Admin will approve this event. Meanwhile, add the poster and the day times below.</Muted>
+        <Muted>A site Admin will approve this event. Meanwhile, add the poster and the day times under Settings.</Muted>
       )}
       {may.role === 'owner' && !siteAdmin && isEditableStatus(event) && (
         <Muted>Need this event cancelled? Ask a site Admin.</Muted>
       )}
 
-      <Descriptions
-        className="gap"
-        size="small"
-        column={{ xs: 1, sm: 2, md: 3 }}
+      <Tabs
+        className="event-tabs"
+        activeKey={tab}
+        onChange={setTab}
         items={[
-          { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
-          { key: 'venue', label: 'Location', children: dash(event.venue) },
-          { key: 'owner', label: 'Owner', children: personName(ownerOf(event)) },
-          { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
-          { key: 'deadline', label: 'Entry deadline', children: <Deadline event={event} /> },
-          { key: 'role', label: 'Your role', children: siteAdmin ? <Badge>Site admin</Badge> : <RoleBadge role={may.role} /> },
-        ]}
+          {
+            key: 'dashboard',
+            label: 'Dashboard',
+            children: <Dashboard event={event} may={may} siteAdmin={siteAdmin} bouts={bouts} onOpenTab={setTab} />,
+          },
+          {
+            key: 'clubs',
+            label: `Clubs (${event.clubs.filter((ec) => ec.status === 'accepted').length})`,
+            children: (
+              <>
+                <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
+                <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
+              </>
+            ),
+          },
+          bouts.seesBouts && {
+            key: 'bouts',
+            label: 'Bouts',
+            children: <EventBouts event={event} bouts={bouts} />,
+          },
+          {
+            key: 'officials',
+            label: 'Officials',
+            children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} />,
+          },
+          (may.edit || siteAdmin) && {
+            key: 'settings',
+            label: 'Settings',
+            children: (
+              <>
+                <Section
+                  title="Details"
+                  extra={may.edit && <Button icon={<EditOutlined />} onClick={() => setEditing('details')}>Edit details</Button>}
+                >
+                  <Descriptions
+                    size="small"
+                    column={{ xs: 1, sm: 2, md: 3 }}
+                    items={[
+                      { key: 'name', label: 'Name', children: event.name },
+                      { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
+                      { key: 'venue', label: 'Location', children: dash(event.venue) },
+                      { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
+                      { key: 'deadline', label: 'Entry deadline', children: <Deadline event={event} /> },
+                    ]}
+                  />
+                </Section>
+                {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
+                <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
+                <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
+                <EventMembers event={event} may={may} onChange={reload} />
+                {siteAdmin && (
+                  <Section title="Delete">
+                    <Muted>Cancelling keeps a record of the event; deleting removes it for good.</Muted>
+                    <Button danger onClick={remove}>Delete this event</Button>
+                  </Section>
+                )}
+              </>
+            ),
+          },
+        ].filter(Boolean)}
       />
-      {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
+    </>
+  )
+}
 
-      <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
-      <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
-      <EventClubs event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
-      <EventEntries event={event} may={may} clubs={clubs} profile={profile} onChange={reload} />
-      <EventBouts event={event} may={may} clubs={clubs} profile={profile} onEntriesChange={reload} />
-      <EventMembers event={event} may={may} onChange={reload} />
+// The first tab: the event's key facts, then counts that jump to the matching tab.
+function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
+  const [invitations, setInvitations] = useState([])
+  useEffect(() => {
+    api.listEventInvitations(event.id).then(setInvitations, () => setInvitations([]))
+  }, [event.id, bouts.data])
 
-      {siteAdmin && (
-        <div className="section"><Button danger onClick={remove}>Delete this event</Button></div>
-      )}
+  const data = bouts.data
+  const officials = data?.officials ?? []
+  const roleName = (role) => personName(officials.find((o) => o.role === role)?.user)
+  const accepted = invitations.filter((i) => i.status === 'accepted').length
+  const declined = invitations.filter((i) => i.status === 'declined').length
+  const waiting = invitations.length - accepted - declined
+  const clubsIn = event.clubs.filter((ec) => ec.status === 'accepted').length
+  const asking = event.clubs.filter((ec) => ec.status === 'requested').length
+  const live = (data?.bouts ?? []).filter((b) => b.status !== 'cancelled')
+  const approved = live.filter((b) => b.status === 'approved').length
+  const results = live.filter((b) => b.winner).length
+  const days = daysBetween(event.start_date, event.end_date).length
+  const weighIns = (data?.weighIns ?? []).length
+
+  const stats = [
+    {
+      key: 'officials', tab: 'officials', title: 'Officials',
+      value: invitations.length ? accepted : officials.length,
+      note: invitations.length
+        ? `${waiting} waiting · ${declined} declined`
+        : `Chief Official: ${roleName('chief')} · Deputy: ${roleName('deputy')}`,
+    },
+    { key: 'clubs', tab: 'clubs', title: 'Clubs', value: clubsIn, note: asking ? `${asking} asking to join` : 'Clubs in the event' },
+    { key: 'athletes', tab: 'clubs', title: 'Athletes', value: event.athletes.length, note: 'Entered' },
+    bouts.seesBouts && { key: 'bouts', tab: 'bouts', title: 'Bouts', value: live.length, note: `${approved} approved · ${live.length - approved} waiting` },
+    bouts.seesBouts && { key: 'results', tab: 'bouts', title: 'Results', value: results, note: `Of ${approved} approved bout${approved === 1 ? '' : 's'}` },
+    { key: 'days', tab: null, title: days === 1 ? 'Day' : 'Days', value: days, note: bouts.seesBouts ? `${weighIns} weigh-in${weighIns === 1 ? '' : 's'} recorded` : formatDateRange(event.start_date, event.end_date) },
+  ].filter(Boolean)
+
+  return (
+    <>
+      <Section title="Overview">
+        <Descriptions
+          size="small"
+          column={{ xs: 1, sm: 2, md: 3 }}
+          items={[
+            { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
+            { key: 'venue', label: 'Location', children: dash(event.venue) },
+            { key: 'owner', label: 'Owner', children: personName(ownerOf(event)) },
+            { key: 'role', label: 'Your role', children: siteAdmin ? <Badge>Site admin</Badge> : <RoleBadge role={may.role} /> },
+            { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
+            { key: 'deadline', label: 'Entry deadline', children: <Deadline event={event} /> },
+          ]}
+        />
+      </Section>
+      <Row gutter={[16, 16]} className="stats">
+        {stats.map((st) => (
+          <Col key={st.key} xs={12} md={8} xl={4}>
+            <Card
+              size="small"
+              className="stat-card"
+              hoverable={Boolean(st.tab)}
+              onClick={st.tab ? () => onOpenTab(st.tab) : undefined}
+            >
+              <Statistic title={st.title} value={st.value} />
+              <Text type="secondary" className="stat-note">{st.note}</Text>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+      <Schedule event={event} canEdit={false} />
+      <Poster event={event} canEdit={false} />
     </>
   )
 }
@@ -1109,7 +1232,7 @@ function EventMembers({ event, may, onChange }) {
   return (
     <Section title={`People (${event.members.length})`}>
       <Muted>
-        Viewers can see the event's details and times. Clubs enter athletes through the Clubs section above.
+        Viewers can see the event's details and times. Clubs enter athletes on the Clubs tab.
         {effectiveStatus(event) === 'requested' && ' People can be added once the event is approved.'}
       </Muted>
       {may.addMembers && (
