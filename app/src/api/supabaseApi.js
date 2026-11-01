@@ -130,9 +130,10 @@ export const supabaseApi = {
     ]
   },
 
+  // roleId is the account type (admin, user, official, public); CSV imports leave it out.
   // Returns 'updated' if the person already had an account, otherwise 'invited'.
-  async addUser({ name, email }) {
-    const { data, error } = await supabase.rpc('invite_user', { p_email: email, p_name: name, p_role: 'user' })
+  async addUser({ name, email, roleId = 'user' }) {
+    const { data, error } = await supabase.rpc('invite_user', { p_email: email, p_name: name, p_role: roleId || 'user' })
     if (error) throw error
     return data
   },

@@ -15,6 +15,18 @@ const accountTypes = [
   { value: 'official', label: 'Official' },
   { value: 'public', label: 'Public (no access yet)' },
 ]
+const accountAs = { admin: 'an Admin', user: 'a User', official: 'an Official', public: 'a Public account' }
+const blankUser = { name: '', email: '', roleId: 'user' }
+
+// An Official account should also be on the Officials list, so they can be picked for events.
+// Adds them there unless that email is already listed.
+async function ensureOfficial({ name, email }) {
+  const clean = email.trim().toLowerCase()
+  const officials = await api.listOfficials()
+  if (officials.some((o) => o.invite_email === clean)) return false
+  await api.addOfficial({ name: name?.trim() || clean, invite_email: clean, qualifications: null })
+  return true
+}
 
 // Edit and delete buttons for a table row, as the frontend-style skill describes.
 function RowActions({ name, onEdit, onDelete, deleteText, busy }) {
@@ -153,7 +165,7 @@ function useUsers() {
 
 function Users() {
   const { users, error, reload } = useUsers()
-  const [form, setForm] = useState({ name: '', email: '' })
+  const [form, setForm] = useState(blankUser)
   const [message, setMessage] = useState(null)
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(null) // the user row being edited
@@ -164,19 +176,23 @@ function Users() {
     setSaving(true)
     setMessage(null)
     let data
+    let listed = false
     try {
       data = await api.addUser(form)
+      if (form.roleId === 'official') listed = await ensureOfficial(form)
     } catch (err) {
       return setMessage({ error: true, text: err.message })
     } finally {
       setSaving(false)
     }
+    const role = accountAs[form.roleId] ?? 'a User'
+    const officialNote = listed ? ' They are on the Officials list too.' : ''
     setMessage({
       text: data === 'updated'
-        ? `${form.email} already had an account and is now a user.`
-        : `${form.email} is added. They can sign in with that email.`,
+        ? `${form.email} already had an account and is now ${role}.${officialNote}`
+        : `${form.email} is added as ${role}. They can sign in with that email.${officialNote}`,
     })
-    setForm({ name: '', email: '' })
+    setForm(blankUser)
     reload()
   }
 
@@ -209,9 +225,11 @@ function Users() {
       >
         <Field label="Name"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Email"><Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+        <Field label="Account"><Pick value={form.roleId} onChange={(roleId) => setForm({ ...form, roleId })} options={accountTypes} /></Field>
       </FormCard>
       <FormMessage message={message} />
       <Muted>
+        Account sets what they can do across the site: Admins manage everything, Officials are also added to the Officials list.
         Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
       </Muted>
       <CsvImport kind="users" importRow={api.addUser} onDone={reload} />
@@ -225,7 +243,12 @@ function Users() {
             busy={changes.busy}
             onCancel={() => setEditing(null)}
             onSave={async (fields) => {
-              if (await changes.run(() => api.updateUser(editing, fields))) setEditing(null)
+              const becameOfficial = fields.roleId === 'official' && editing.role_id !== 'official'
+              const saved = await changes.run(async () => {
+                await api.updateUser(editing, fields)
+                if (becameOfficial) await ensureOfficial({ name: fields.name, email: fields.email })
+              })
+              if (saved) setEditing(null)
             }}
           />
         )}
