@@ -1,14 +1,15 @@
 // Stage 4 (plan/events.md sections 4 to 6): the event's officials, bout matching and
 // approvals, comments, the weigh-in, the card order and results.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import DataTable from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
 import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { checkMatch } from './matching'
-import { Button, Card as AntCard, Collapse, Input, Space, Table, Tabs } from 'antd'
+import { Button, Card as AntCard, Collapse, Input, Space, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
-import { askConfirm, askText, tableProps } from './dialogs'
+import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
 const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
@@ -520,8 +521,8 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
 
   // Each row keeps its own form; the key resets it when a new weigh-in is recorded.
   const columns = [
-    { title: 'Athlete', key: 'athlete', render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
-    { title: 'Entered', key: 'entered', render: (_, a) => formatWeight(a.weight_kg) },
+    { title: 'Athlete', key: 'athlete', value: (a) => `${a.name} ${a.club ?? ''}`, render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
+    { title: 'Entered', key: 'entered', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
     {
       title: 'Weigh-in',
       key: 'form',
@@ -537,7 +538,7 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
       {rows.length === 0 ? (
         <Muted>Nobody is boxing this day yet.</Muted>
       ) : (
-        <Table {...tableProps} rowKey="id" columns={columns} dataSource={rows} />
+        <DataTable rowKey="id" columns={columns} dataSource={rows} />
       )}
       <Muted>A failed medical or a no-show takes the athlete's bouts off the card. A bout that no longer fits the weight allowance after the weigh-in is cancelled too.</Muted>
     </div>

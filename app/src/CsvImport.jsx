@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Collapse, Space, Table, Upload } from 'antd'
+import { Button, Collapse, Space, Upload } from 'antd'
 import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
+import DataTable from './DataTable'
 import { downloadCsv, parseCsv, rowsToRecords } from './csv'
 import { checkRecords, importSpecs } from './imports'
 import { ErrorAlert, Muted, Paragraph, SuccessAlert, Text } from './ui'
@@ -48,6 +49,7 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
     {
       title: 'Problems',
       key: 'problems',
+      value: (row) => row.errors.join('; ') || 'OK',
       width: 240,
       render: (_, row) => (row.errors.length ? <Text type="danger">{row.errors.join('; ')}</Text> : 'OK'),
     },
@@ -84,13 +86,10 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
             {problems > 0 && <Text type="danger">, {problems} with problems that will be skipped</Text>}.
           </Paragraph>
           {check.rows.length > 0 && (
-            <Table
-              size="small"
+            <DataTable
               rowKey="line"
               columns={columns}
               dataSource={check.rows}
-              pagination={false}
-              scroll={{ x: true }}
               rowClassName={(row) => (row.errors.length ? 'row-error' : '')}
             />
           )}

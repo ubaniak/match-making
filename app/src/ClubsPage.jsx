@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Checkbox, Descriptions, Input, Popconfirm, Space, Table } from 'antd'
+import { Button, Checkbox, Descriptions, Input, Popconfirm, Space } from 'antd'
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import DataTable from './DataTable'
 import { api } from './api'
 import AthleteForm from './AthleteForm'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
-import { askConfirm, dash, tableProps } from './dialogs'
+import { askConfirm, dash } from './dialogs'
 import { BackLink, Badge, PageHeading, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, SuccessAlert, Text, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', coach: 'Coach' }
@@ -83,14 +84,14 @@ function ClubList({ siteAdmin, profile, onOpen }) {
 
 function ClubTable({ title, clubs, profile, onOpen }) {
   const columns = [
-    { title: 'Club', key: 'name', render: (_, c) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(c.id)}>{c.name}</Button> },
+    { title: 'Club', key: 'name', value: (c) => c.name, render: (_, c) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(c.id)}>{c.name}</Button> },
     { title: 'Owners', key: 'owners', render: (_, c) => c.members.filter((m) => m.role === 'owner' && m.status === 'active').map((m) => personName(m.user)).join(', ') || '—' },
     { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
-    { title: 'Your role', key: 'role', render: (_, c) => <RoleBadge role={myClubRole(c, profile)} /> },
+    { title: 'Your role', key: 'role', value: (c) => roleLabels[myClubRole(c, profile)], render: (_, c) => <RoleBadge role={myClubRole(c, profile)} /> },
   ]
   return (
     <Section title={title}>
-      <Table {...tableProps} rowKey="id" columns={columns} dataSource={clubs} />
+      <DataTable rowKey="id" columns={columns} dataSource={clubs} />
     </Section>
   )
 }
@@ -195,7 +196,7 @@ function PendingInvites({ onChange }) {
   return (
     <Section title={`Club invites waiting for approval (${invites.length})`}>
       <ErrorAlert>{error}</ErrorAlert>
-      <Table {...tableProps} rowKey={(i) => `${i.club_id}-${i.user_id}`} columns={columns} dataSource={invites} />
+      <DataTable rowKey={(i) => `${i.club_id}-${i.user_id}`} columns={columns} dataSource={invites} />
     </Section>
   )
 }
@@ -325,8 +326,8 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
     { title: 'Name', dataIndex: 'name', key: 'name' },
     { title: 'Born', key: 'born', render: (_, a) => dash(a.date_of_birth) },
     { title: 'Gender', key: 'gender', render: (_, a) => genderLabel(a.gender) },
-    { title: 'Weight', key: 'weight', render: (_, a) => formatWeight(a.weight_kg) },
-    { title: 'Experience', key: 'bouts', render: (_, a) => formatBouts(a.bouts) },
+    { title: 'Weight', key: 'weight', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
+    { title: 'Experience', key: 'bouts', value: (a) => a.bouts, render: (_, a) => formatBouts(a.bouts) },
     { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
     may.member && {
       key: 'actions',
@@ -399,7 +400,7 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
       {club.athletes.length === 0 ? (
         <Muted>No athletes in this club yet.</Muted>
       ) : (
-        <Table {...tableProps} rowKey="id" columns={columns} dataSource={club.athletes} />
+        <DataTable rowKey="id" columns={columns} dataSource={club.athletes} />
       )}
     </Section>
   )
@@ -529,12 +530,12 @@ function TransferTable({ transfers, actions, showStatus }) {
     { title: 'From', key: 'from', render: (_, t) => t.from_club?.name ?? '—' },
     { title: 'To', key: 'to', render: (_, t) => t.to_club?.name ?? '—' },
     { title: 'Asked by', key: 'by', render: (_, t) => personName(t.requester) },
-    { title: 'When', key: 'when', render: (_, t) => formatWhen(t.decided_at ?? t.requested_at) },
+    { title: 'When', key: 'when', value: (t) => t.decided_at ?? t.requested_at, render: (_, t) => formatWhen(t.decided_at ?? t.requested_at) },
     { title: 'Note', key: 'note', render: (_, t) => t.note || '' },
-    showStatus && { title: 'Outcome', key: 'status', render: (_, t) => <Badge muted={['declined', 'cancelled'].includes(t.status)}>{transferLabels[t.status]}</Badge> },
+    showStatus && { title: 'Outcome', key: 'status', value: (t) => transferLabels[t.status], render: (_, t) => <Badge muted={['declined', 'cancelled'].includes(t.status)}>{transferLabels[t.status]}</Badge> },
     actions && { key: 'actions', className: 'actions', render: (_, t) => actions(t) },
   ].filter(Boolean)
-  return <Table {...tableProps} rowKey="id" columns={columns} dataSource={transfers} className="gap" />
+  return <DataTable rowKey="id" columns={columns} dataSource={transfers} className="gap" />
 }
 
 // Owners and Coaches. Club owners invite people; a site Admin approves each invite.
@@ -583,6 +584,7 @@ function ClubPeople({ club, users, may, onChange }) {
     {
       title: 'Role',
       key: 'role',
+      value: (m) => roleLabels[m.role],
       render: (_, m) => (may.siteAdmin ? (
         <Pick
           size="small"
@@ -597,7 +599,7 @@ function ClubPeople({ club, users, may, onChange }) {
         <RoleBadge role={m.role} />
       )),
     },
-    { title: 'Status', key: 'status', render: (_, m) => (m.status === 'pending' ? <Badge muted>Waiting for Admin</Badge> : <Badge>Member</Badge>) },
+    { title: 'Status', key: 'status', value: (m) => (m.status === 'pending' ? 'Waiting for Admin' : 'Member'), render: (_, m) => (m.status === 'pending' ? <Badge muted>Waiting for Admin</Badge> : <Badge>Member</Badge>) },
     may.manage && {
       key: 'actions',
       className: 'actions',
@@ -640,7 +642,7 @@ function ClubPeople({ club, users, may, onChange }) {
       {members.length === 0 ? (
         <Muted>Nobody yet.{may.siteAdmin && ' Add an Owner above.'}</Muted>
       ) : (
-        <Table {...tableProps} rowKey="user_id" columns={columns} dataSource={members} />
+        <DataTable rowKey="user_id" columns={columns} dataSource={members} />
       )}
     </Section>
   )

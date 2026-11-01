@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Checkbox, Descriptions, Input, Space, Table, Upload } from 'antd'
+import { Alert, Button, Card, Checkbox, Descriptions, Input, Space, Upload } from 'antd'
 import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import DataTable from './DataTable'
 import { api } from './api'
 import EventBouts from './Bouts'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
@@ -10,7 +11,7 @@ import {
   timeZoneOptions, yourTimes, zoneAbbr, zoneLabel, zonedInputToIso,
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
-import { askConfirm, dash, showError, tableProps } from './dialogs'
+import { askConfirm, dash, showError } from './dialogs'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
@@ -155,17 +156,17 @@ function EventList({ siteAdmin, profile, onOpen, onCreate }) {
 
 function EventTable({ title, events, profile, onOpen }) {
   const columns = [
-    { title: 'Event', key: 'name', render: (_, e) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(e.id)}>{e.name}</Button> },
-    { title: 'Status', key: 'status', render: (_, e) => <StatusBadge status={e.shownStatus} /> },
-    { title: 'Dates', key: 'dates', render: (_, e) => formatDateRange(e.start_date, e.end_date) },
+    { title: 'Event', key: 'name', value: (e) => e.name, render: (_, e) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(e.id)}>{e.name}</Button> },
+    { title: 'Status', key: 'status', value: (e) => statusLabels[e.shownStatus], render: (_, e) => <StatusBadge status={e.shownStatus} /> },
+    { title: 'Dates', key: 'dates', value: (e) => e.start_date, render: (_, e) => formatDateRange(e.start_date, e.end_date) },
     { title: 'Location', key: 'venue', render: (_, e) => dash(e.venue) },
     { title: 'Owner', key: 'owner', render: (_, e) => personName(ownerOf(e)) },
-    { title: 'Your role', key: 'role', render: (_, e) => <RoleBadge role={myRole(e, profile)} /> },
+    { title: 'Your role', key: 'role', value: (e) => roleLabels[myRole(e, profile)], render: (_, e) => <RoleBadge role={myRole(e, profile)} /> },
     { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
   ]
   return (
     <Section title={title}>
-      <Table {...tableProps} rowKey="id" columns={columns} dataSource={events} />
+      <DataTable rowKey="id" columns={columns} dataSource={events} />
     </Section>
   )
 }
@@ -577,10 +578,11 @@ function Schedule({ event, canEdit, onEdit }) {
   const mine = browserTimeZone()
   const away = mine !== zone
   const columns = [
-    { title: 'Day', key: 'day', render: (_, day) => formatDay(day) },
+    { title: 'Day', key: 'day', value: (day) => day, render: (_, day) => formatDay(day) },
     {
       title: 'Weigh-in',
       key: 'weigh',
+      value: (day) => byDay[day]?.weigh_in_start,
       render: (_, day) => {
         const d = byDay[day]
         if (!d) return <Text type="secondary">No bouts</Text>
@@ -595,6 +597,7 @@ function Schedule({ event, canEdit, onEdit }) {
     {
       title: 'Bout sessions',
       key: 'sessions',
+      value: (day) => byDay[day]?.sessions.map((s) => `${s.label ?? ''} ${s.starts_at}`).join(' '),
       render: (_, day) => {
         const d = byDay[day]
         if (!d) return ''
@@ -617,7 +620,7 @@ function Schedule({ event, canEdit, onEdit }) {
       ) : (
         <>
           <ZoneNote event={event} />
-          <Table {...tableProps} rowKey={(day) => day} columns={columns} dataSource={days} />
+          <DataTable rowKey={(day) => day} columns={columns} dataSource={days} />
         </>
       )}
     </Section>
@@ -777,7 +780,7 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
 
   const columns = [
     { title: 'Club', key: 'club', render: (_, ec) => ec.club?.name ?? '—' },
-    { title: 'Status', key: 'status', render: (_, ec) => <Badge strong={ec.status === 'accepted'} muted={ec.status === 'declined'}>{clubStatusLabels[ec.status]}</Badge> },
+    { title: 'Status', key: 'status', value: (ec) => clubStatusLabels[ec.status], render: (_, ec) => <Badge strong={ec.status === 'accepted'} muted={ec.status === 'declined'}>{clubStatusLabels[ec.status]}</Badge> },
     { title: 'Athletes entered', key: 'count', render: (_, ec) => (ec.status === 'accepted' ? event.athletes.filter((a) => a.entry_club_id === ec.club_id).length : '') },
     {
       key: 'actions',
@@ -825,7 +828,7 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
         </Space>
       )}
       <ErrorAlert>{error}</ErrorAlert>
-      {rows.length > 0 && <Table {...tableProps} rowKey="club_id" columns={columns} dataSource={rows} />}
+      {rows.length > 0 && <DataTable rowKey="club_id" columns={columns} dataSource={rows} />}
     </Section>
   )
 }
@@ -903,14 +906,15 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
 
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name' },
-    { title: 'Age group', key: 'age', render: (_, a) => <AgeCell category={a.categories.age} /> },
+    { title: 'Age group', key: 'age', value: (a) => a.categories.age?.label, render: (_, a) => <AgeCell category={a.categories.age} /> },
     { title: 'Gender', key: 'gender', render: (_, a) => genderLabel(a.gender) },
-    { title: 'Weight class', key: 'weight', render: (_, a) => <WeightCell category={a.categories.weight} weightKg={a.weight_kg} /> },
-    { title: 'Experience', key: 'exp', render: (_, a) => <ExperienceCell category={a.categories.experience} bouts={a.bouts} /> },
+    { title: 'Weight class', key: 'weight', value: (a) => a.weight_kg, render: (_, a) => <WeightCell category={a.categories.weight} weightKg={a.weight_kg} /> },
+    { title: 'Experience', key: 'exp', value: (a) => a.bouts, render: (_, a) => <ExperienceCell category={a.categories.experience} bouts={a.bouts} /> },
     { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
     {
       title: 'Suggested opponent',
       key: 'suggestion',
+      value: (a) => [a.suggested_opponent_name, a.suggested_opponent_club].filter(Boolean).join(', '),
       render: (_, a) => (editing === a.id ? (
         <Space.Compact>
           <Input size="small" aria-label="Opponent name" placeholder="Name" maxLength={100} value={suggestion.name} onChange={(e) => setSuggestion({ ...suggestion, name: e.target.value })} />
@@ -977,7 +981,7 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
             Age group is by year of birth as of {event.start_date.slice(0, 4)}. Weight class uses the athlete's current weight.
             Novice is 10 bouts or fewer, Open is more.
           </Muted>
-          <Table {...tableProps} rowKey="id" columns={columns} dataSource={athletes} />
+          <DataTable rowKey="id" columns={columns} dataSource={athletes} />
         </>
       )}
     </Section>
@@ -994,7 +998,7 @@ function LateEntries({ event, may, ownedIds, profile, run, busy }) {
     { title: 'Athlete', key: 'athlete', render: (_, r) => r.athlete?.name ?? '—' },
     { title: 'Club', key: 'club', render: (_, r) => r.club?.name ?? '—' },
     { title: 'Note', key: 'note', render: (_, r) => r.note || '' },
-    { title: 'Status', key: 'status', render: (_, r) => <Badge muted={['declined', 'cancelled'].includes(r.status)}>{lateLabels[r.status]}</Badge> },
+    { title: 'Status', key: 'status', value: (r) => lateLabels[r.status], render: (_, r) => <Badge muted={['declined', 'cancelled'].includes(r.status)}>{lateLabels[r.status]}</Badge> },
     {
       key: 'actions',
       className: 'actions',
@@ -1015,7 +1019,7 @@ function LateEntries({ event, may, ownedIds, profile, run, busy }) {
   ]
   return (
     <Card size="small" title="Late-entry requests" className="gap">
-      <Table {...tableProps} rowKey="id" columns={columns} dataSource={requests} />
+      <DataTable rowKey="id" columns={columns} dataSource={requests} />
     </Card>
   )
 }
@@ -1090,7 +1094,7 @@ function EventMembers({ event, may, onChange }) {
   const columns = [
     { title: 'Name', key: 'name', render: (_, m) => m.user?.name || '—' },
     { title: 'Email', key: 'email', render: (_, m) => m.user?.email || '—' },
-    { title: 'Role', key: 'role', render: (_, m) => <RoleBadge role={m.role} /> },
+    { title: 'Role', key: 'role', value: (m) => roleLabels[m.role], render: (_, m) => <RoleBadge role={m.role} /> },
     may.members && {
       key: 'actions',
       className: 'actions',
@@ -1119,7 +1123,7 @@ function EventMembers({ event, may, onChange }) {
         </FormCard>
       )}
       <ErrorAlert>{error}</ErrorAlert>
-      <Table {...tableProps} rowKey="user_id" columns={columns} dataSource={members} />
+      <DataTable rowKey="user_id" columns={columns} dataSource={members} />
     </Section>
   )
 }
