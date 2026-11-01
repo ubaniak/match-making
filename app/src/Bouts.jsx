@@ -18,7 +18,8 @@ const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Official
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
 const personName = (user) => (user ? user.name || user.email : '—')
-const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
+// Emailed links go straight to sign-in and then Home; the bare root is the public page.
+const siteUrl = () => window.location.origin + import.meta.env.BASE_URL + '#home'
 const sentLabel = (iso) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 // A bout can be sent for approval while it's waiting for approval and has no result.
 const sendable = (b) => b.status === 'pending' && !b.winner

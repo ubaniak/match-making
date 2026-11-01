@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Layout } from 'antd'
+import { HomeOutlined, LoginOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { DEFAULT_TIME_ZONE, browserTimeZone, formatDateRange, formatDay, yourTimes, zoneAbbr, zoneLabel } from './dates'
 import { Badge, ErrorAlert, Muted, PageHeading, Paragraph, Text, Title } from './ui'
 
-// The public page: upcoming Active events, no sign-in needed. Shows approved bouts (boxer, club,
+// The site's front page (the root URL): upcoming Active events, no sign-in needed. Shows approved bouts (boxer, club,
 // categories) but never entry lists, weights, birthdates or anyone's contact details.
 export default function PublicEvents({ signedIn }) {
   const [events, setEvents] = useState(null)
@@ -18,10 +19,10 @@ export default function PublicEvents({ signedIn }) {
     <Layout className="page">
       <Layout.Header className="app-header">
         <div className="app-header-inner">
+          {signedIn
+            ? <Button type="primary" icon={<HomeOutlined />} href="#home">My dashboard</Button>
+            : <Button type="primary" icon={<LoginOutlined />} href="#login">Sign in</Button>}
           <span className="brand">Match Making</span>
-          <span className="who">
-            <Button href="#">{signedIn ? 'Back to the app' : 'Sign in'}</Button>
-          </span>
         </div>
       </Layout.Header>
       <Layout.Content>
