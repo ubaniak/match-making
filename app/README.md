@@ -65,7 +65,7 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    They're variables rather than secrets because the key ends up in the page's JavaScript anyway; it's safe to share because row-level security protects the data. Then rebuild the site: Actions > Deploy to GitHub Pages > Run workflow on `main` (or push any commit). Demo mode switches off once the new build is live.
 8. **Sign in.** Open https://ubaniak.github.io/match-making/, enter your email, and type the code from the email (or click its link). You should see the Admin tab.
 
-Supabase's built-in email sender only allows a few emails an hour, which is fine for testing. Before real users rely on it, add your own SMTP server under Authentication > Emails > SMTP Settings. If a sign-in email doesn't arrive, check spam, then Authentication > Users and the project's Auth logs.
+Supabase's built-in email sender only allows a few emails an hour, which is fine for testing. Before real users rely on it, add your own SMTP server (see [Sign-in emails](#sign-in-emails)). If a sign-in email doesn't arrive, check spam, then Authentication > Users and the project's Auth logs.
 
 ## Who can do what
 
@@ -96,7 +96,7 @@ The rules are enforced by row-level security in the database, not just hidden in
 
 ## Sign-in emails
 
-Supabase's built-in mailer sends only about 2 emails an hour. Turn on custom SMTP under Authentication > SMTP Settings (Resend: host `smtp.resend.com`, port `465`, username `resend`, an API key as the password), then raise the email limit under Authentication > Rate Limits. With custom SMTP you can also set the sender name, for example "Match Making".
+Supabase's built-in mailer sends only about 2 emails an hour. Turn on custom SMTP under Authentication > Emails > SMTP Settings with the same Gmail account as [Owner emails](#owner-emails): sender email = the Gmail address, sender name `Match Making`, host `smtp.gmail.com`, port `465`, username = the Gmail address, password = its App password. Then raise the email limit under Authentication > Rate Limits (about 30 an hour). Later, with a domain, switch to Resend: host `smtp.resend.com`, port `465`, username `resend`, an API key as the password.
 
 The email wording lives in `supabase/templates/`. In Authentication > Emails, paste each file's contents into the matching template:
 
@@ -129,9 +129,14 @@ Google sign-in sends no email, so it isn't affected by the email rate limit.
 
 When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations and sends bouts for approval. Until that's set up, the event page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
 
-1. Make a free account at https://resend.com and create an API key. To send to anyone, verify your own domain there; without one, Resend only delivers to your own address.
-2. In Supabase, open Edge Functions > Deploy a new function > Via editor (or open the existing `send-event-email` function to update it), name it `send-event-email`, paste in [`supabase/functions/send-event-email/index.ts`](../supabase/functions/send-event-email/index.ts), and deploy. (Or `supabase functions deploy send-event-email` with the CLI.)
-3. Under Edge Functions > Secrets add `RESEND_API_KEY`, and `EMAIL_FROM` (e.g. `Match Making <events@your-domain>`) once your domain is verified.
+It sends through a Gmail account for now, so no domain is needed:
+
+1. **Make a Gmail account just for the app** (for example `matchmaking.app@gmail.com`), not a personal one. Every email comes from this address.
+2. **Create an App password.** On that account turn on 2-Step Verification, then go to https://myaccount.google.com/apppasswords, create one named "Match Making" and copy the 16 letters.
+3. **Deploy the function.** In Supabase, open Edge Functions > Deploy a new function > Via editor (or open the existing `send-event-email` function to update it), name it `send-event-email`, paste in [`supabase/functions/send-event-email/index.ts`](../supabase/functions/send-event-email/index.ts), and deploy. (Or `supabase functions deploy send-event-email` with the CLI.)
+4. **Add the secrets.** Under Edge Functions > Secrets add `SMTP_USER` = the Gmail address and `SMTP_PASS` = the App password. Optionally `EMAIL_FROM` = `Match Making <the Gmail address>` (the default already looks like that).
+
+A free Gmail account sends to roughly 500 people a day, and Google may pause it if it sends lots of near-identical mail. When the app outgrows that, buy a domain, verify it in Resend (SPF, DKIM and DMARC records), add `RESEND_API_KEY` and `EMAIL_FROM` = `Match Making <events@your-domain>`, and delete `SMTP_USER` and `SMTP_PASS`. The function uses Resend whenever those two aren't set.
 
 ## Done job
 
