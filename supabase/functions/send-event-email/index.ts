@@ -1,4 +1,4 @@
-// Sends the app's event emails through Resend:
+// Sends the app's emails:
 //   { event_id }       emails the Owner "You have Requested an event" with a link to the site.
 //                      Called right after a site Admin creates an event.
 //   { invitation_id }  emails an official their invitation to officiate. Called by a site Admin or
@@ -8,14 +8,19 @@
 //                      person listing all their bouts. Called by the Owner, an official or a site Admin.
 //   { user_email }     welcomes someone a site Admin just added on Admin > Users: says which account
 //                      they have and how to sign in. Site Admins only.
-// Sends through Resend
-// (https://resend.com). Setup steps are in app/README.md ("Owner emails").
+// Sends through Gmail (or any SMTP server) when SMTP_USER and SMTP_PASS are set, otherwise
+// through Resend (https://resend.com). Setup steps are in app/README.md ("Owner emails").
 //
 // Secrets (Edge Functions > Secrets in the Supabase dashboard):
-//   RESEND_API_KEY  required
-//   EMAIL_FROM      e.g. "Match Making <events@your-domain>" (default: Resend's test sender)
+//   SMTP_USER       the Gmail address, e.g. matchmaking.app@gmail.com
+//   SMTP_PASS       a Google App password for that account (16 letters, no spaces)
+//   SMTP_HOST       default smtp.gmail.com
+//   SMTP_PORT       default 465 (Supabase blocks outgoing 25 and 587)
+//   RESEND_API_KEY  used only when SMTP_USER/SMTP_PASS aren't set
+//   EMAIL_FROM      default "Match Making <SMTP_USER>" (Gmail only sends as its own address)
 //   SITE_URL        default https://ubaniak.github.io/match-making/
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import nodemailer from 'npm:nodemailer@6.9.16'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -74,7 +79,7 @@ Deno.serve(async (req) => {
   const owner = (event.members as any[]).find((m) => m.role === 'owner')?.user
   if (!owner?.email) return json({ error: 'The event has no Owner with an email address' }, 422)
 
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const dates = event.start_date === event.end_date ? event.start_date : `${event.start_date} to ${event.end_date}`
   const greeting = owner.name ? `Hi ${owner.name},` : 'Hi,'
   const text = [
@@ -92,18 +97,8 @@ Deno.serve(async (req) => {
 })
 
 async function send(to: string, subject: string, text: string, html: string) {
-  const apiKey = Deno.env.get('RESEND_API_KEY')
-  if (!apiKey) return json({ error: 'email is not set up yet' }, 501)
-  const from = Deno.env.get('EMAIL_FROM') ?? 'Match Making <onboarding@resend.dev>'
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from, to: [to], subject, text, html }),
-  })
-  if (!response.ok) {
-    const detail = await response.text()
-    return json({ error: `the email service said: ${detail.slice(0, 200)}` }, 502)
-  }
+  const result = await deliver([{ to, subject, text, html }])
+  if (result.error) return json({ error: result.error }, result.status)
   return json({ sent: true })
 }
 
@@ -121,7 +116,7 @@ async function sendWelcome(supabase: any, email: string) {
   const person = profile.data ?? invite.data
   if (!person) return json({ error: 'There is no user with that email' }, 404)
 
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const account = accountPhrase(person.roles?.name)
   const greeting = person.name ? `Hi ${person.name},` : 'Hi,'
   const text = [
@@ -144,6 +139,62 @@ function accountPhrase(roleName?: string) {
   return `${/^[AEIOU]/.test(singular) ? 'an' : 'a'} ${singular}`
 }
 
+type Email = { to: string; subject: string; text: string; html: string }
+type Delivery = { sent: number; error?: string; status?: number }
+
+// Sends each email on its own (one recipient per email). Stops at the first failure and says how
+// many went out before it.
+async function deliver(emails: Email[]): Promise<Delivery> {
+  const user = Deno.env.get('SMTP_USER')
+  const pass = Deno.env.get('SMTP_PASS')
+  if (user && pass) return await deliverSmtp(emails, user, pass.replace(/\s+/g, ''))
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  if (apiKey) return await deliverResend(emails, apiKey)
+  return { sent: 0, error: 'email is not set up yet', status: 501 }
+}
+
+async function deliverSmtp(emails: Email[], user: string, pass: string): Promise<Delivery> {
+  const port = Number(Deno.env.get('SMTP_PORT') ?? 465)
+  const transport = nodemailer.createTransport({
+    host: Deno.env.get('SMTP_HOST') ?? 'smtp.gmail.com',
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+  })
+  const from = Deno.env.get('EMAIL_FROM') ?? `Match Making <${user}>`
+  let sent = 0
+  try {
+    for (const e of emails) {
+      await transport.sendMail({ from, to: e.to, subject: e.subject, text: e.text, html: e.html })
+      sent++
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    return { sent, error: `the email server said: ${detail.slice(0, 200)}`, status: 502 }
+  } finally {
+    transport.close()
+  }
+  return { sent }
+}
+
+async function deliverResend(emails: Email[], apiKey: string): Promise<Delivery> {
+  const from = Deno.env.get('EMAIL_FROM') ?? 'Match Making <onboarding@resend.dev>'
+  // Resend's batch endpoint takes up to 100 emails a call.
+  for (let i = 0; i < emails.length; i += 100) {
+    const batch = emails.slice(i, i + 100).map((e) => ({ from, to: [e.to], subject: e.subject, text: e.text, html: e.html }))
+    const response = await fetch('https://api.resend.com/emails/batch', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(batch),
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      return { sent: i, error: `the email service said: ${detail.slice(0, 200)}`, status: 502 }
+    }
+  }
+  return { sent: emails.length }
+}
+
 const longDate = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 
@@ -157,7 +208,7 @@ async function sendInvitation(supabase: any, invitationId: string) {
   if (!invite) return json({ error: 'Only the event\'s Owner or a site Admin can send this email' }, 403)
   if (!invite.email) return json({ error: 'The official has no email address' }, 422)
 
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const dates = invite.start_date === invite.end_date
     ? longDate(invite.start_date)
     : `${longDate(invite.start_date)} to ${longDate(invite.end_date)}`
@@ -189,10 +240,7 @@ async function sendBoutApprovals(supabase: any, boutIds: string[]) {
   const rows = (data ?? []) as any[]
   if (rows.length === 0) return json({ sent: 0 })
 
-  const apiKey = Deno.env.get('RESEND_API_KEY')
-  if (!apiKey) return json({ error: 'email is not set up yet' }, 501)
-  const from = Deno.env.get('EMAIL_FROM') ?? 'Match Making <onboarding@resend.dev>'
-  const site = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  const site = appUrl()
   const sideText: Record<string, string> = { red: 'red corner', blue: 'blue corner', official: 'official approval' }
 
   // One email per person, listing each of their bouts once with the sides they approve for.
@@ -217,20 +265,16 @@ async function sendBoutApprovals(supabase: any, boutIds: string[]) {
 <p>${escape(intro)}</p>
 <ul>${lines.map((l) => `<li>${escape(l)}</li>`).join('')}</ul>
 <p><a href="${escape(site)}">Sign in</a> and open the event's Bouts tab.</p>`
-    return { from, to: [to], subject: `Bouts to approve at ${p.event}`, text, html }
+    return { to, subject: `Bouts to approve at ${p.event}`, text, html }
   })
 
-  // Resend's batch endpoint takes up to 100 emails a call.
-  for (let i = 0; i < emails.length; i += 100) {
-    const response = await fetch('https://api.resend.com/emails/batch', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(emails.slice(i, i + 100)),
-    })
-    if (!response.ok) {
-      const detail = await response.text()
-      return json({ error: `the email service said: ${detail.slice(0, 200)}`, sent: i }, 502)
-    }
-  }
-  return json({ sent: emails.length })
+  const result = await deliver(emails)
+  if (result.error) return json({ error: result.error, sent: result.sent }, result.status)
+  return json({ sent: result.sent })
+}
+
+// The site root is the public events page, so emailed "Sign in" links go to #home (sign-in, then the dashboard).
+function appUrl() {
+  const root = Deno.env.get('SITE_URL') ?? 'https://ubaniak.github.io/match-making/'
+  return root.replace(/#.*$/, '').replace(/\/?$/, '/') + '#home'
 }

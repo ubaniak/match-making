@@ -22,7 +22,8 @@ const myRole = (event, profile) => event.members.find((m) => m.user_id === profi
 const ownerOf = (event) => event.members.find((m) => m.role === 'owner')?.user
 const personName = (user) => (user ? user.name || user.email : '—')
 const userLabel = (u) => (u.name ? `${u.name} (${u.email})` : u.email)
-const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
+// Emailed links go straight to sign-in and then Home; the bare root is the public page.
+const siteUrl = () => window.location.origin + import.meta.env.BASE_URL + '#home'
 
 // What the signed-in user can do on an event (plan/events.md, "Who can do what").
 function rightsFor(event, profile, siteAdmin) {
@@ -138,7 +139,7 @@ function EventList({ siteAdmin, profile, onOpen, onCreate }) {
   return (
     <>
       <PageHeading title="Events">
-        <Button href="#upcoming">Public page</Button>
+        <Button href="#">Public page</Button>
         {siteAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={onCreate}>New event</Button>}
       </PageHeading>
       <ErrorAlert>{error}</ErrorAlert>
