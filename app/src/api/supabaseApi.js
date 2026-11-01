@@ -628,6 +628,49 @@ export const supabaseApi = {
     await rpc('set_card_order', { p_event_id: eventId, p_day: day, p_order: order })
   },
 
+  // ---------------------------------------------------------------------------
+  // Notifications (migration 22): written by database triggers, newest first.
+  // ---------------------------------------------------------------------------
+
+  async listNotifications() {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id, kind, title, body, event_id, club_id, bout_id, tab, action_key, needs_action, created_at, read_at, done_at')
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (error) throw error
+    return data
+  },
+
+  // ids: the notifications to mark read, or null for all of them.
+  async markNotificationsRead(ids) {
+    let query = supabase.from('notifications').update({ read_at: new Date().toISOString() }).is('read_at', null)
+    if (ids) query = query.in('id', ids)
+    const { error } = await query
+    if (error) throw error
+  },
+
+  async markNotificationUnread(id) {
+    const { error } = await supabase.from('notifications').update({ read_at: null }).eq('id', id)
+    if (error) throw error
+  },
+
+  async deleteNotifications(ids) {
+    const { error } = await supabase.from('notifications').delete().in('id', ids)
+    if (error) throw error
+  },
+
+  // Calls back when the user's notifications change (Supabase Realtime). Returns a function that stops it.
+  subscribeNotifications(userId, callback) {
+    const channel = supabase
+      .channel(`notifications-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => callback())
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  },
+
   async addBoutComment(boutId, body) {
     await rpc('add_bout_comment', { p_bout_id: boutId, p_body: body })
   },

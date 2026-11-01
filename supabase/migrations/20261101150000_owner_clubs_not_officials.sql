@@ -1,4 +1,4 @@
--- Migration 21 (Bhavek, 2026-11-01): "an event owner can add clubs and add club owners, they do
+-- Migration 23 (Bhavek, 2026-11-01): "an event owner can add clubs and add club owners, they do
 -- not invite officials." Who invites officials: "admins and the nominated CO".
 --
 --   * Site Admins and the event's Chief Official invite officials, cancel or resend invitations
