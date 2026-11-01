@@ -69,9 +69,14 @@ new hex values.
 
 ## Patterns
 
-- **Tables:** antd `Table` with `{...tableProps}` from `dialogs.js` (small, no pagination, scrolls
-  sideways on phones), a `columns` array and `rowKey`. Leave out a column with `cond && {...}` and
-  `.filter(Boolean)`. Row actions go in a last column with `className: 'actions'` (right aligned).
+- **Tables:** every table is `<DataTable columns dataSource rowKey>` (`app/src/DataTable.jsx`), never
+  a bare antd `Table`. It adds a search box, sortable columns and pagination (10 per page, size changer
+  on wider screens). Each column sorts and searches by `value(row)`, else `dataIndex`, else its `render`
+  when that returns text or a number. Give a `value` to any column whose `render` returns JSX (badges,
+  links) or formatted text that sorts wrongly (dates, weights): e.g. `value: (e) => e.start_date`.
+  Columns with nothing to sort (action buttons, inline forms) don't sort; `sortable: false` and
+  `searchable: false` opt a column out. Leave out a column with `cond && {...}` and `.filter(Boolean)`.
+  Row actions go in a last column with `key: 'actions'`, `className: 'actions'` (right aligned) and no title.
 - **Row actions:** edit and delete are small circle icon buttons (`EditOutlined`, `DeleteOutlined`)
   with an `aria-label`, delete wrapped in a `Popconfirm`. Decisions (Approve, Accept, Decline) are
   small buttons, the positive one primary. Inline links (`type="link"`) for lighter actions.
@@ -87,7 +92,19 @@ new hex values.
 - **Bouts:** one small card per bout; red corner on the left with a red bar, blue on the right with a
   blue bar, "vs" between. On phones the corners stack.
 
-## Accessibility and phones
+## Phones
+
+The app must work on a 390px-wide phone.
+
+- Below 768px (antd `md`) `DataTable` hides the header row and shows each row as a small bordered card,
+  each value labelled with its column title (so give columns plain-string titles). Sorting moves to a
+  "Sort by" select above the table.
+- The header wraps to two rows (brand and Sign out, then the pill nav) and stops being sticky; the
+  user's name is hidden.
+- Form fields stack one per row, card headers wrap their buttons under the title, bout corners stack.
+- Check there is no sideways page scroll: `document.documentElement.scrollWidth` equals the width.
+
+## Accessibility
 
 - Every icon-only button has an `aria-label`. Focus rings stay visible.
 - Inputs are at least 16px on phones (stops iOS zoom; in `index.css`).

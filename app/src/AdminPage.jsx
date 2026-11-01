@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Input, Table, Tabs } from 'antd'
+import { Button, Input, Tabs } from 'antd'
+import DataTable from './DataTable'
 import { api } from './api'
 import CsvImport from './CsvImport'
 import AthleteForm from './AthleteForm'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
-import { dash, tableProps } from './dialogs'
+import { dash } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FormMessage, Muted, PageHeading, Section } from './ui'
 
 const tabs = [
@@ -79,7 +80,7 @@ function Users() {
     { title: 'Name', key: 'name', render: (_, u) => dash(u.name) },
     { title: 'Email', dataIndex: 'email', key: 'email' },
     { title: 'Account', key: 'role', render: (_, u) => dash(u.role_name) },
-    { title: 'Status', key: 'state', render: (_, u) => <Badge muted={u.state !== 'Active'}>{u.state}</Badge> },
+    { title: 'Status', key: 'state', value: (u) => u.state, render: (_, u) => <Badge muted={u.state !== 'Active'}>{u.state}</Badge> },
   ]
 
   return (
@@ -103,7 +104,7 @@ function Users() {
         {users.length === 0 ? (
           <Muted>No users yet.</Muted>
         ) : (
-          <Table {...tableProps} rowKey="email" columns={columns} dataSource={users} />
+          <DataTable rowKey="email" columns={columns} dataSource={users} />
         )}
       </Section>
     </section>
@@ -135,11 +136,11 @@ function Athletes() {
     { title: 'Name', dataIndex: 'name', key: 'name' },
     { title: 'Born', key: 'born', render: (_, a) => dash(a.date_of_birth) },
     { title: 'Gender', key: 'gender', render: (_, a) => genderLabel(a.gender) },
-    { title: 'Weight', key: 'weight', render: (_, a) => formatWeight(a.weight_kg) },
-    { title: 'Experience', key: 'bouts', render: (_, a) => formatBouts(a.bouts) },
+    { title: 'Weight', key: 'weight', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
+    { title: 'Experience', key: 'bouts', value: (a) => a.bouts, render: (_, a) => formatBouts(a.bouts) },
     { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
     { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
-    { title: 'Login', key: 'login', render: (_, a) => <LoginBadge record={a} /> },
+    { title: 'Login', key: 'login', value: (a) => a.invite_email, render: (_, a) => <LoginBadge record={a} /> },
   ]
 
   return (
@@ -175,7 +176,7 @@ function Athletes() {
         {athletes.length === 0 ? (
           <Muted>No athletes yet.</Muted>
         ) : (
-          <Table {...tableProps} rowKey="id" columns={columns} dataSource={athletes} />
+          <DataTable rowKey="id" columns={columns} dataSource={athletes} />
         )}
       </Section>
     </section>
@@ -236,7 +237,7 @@ function Officials() {
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name' },
     { title: 'Qualifications', key: 'q', render: (_, o) => dash(o.qualifications) },
-    { title: 'Login', key: 'login', render: (_, o) => <LoginBadge record={o} /> },
+    { title: 'Login', key: 'login', value: (o) => o.invite_email, render: (_, o) => <LoginBadge record={o} /> },
   ]
 
   return (
@@ -263,7 +264,7 @@ function Officials() {
         {officials.length === 0 ? (
           <Muted>No officials yet.</Muted>
         ) : (
-          <Table {...tableProps} rowKey="id" columns={columns} dataSource={officials} />
+          <DataTable rowKey="id" columns={columns} dataSource={officials} />
         )}
       </Section>
     </section>

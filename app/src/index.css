@@ -464,3 +464,171 @@ body {
 .form-card.compact .form-grid > .field {
   flex: 0 1 420px;
 }
+
+/* Tables: search box above, pagination below (DataTable.jsx). */
+.data-table-search.ant-input-affix-wrapper {
+  max-width: 320px;
+  margin-bottom: 12px;
+}
+
+.data-table .ant-table-pagination.ant-pagination {
+  margin: 12px 0 0;
+}
+
+.data-table-sort.ant-select {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* Phones: each row is a small card, each value labelled with its column. */
+.data-table.as-cards .data-table-search.ant-input-affix-wrapper {
+  max-width: none;
+}
+
+.data-table.as-cards .ant-table-content {
+  overflow: visible !important;
+}
+
+.data-table.as-cards table {
+  display: block;
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: auto !important;
+}
+
+.data-table.as-cards .ant-table-thead,
+.data-table.as-cards colgroup {
+  display: none;
+}
+
+.data-table.as-cards .ant-table-tbody {
+  display: grid;
+  gap: 8px;
+}
+
+.data-table.as-cards .ant-table-tbody > tr {
+  display: block;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  background: #fff;
+}
+
+.data-table.as-cards .ant-table-measure-row {
+  display: none !important;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0 !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  text-align: right;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: transparent !important;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td:last-child {
+  border-bottom: none !important;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td::before {
+  content: attr(data-label);
+  flex: 0 0 auto;
+  max-width: 45%;
+  margin-right: auto;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: left;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td[data-label='']::before {
+  display: none;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td[data-label=''] {
+  justify-content: flex-end;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td:empty {
+  display: none;
+}
+
+.data-table.as-cards .ant-table-tbody > tr.ant-table-placeholder {
+  border: none;
+}
+
+.data-table.as-cards .ant-table-tbody > tr.ant-table-placeholder > td::before {
+  display: none;
+}
+
+.data-table.as-cards .ant-table-tbody > tr > td .ant-space {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.data-table.as-cards .ant-table {
+  background: transparent;
+}
+
+/* Phones: general layout. */
+@media (max-width: 768px) {
+  .panel {
+    padding: 8px 12px 32px;
+  }
+
+  .page-heading {
+    margin: 12px 0;
+  }
+
+  .section-card.ant-card > .ant-card-body {
+    padding: 12px;
+  }
+
+  .ant-card-head-wrapper {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ant-card .ant-card-head {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .ant-card .ant-card-extra {
+    margin-inline-start: 0;
+  }
+
+  .ant-card .ant-card-head-title {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow: visible;
+  }
+
+  /* The header is two rows on a phone; let it scroll away instead of covering the page. */
+  .app-header.ant-layout-header {
+    position: static;
+  }
+
+  .demo-banner .ant-alert-title {
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .ant-descriptions-item-label,
+  .ant-descriptions-item-content {
+    font-size: 14px;
+  }
+
+  .form-card.compact .form-grid > .field {
+    flex: 1 1 100%;
+  }
+
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+  }
+}

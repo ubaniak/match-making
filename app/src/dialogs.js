@@ -45,6 +45,4 @@ export function showError(text) {
   messageApi.error(text)
 }
 
-export const tableProps = { size: 'small', pagination: false, scroll: { x: true } }
-
 export const dash = (v) => v || '—'
