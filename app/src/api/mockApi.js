@@ -6,6 +6,7 @@
 import { athleteProblems } from '../athletes'
 import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
+import { testClubs, testRoster } from './testRoster'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
 const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
@@ -786,6 +787,65 @@ export const mockApi = {
     current.eventMembers = current.eventMembers.filter((m) => m.event_id !== eventId)
     current.eventAthletes = current.eventAthletes.filter((ea) => ea.event_id !== eventId)
     write(DATA_KEY, current)
+  },
+
+  // The same TEST events, clubs and athletes as migration 17's seed_test_data and clear_test_data.
+  async seedTestData() {
+    requireSiteAdmin('Only a site Admin can load test data')
+    const current = data()
+    const isTest = (x) => x.name.startsWith('TEST ')
+    if (current.events.some(isTest) || current.clubs.some(isTest) || current.athletes.some(isTest)) {
+      throw new Error('Test data is already loaded. Clear it first.')
+    }
+    const owner = currentUserId()
+    const day = (date, sessions) => ({ day: date, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions })
+    const afternoon = { starts_at: '13:00', label: 'Afternoon' }
+    const evening = { starts_at: '18:00', label: 'Evening' }
+    const base = { status: 'active', poster_path: null, entry_deadline: null, timezone: 'America/Winnipeg' }
+    const events = {
+      one: { ...base, id: crypto.randomUUID(), name: 'TEST One-Day Card', venue: 'TEST Venue, Winnipeg', start_date: '3000-01-01', end_date: '3000-01-01', days: [day('3000-01-01', [afternoon])] },
+      multi: {
+        ...base, id: crypto.randomUUID(), name: 'TEST Multi-Day Open', venue: 'TEST Arena, Winnipeg', start_date: '3000-01-08', end_date: '3000-01-10',
+        days: ['3000-01-08', '3000-01-09', '3000-01-10'].map((d) => day(d, [afternoon, evening])),
+      },
+    }
+    const clubIds = Object.fromEntries(testClubs.map((name) => [name, crypto.randomUUID()]))
+    for (const event of Object.values(events)) {
+      current.events.push(event)
+      current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
+      testClubs.forEach((name) => current.eventClubs.push({ event_id: event.id, club_id: clubIds[name], status: 'accepted', requested_at: now() }))
+    }
+    testClubs.forEach((name) => current.clubs.push({ id: clubIds[name], name }))
+    for (const [name, date_of_birth, gender, weight_kg, bouts, club, ev] of testRoster) {
+      const athlete = { id: crypto.randomUUID(), name, date_of_birth, gender, weight_kg, bouts, club_id: clubIds[club], invite_email: null, user_id: null, coach_id: null }
+      current.athletes.push(athlete)
+      current.eventAthletes.push({ event_id: events[ev].id, athlete_id: athlete.id, club_id: athlete.club_id, added_by: owner })
+    }
+    write(DATA_KEY, current)
+    return { events: 2, clubs: testClubs.length, athletes: testRoster.length }
+  },
+
+  async clearTestData() {
+    requireSiteAdmin('Only a site Admin can clear test data')
+    const current = data()
+    const isTest = (x) => x.name.startsWith('TEST ')
+    const eventIds = new Set(current.events.filter(isTest).map((e) => e.id))
+    const athleteIds = new Set(current.athletes.filter(isTest).map((a) => a.id))
+    const clubIds = new Set(current.clubs.filter(isTest).map((c) => c.id))
+    const counts = { events: eventIds.size, clubs: clubIds.size, athletes: athleteIds.size }
+    const keep = (list, test) => (list ?? []).filter((x) => !test(x))
+    current.events = keep(current.events, (e) => eventIds.has(e.id))
+    for (const key of ['eventMembers', 'eventClubs', 'lateEntries', 'officialInvitations', 'eventOfficials', 'weighIns']) {
+      current[key] = keep(current[key], (x) => eventIds.has(x.event_id) || athleteIds.has(x.athlete_id))
+    }
+    current.eventAthletes = keep(current.eventAthletes, (x) => eventIds.has(x.event_id) || athleteIds.has(x.athlete_id))
+    current.bouts = keep(current.bouts, (b) => eventIds.has(b.event_id) || athleteIds.has(b.red_athlete_id) || athleteIds.has(b.blue_athlete_id))
+    current.transfers = keep(current.transfers, (t) => athleteIds.has(t.athlete_id))
+    current.athletes = keep(current.athletes, (a) => athleteIds.has(a.id))
+    current.clubMembers = keep(current.clubMembers, (m) => clubIds.has(m.club_id))
+    current.clubs = keep(current.clubs, (c) => clubIds.has(c.id))
+    write(DATA_KEY, current)
+    return counts
   },
 
   // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.

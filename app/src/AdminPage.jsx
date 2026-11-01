@@ -53,6 +53,7 @@ const tabs = [
   ['users', 'Users'],
   ['athletes', 'Athletes'],
   ['officials', 'Officials'],
+  ['test-data', 'Test data'],
 ]
 
 export default function AdminPage() {
@@ -65,7 +66,55 @@ export default function AdminPage() {
       {tab === 'users' && <Users />}
       {tab === 'athletes' && <Athletes />}
       {tab === 'officials' && <Officials />}
+      {tab === 'test-data' && <TestData />}
     </main>
+  )
+}
+
+// One click to load or remove the TEST events, clubs and athletes (migration 17).
+function TestData() {
+  const [busy, setBusy] = useState(null) // 'seed' or 'clear' while running
+  const [message, setMessage] = useState(null)
+  const counts = (c) => `${c.events} events, ${c.clubs} clubs and ${c.athletes} athletes`
+
+  async function run(kind) {
+    setBusy(kind)
+    setMessage(null)
+    try {
+      const c = kind === 'seed' ? await api.seedTestData() : await api.clearTestData()
+      setMessage({ text: kind === 'seed' ? `Loaded ${counts(c)}.` : `Removed ${counts(c)}.` })
+    } catch (err) {
+      setMessage({ error: true, text: err.message })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <Section title="Test data">
+      <Muted>
+        Loads two Active events you own: TEST One-Day Card on 1 January 3000 with 20 athletes entered, and
+        TEST Multi-Day Open from 8 to 10 January 3000 with 100. Both have the same 5 TEST clubs. Birth dates
+        are in the 2950s to 2990s so the athletes fall into every age group in year 3000. Clearing removes
+        every event, athlete and club whose name starts with &ldquo;TEST &rdquo;, with their bouts and results.
+      </Muted>
+      <Space style={{ marginTop: 16 }}>
+        <Popconfirm title="Load test data?" okText="Load" cancelText="Cancel" onConfirm={() => run('seed')}>
+          <Button type="primary" loading={busy === 'seed'} disabled={Boolean(busy)}>Load test data</Button>
+        </Popconfirm>
+        <Popconfirm
+          title="Clear test data?"
+          description="Everything named TEST is deleted, including bouts and results. This can't be undone."
+          okText="Clear"
+          okButtonProps={{ danger: true }}
+          cancelText="Cancel"
+          onConfirm={() => run('clear')}
+        >
+          <Button danger loading={busy === 'clear'} disabled={Boolean(busy)}>Clear test data</Button>
+        </Popconfirm>
+      </Space>
+      <FormMessage message={message} />
+    </Section>
   )
 }
 
