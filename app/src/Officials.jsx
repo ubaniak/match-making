@@ -2,10 +2,10 @@
 // invites officials, officials accept or decline, and the CO and Deputy are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card as AntCard, Select, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Checkbox, Modal, Select, Space, Tabs } from 'antd'
 import DataTable from './DataTable'
 import { api } from './api'
-import { formatDateRange, formatDay, todayIso } from './dates'
+import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
 import { askConfirm } from './dialogs'
 import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, Text } from './ui'
@@ -42,6 +42,51 @@ function countAnswers(invitations, timeZone) {
     else counts.waiting += 1
   }
   return counts
+}
+
+// The days an accepted official works, as text: "All days", or "Sat, Nov 15, Sun, Nov 16".
+function daysText(invitation, event) {
+  const all = daysBetween(event.start_date, event.end_date)
+  const days = (invitation.days ?? all).filter((d) => all.includes(d))
+  if (all.length > 1 && days.length === all.length) return 'All days'
+  return days.map(formatShortDay).join(', ')
+}
+
+// Accepting: a multi-day event asks which days. onDone(days) or onDone(null) when cancelled.
+function useAcceptDays() {
+  const [asking, setAsking] = useState(null) // { event, days, resolve }
+  function ask(event, current) {
+    const all = daysBetween(event.start_date, event.end_date)
+    if (all.length <= 1) return Promise.resolve(all)
+    return new Promise((resolve) => setAsking({ event, all, days: current?.length ? current.filter((d) => all.includes(d)) : all, resolve }))
+  }
+  function close(value) {
+    asking?.resolve(value)
+    setAsking(null)
+  }
+  const dialog = (
+    <Modal
+      open={Boolean(asking)}
+      title="Which days can you officiate?"
+      okText="Accept"
+      okButtonProps={{ disabled: !asking?.days.length }}
+      onOk={() => close(asking.days)}
+      onCancel={() => close(null)}
+    >
+      {asking && (
+        <>
+          <Muted>{asking.event.name ?? asking.event.event_name} runs {formatDateRange(asking.event.start_date, asking.event.end_date)}. Pick one day, some days or all of them.</Muted>
+          <Checkbox.Group
+            style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}
+            value={asking.days}
+            onChange={(days) => setAsking({ ...asking, days })}
+            options={asking.all.map((d) => ({ value: d, label: formatDay(d) }))}
+          />
+        </>
+      )}
+    </Modal>
+  )
+  return { ask, dialog }
 }
 
 // ---------------------------------------------------------------------------
@@ -115,14 +160,22 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
 function MyAnswer({ invitation, event, busy, act }) {
   const answer = answerOf(invitation, event.timezone)
   const open = canAnswer(invitation, event)
+  const multiDay = daysBetween(event.start_date, event.end_date).length > 1
+  const { ask, dialog } = useAcceptDays()
+  async function accept() {
+    const days = await ask(event, invitation.days)
+    if (days) act(() => api.respondToInvitation(invitation.id, true, days))
+  }
   return (
     <AntCard size="small" className="form-card gap">
+      {dialog}
       <Space wrap>
         <Text>You're invited to officiate this event.</Text>
         <AnswerBadge answer={answer} />
+        {answer === 'accepted' && multiDay && <Text type="secondary">{daysText(invitation, event)}</Text>}
         {invitation.respond_by && answer === 'pending' && <Text type="secondary">Please answer by {formatDay(invitation.respond_by)}.</Text>}
-        {open && answer !== 'accepted' && (
-          <Button size="small" type="primary" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, true))}>Accept</Button>
+        {open && (answer !== 'accepted' || multiDay) && (
+          <Button size="small" type={answer === 'accepted' ? 'default' : 'primary'} disabled={busy} onClick={accept}>{answer === 'accepted' ? 'Change days' : 'Accept'}</Button>
         )}
         {open && answer !== 'declined' && (
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
@@ -152,6 +205,9 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
   const declined = invitations.filter((i) => answerOf(i, event.timezone) === 'declined')
   const waiting = invitations.filter((i) => ['pending', 'expired'].includes(answerOf(i, event.timezone)))
   const invitable = officialsList.filter((o) => byOfficial[o.id]?.status !== 'accepted')
+  const eventDays = daysBetween(event.start_date, event.end_date)
+  const multiDay = eventDays.length > 1
+  const onDay = (day) => accepted.filter((i) => (i.days ?? eventDays).includes(day)).length
   const roleOf = (userId) => Object.entries(byRole).find(([, o]) => o.user_id === userId)?.[0]
   const today = todayIso(event.timezone)
 
@@ -213,6 +269,10 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
           {roleOf(i.user_id) && <Badge strong>{officialLabels[roleOf(i.user_id)]}</Badge>}
         </Space>
       ),
+    },
+    multiDay && {
+      title: 'Days', key: 'days', value: (i) => (i.status === 'accepted' ? daysText(i, event) : ''),
+      render: (_, i) => (i.status === 'accepted' ? daysText(i, event) : '—'),
     },
     {
       title: 'Respond by', key: 'respond_by', value: (i) => i.respond_by ?? '',
@@ -302,7 +362,18 @@ function Manage({ event, may, manager, invitations, byRole, busy, act }) {
           activeKey={tab}
           onChange={setTab}
           items={[
-            { key: 'accepted', label: `Accepted (${accepted.length})`, children: list(accepted, 'No one has accepted yet.') },
+            {
+              key: 'accepted',
+              label: `Accepted (${accepted.length})`,
+              children: (
+                <>
+                  {multiDay && accepted.length > 0 && (
+                    <Muted>Officials each day: {eventDays.map((d) => `${formatShortDay(d)}: ${onDay(d)}`).join(' · ')}</Muted>
+                  )}
+                  {list(accepted, 'No one has accepted yet.')}
+                </>
+              ),
+            },
             { key: 'declined', label: `Declined (${declined.length})`, children: list(declined, 'No one has declined.') },
             { key: 'waiting', label: `Waiting (${waiting.length})`, children: list(waiting, 'Everyone has answered.') },
           ]}
@@ -352,6 +423,7 @@ export function MyInvitations({ onOpen }) {
   const [rows, setRows] = useState([])
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const { ask, dialog } = useAcceptDays()
 
   const load = useCallback(() => api.listMyInvitations().then(setRows, (err) => setError(err.message)), [])
   useEffect(() => {
@@ -363,10 +435,15 @@ export function MyInvitations({ onOpen }) {
   const shown = rows.filter((i) => effectiveStatus(eventOf(i)) === 'active')
 
   async function answer(i, accept) {
+    let days = null
+    if (accept) {
+      days = await ask({ ...eventOf(i), name: i.event_name }, i.days)
+      if (!days) return
+    }
     setBusy(true)
     setError(null)
     try {
-      await api.respondToInvitation(i.id, accept)
+      await api.respondToInvitation(i.id, accept, days)
       await load()
     } catch (err) {
       setError(err.message)
@@ -382,16 +459,26 @@ export function MyInvitations({ onOpen }) {
     { title: 'Dates', key: 'dates', value: (i) => i.start_date, render: (_, i) => formatDateRange(i.start_date, i.end_date) },
     { title: 'Location', key: 'venue', render: (_, i) => i.venue || '—' },
     { title: 'Respond by', key: 'respond_by', value: (i) => i.respond_by ?? '', render: (_, i) => (i.respond_by ? formatDay(i.respond_by) : '—') },
-    { title: 'Your answer', key: 'answer', value: (i) => answerLabels[answerOf(i, i.timezone)], render: (_, i) => <AnswerBadge answer={answerOf(i, i.timezone)} /> },
+    {
+      title: 'Your answer', key: 'answer', value: (i) => answerLabels[answerOf(i, i.timezone)],
+      render: (_, i) => (
+        <Space size={4} wrap>
+          <AnswerBadge answer={answerOf(i, i.timezone)} />
+          {i.status === 'accepted' && i.start_date !== i.end_date && <Text type="secondary">{daysText(i, eventOf(i))}</Text>}
+        </Space>
+      ),
+    },
     {
       key: 'actions',
       className: 'actions',
       render: (_, i) => {
         if (!canAnswer(i, eventOf(i))) return null
         const current = answerOf(i, i.timezone)
+        const multiDay = i.start_date !== i.end_date
         return (
           <Space>
             {current !== 'accepted' && <Button size="small" type="primary" disabled={busy} onClick={() => answer(i, true)}>Accept</Button>}
+            {current === 'accepted' && multiDay && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days</Button>}
             {current !== 'declined' && <Button size="small" disabled={busy} onClick={() => answer(i, false)}>Decline</Button>}
           </Space>
         )
@@ -401,8 +488,9 @@ export function MyInvitations({ onOpen }) {
 
   return (
     <Section title="Your invitations to officiate">
+      {dialog}
       <ErrorAlert>{error}</ErrorAlert>
-      <Muted>You can change your answer until the event's first day.</Muted>
+      <Muted>On a multi-day event, accept for the days you can work. You can change your answer or your days until the event's first day.</Muted>
       <DataTable rowKey="id" columns={columns} dataSource={shown} />
     </Section>
   )

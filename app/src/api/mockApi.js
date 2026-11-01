@@ -12,7 +12,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v9' // v9: official invitations
+const DATA_KEY = 'mock-data-v10' // v10: officials accept for chosen days
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -82,8 +82,8 @@ function seed() {
     ],
     lateEntries: [],
     officialInvitations: [
-      { id: 'invite-1', event_id: 'event-1', official_id: 'official-3', status: 'accepted', respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
-      { id: 'invite-2', event_id: 'event-1', official_id: 'official-4', status: 'accepted', respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
+      { id: 'invite-1', event_id: 'event-1', official_id: 'official-3', status: 'accepted', days: [start, addDays(start, 1)], respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
+      { id: 'invite-2', event_id: 'event-1', official_id: 'official-4', status: 'accepted', days: [start], respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
       { id: 'invite-3', event_id: 'event-1', official_id: 'official-1', status: 'declined', respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
       { id: 'invite-4', event_id: 'event-1', official_id: 'official-2', status: 'pending', respond_by: addDays(today, 7), invited_at: new Date().toISOString(), responded_at: null },
     ],
@@ -173,6 +173,9 @@ const isOfficial = (current, eventId) => isSiteAdmin() || Boolean(officialRole(c
 // Mirrors is_accepted_official.
 const acceptedOfficial = (current, eventId) => (current.officialInvitations ?? []).some((i) => i.event_id === eventId && i.status === 'accepted'
   && current.officials.find((o) => o.id === i.official_id)?.user_id === currentUserId())
+// Mirrors my_official_days.
+const myDays = (current, eventId) => (current.officialInvitations ?? []).find((i) => i.event_id === eventId && i.status === 'accepted'
+  && current.officials.find((o) => o.id === i.official_id)?.user_id === currentUserId())?.days ?? []
 const userAccepted = (current, eventId, userId) => (current.officialInvitations ?? []).some((i) => i.event_id === eventId && i.status === 'accepted'
   && current.officials.find((o) => o.id === i.official_id)?.user_id === userId)
 function canSee(current, eventId) {
@@ -895,11 +898,11 @@ export const mockApi = {
 
   async getBouts(eventId) {
     const current = data()
-    if (!canSee(current, eventId)) return { officials: [], bouts: [], weighIns: [], acceptedOfficial: false }
+    if (!canSee(current, eventId)) return { officials: [], bouts: [], weighIns: [], acceptedDays: [] }
     const officials = current.eventOfficials
       .filter((o) => o.event_id === eventId)
       .map((o) => ({ ...o, user: findUser(current, o.user_id) }))
-    if (!canSeeEntries(current, eventId)) return { officials, bouts: [], weighIns: [], acceptedOfficial: false }
+    if (!canSeeEntries(current, eventId)) return { officials, bouts: [], weighIns: [], acceptedDays: [] }
     const athlete = (id) => {
       const a = current.athletes.find((x) => x.id === id)
       return a ? { id: a.id, name: a.name } : null
@@ -914,7 +917,7 @@ export const mockApi = {
         blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
       }))
-    return { officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedOfficial: acceptedOfficial(current, eventId) }
+    return { officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId) }
   },
 
   async setEventOfficial(eventId, role, userId) {
@@ -992,7 +995,7 @@ export const mockApi = {
     return sent
   },
 
-  async respondToInvitation(invitationId, accept) {
+  async respondToInvitation(invitationId, accept, days) {
     const current = data()
     const invite = current.officialInvitations.find((i) => i.id === invitationId)
     if (!invite) throw new Error('That invitation has been cancelled')
@@ -1004,7 +1007,13 @@ export const mockApi = {
     if (invite.status === 'pending' && invite.respond_by && today > invite.respond_by) {
       throw new Error('The respond-by date has passed. Ask the event\'s Owner to invite you again.')
     }
+    let chosen = null
+    if (accept) {
+      chosen = [...new Set(days?.length ? days : daysBetween(event.start_date, event.end_date))].sort()
+      if (chosen.some((d) => d < event.start_date || d > event.end_date)) throw new Error('Pick days of the event')
+    }
     invite.status = accept ? 'accepted' : 'declined'
+    invite.days = chosen
     invite.responded_at = now()
     if (!accept) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === event.id && o.user_id === official.user_id))
     write(DATA_KEY, current)
@@ -1118,7 +1127,7 @@ export const mockApi = {
   async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
     const current = data()
     const event = findEvent(current, eventId)
-    if (!isOfficial(current, eventId) && !acceptedOfficial(current, eventId)) throw new Error('Only the event\'s officials record the weigh-in')
+    if (!isOfficial(current, eventId) && !myDays(current, eventId).includes(day)) throw new Error('Only the event\'s officials record the weigh-in, on the days they officiate')
     if (!cardOpen(event)) throw new Error('The weigh-in can be recorded only while the event is Active')
     if (!current.eventAthletes.some((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)) throw new Error('That athlete isn\'t entered in the event')
     const kg = weightKg === '' || weightKg == null ? null : Number(weightKg)

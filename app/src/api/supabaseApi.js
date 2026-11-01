@@ -460,13 +460,14 @@ export const supabaseApi = {
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
       supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
-      supabase.rpc('is_accepted_official', { p_event_id: eventId }),
+      supabase.rpc('my_official_days', { p_event_id: eventId }),
     ])
     const failed = officials.error || bouts.error || weighIns.error || accepted.error
     if (failed) throw failed
     return {
       officials: officials.data,
-      acceptedOfficial: Boolean(accepted.data),
+      // Days the signed-in user accepted to officiate (they record those days' weigh-ins).
+      acceptedDays: accepted.data ?? [],
       bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
       weighIns: weighIns.data,
     }
@@ -500,8 +501,9 @@ export const supabaseApi = {
     return rpc('invite_officials', { p_event_id: eventId, p_official_ids: officialIds, p_respond_by: respondBy || null })
   },
 
-  async respondToInvitation(invitationId, accept) {
-    await rpc('respond_to_invitation', { p_invitation_id: invitationId, p_accept: accept })
+  // days: the days accepted ('YYYY-MM-DD'); left out means every day of the event.
+  async respondToInvitation(invitationId, accept, days) {
+    await rpc('respond_to_invitation', { p_invitation_id: invitationId, p_accept: accept, p_days: accept && days?.length ? days : null })
   },
 
   async cancelInvitation(invitationId) {
