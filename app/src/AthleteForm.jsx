@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { Button, Input } from 'antd'
 import { athleteProblems, genders } from './athletes'
+import { DateInput, Field, FormCard, FormMessage, NumberInput, Pick } from './ui'
 
 const fromAthlete = (a) => ({
   name: a?.name ?? '',
@@ -50,49 +52,52 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
     }
   }
 
-  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  const set = (key) => (value) => setForm({ ...form, [key]: value })
+  const text = (key) => ({ value: form[key], onChange: (e) => set(key)(e.target.value) })
   const activeUsers = (users ?? []).filter((u) => u.id && u.state === 'Active')
 
   return (
     <>
-      <form onSubmit={save} className="row-form">
-        <h2>{title ?? (editing ? `Edit ${athlete.name}` : 'Add an athlete')}</h2>
-        <label>Name<input required {...field('name')} /></label>
+      <FormCard
+        title={title ?? (editing ? `Edit ${athlete.name}` : 'Add an athlete')}
+        onSubmit={save}
+        actions={
+          <>
+            <Button type="primary" htmlType="submit" loading={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add athlete'}</Button>
+            {onCancel && <Button onClick={onCancel}>Cancel</Button>}
+          </>
+        }
+      >
+        <Field label="Name"><Input required {...text('name')} /></Field>
         {!editing && (
-          <label>Email <span className="muted">(optional, lets them sign in)</span><input type="email" {...field('email')} /></label>
+          <Field label="Email" hint="optional, lets them sign in"><Input type="email" {...text('email')} /></Field>
         )}
-        <label>
-          Coach <span className="muted">(optional)</span>
-          <select {...field('coachId')}>
-            <option value="">No coach</option>
-            {activeUsers.map((u) => (
-              <option key={u.id} value={u.id}>{u.name || u.email}</option>
-            ))}
-          </select>
-        </label>
-        <label>Date of birth<input type="date" required {...field('dateOfBirth')} /></label>
-        <label>
-          Gender
-          <select required {...field('gender')}>
-            <option value="">Choose…</option>
-            {genders.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </label>
-        <label>Weight (kg)<input type="number" required min="20" max="200" step="0.1" {...field('weightKg')} /></label>
-        <label>Experience (bouts)<input type="number" required min="0" max="1000" step="1" {...field('bouts')} /></label>
+        <Field label="Coach" hint="optional">
+          <Pick
+            allowEmpty
+            value={form.coachId}
+            onChange={set('coachId')}
+            options={[{ value: '', label: 'No coach' }, ...activeUsers.map((u) => ({ value: u.id, label: u.name || u.email }))]}
+          />
+        </Field>
+        <Field label="Date of birth"><DateInput value={form.dateOfBirth} onChange={set('dateOfBirth')} placeholder="YYYY-MM-DD" /></Field>
+        <Field label="Gender">
+          <Pick value={form.gender} onChange={set('gender')} placeholder="Choose…" options={genders.map(([value, label]) => ({ value, label }))} />
+        </Field>
+        <Field label="Weight (kg)"><NumberInput min={20} max={200} step={0.1} value={form.weightKg} onChange={set('weightKg')} /></Field>
+        <Field label="Experience (bouts)"><NumberInput min={0} max={1000} step={1} precision={0} value={form.bouts} onChange={set('bouts')} /></Field>
         {clubs && !editing && (
-          <label>
-            Club
-            <select required {...field('clubId')}>
-              <option value="">{clubs.length ? 'Choose a club…' : 'Create a club first'}</option>
-              {clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </label>
+          <Field label="Club">
+            <Pick
+              value={form.clubId}
+              onChange={set('clubId')}
+              placeholder={clubs.length ? 'Choose a club…' : 'Create a club first'}
+              options={clubs.map((c) => ({ value: c.id, label: c.name }))}
+            />
+          </Field>
         )}
-        <button type="submit" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Add athlete'}</button>
-        {onCancel && <button type="button" className="secondary" onClick={onCancel}>Cancel</button>}
-      </form>
-      {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
+      </FormCard>
+      <FormMessage message={message} />
     </>
   )
 }

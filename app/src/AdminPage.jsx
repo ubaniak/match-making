@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Input, Table, Tabs } from 'antd'
 import { api } from './api'
 import CsvImport from './CsvImport'
 import AthleteForm from './AthleteForm'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
+import { dash, tableProps } from './dialogs'
+import { Badge, ErrorAlert, Field, FormCard, FormMessage, Muted, PageHeading, Section } from './ui'
 
 const tabs = [
   ['users', 'Users'],
@@ -15,12 +18,8 @@ export default function AdminPage() {
 
   return (
     <main className="panel">
-      <h1>Admin</h1>
-      <nav className="tabs">
-        {tabs.map(([key, label]) => (
-          <button key={key} className={tab === key ? 'tab active' : 'tab'} onClick={() => setTab(key)}>{label}</button>
-        ))}
-      </nav>
+      <PageHeading title="Admin" />
+      <Tabs activeKey={tab} onChange={setTab} items={tabs.map(([key, label]) => ({ key, label }))} />
       {tab === 'users' && <Users />}
       {tab === 'athletes' && <Athletes />}
       {tab === 'officials' && <Officials />}
@@ -76,49 +75,37 @@ function Users() {
     reload()
   }
 
+  const columns = [
+    { title: 'Name', key: 'name', render: (_, u) => dash(u.name) },
+    { title: 'Email', dataIndex: 'email', key: 'email' },
+    { title: 'Account', key: 'role', render: (_, u) => dash(u.role_name) },
+    { title: 'Status', key: 'state', render: (_, u) => <Badge muted={u.state !== 'Active'}>{u.state}</Badge> },
+  ]
+
   return (
     <section>
-      <form onSubmit={addUser} className="row-form">
-        <h2>Add a user</h2>
-        <label>
-          Name
-          <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        </label>
-        <label>
-          Email
-          <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        </label>
-        <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add user'}</button>
-      </form>
-      {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
-      <p className="muted">
+      <FormCard
+        title="Add a user"
+        onSubmit={addUser}
+        actions={<Button type="primary" htmlType="submit" loading={saving}>{saving ? 'Adding…' : 'Add user'}</Button>}
+      >
+        <Field label="Name"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
+        <Field label="Email"><Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+      </FormCard>
+      <FormMessage message={message} />
+      <Muted>
         Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
-      </p>
+      </Muted>
       <CsvImport kind="users" importRow={api.addUser} onDone={reload} />
 
-      <h2>Users</h2>
-      {error && <p className="error">{error}</p>}
-      {users.length === 0 ? (
-        <p className="muted">No users yet.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr><th>Name</th><th>Email</th><th>Account</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.email}>
-                  <td>{u.name || '—'}</td>
-                  <td>{u.email}</td>
-                  <td>{u.role_name || '—'}</td>
-                  <td><span className={`badge ${u.state.toLowerCase()}`}>{u.state}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Section title="Users">
+        <ErrorAlert>{error}</ErrorAlert>
+        {users.length === 0 ? (
+          <Muted>No users yet.</Muted>
+        ) : (
+          <Table {...tableProps} rowKey="email" columns={columns} dataSource={users} />
+        )}
+      </Section>
     </section>
   )
 }
@@ -144,6 +131,17 @@ function Athletes() {
     reload()
   }, [reload])
 
+  const columns = [
+    { title: 'Name', dataIndex: 'name', key: 'name' },
+    { title: 'Born', key: 'born', render: (_, a) => dash(a.date_of_birth) },
+    { title: 'Gender', key: 'gender', render: (_, a) => genderLabel(a.gender) },
+    { title: 'Weight', key: 'weight', render: (_, a) => formatWeight(a.weight_kg) },
+    { title: 'Experience', key: 'bouts', render: (_, a) => formatBouts(a.bouts) },
+    { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
+    { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
+    { title: 'Login', key: 'login', render: (_, a) => <LoginBadge record={a} /> },
+  ]
+
   return (
     <section>
       <AthleteForm
@@ -155,9 +153,9 @@ function Athletes() {
         }}
       />
       {users.some((u) => !u.id) && (
-        <p className="muted">Invited users appear in the coach list once they've signed in.</p>
+        <Muted>Invited users appear in the coach list once they've signed in.</Muted>
       )}
-      <p className="muted">Clubs are made on the Clubs page. To move an athlete to another club, open their club there.</p>
+      <Muted>Clubs are made on the Clubs page. To move an athlete to another club, open their club there.</Muted>
       <CsvImport
         kind="athletes"
         context={{
@@ -172,41 +170,22 @@ function Athletes() {
         }}
       />
 
-      <h2>Athletes</h2>
-      {error && <p className="error">{error}</p>}
-      {athletes.length === 0 ? (
-        <p className="muted">No athletes yet.</p>
-      ) : (
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr><th>Name</th><th>Born</th><th>Gender</th><th>Weight</th><th>Experience</th><th>Club</th><th>Coach</th><th>Login</th></tr>
-            </thead>
-            <tbody>
-              {athletes.map((a) => (
-                <tr key={a.id}>
-                  <td>{a.name}</td>
-                  <td>{a.date_of_birth || '—'}</td>
-                  <td>{genderLabel(a.gender)}</td>
-                  <td>{formatWeight(a.weight_kg)}</td>
-                  <td>{formatBouts(a.bouts)}</td>
-                  <td>{a.club || '—'}</td>
-                  <td>{a.coach ? a.coach.name || a.coach.email : '—'}</td>
-                  <td><LoginBadge record={a} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Section title="Athletes">
+        <ErrorAlert>{error}</ErrorAlert>
+        {athletes.length === 0 ? (
+          <Muted>No athletes yet.</Muted>
+        ) : (
+          <Table {...tableProps} rowKey="id" columns={columns} dataSource={athletes} />
+        )}
+      </Section>
     </section>
   )
 }
 
 // Whether a person's record is linked to a login yet.
 function LoginBadge({ record }) {
-  if (record.user_id) return <span className="badge active">{record.invite_email || 'Linked'}</span>
-  if (record.invite_email) return <span className="badge invited">{record.invite_email}</span>
+  if (record.user_id) return <Badge>{record.invite_email || 'Linked'}</Badge>
+  if (record.invite_email) return <Badge muted>{record.invite_email}</Badge>
   return '—'
 }
 
@@ -254,16 +233,24 @@ function Officials() {
 
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
 
+  const columns = [
+    { title: 'Name', dataIndex: 'name', key: 'name' },
+    { title: 'Qualifications', key: 'q', render: (_, o) => dash(o.qualifications) },
+    { title: 'Login', key: 'login', render: (_, o) => <LoginBadge record={o} /> },
+  ]
+
   return (
     <section>
-      <form onSubmit={addOfficial} className="row-form">
-        <h2>Add an official</h2>
-        <label>Name<input required {...field('name')} /></label>
-        <label>Email<input type="email" required {...field('email')} /></label>
-        <label>Qualifications<input {...field('qualifications')} /></label>
-        <button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add official'}</button>
-      </form>
-      {message && <p className={message.error ? 'error' : 'success'}>{message.text}</p>}
+      <FormCard
+        title="Add an official"
+        onSubmit={addOfficial}
+        actions={<Button type="primary" htmlType="submit" loading={saving}>{saving ? 'Adding…' : 'Add official'}</Button>}
+      >
+        <Field label="Name"><Input required {...field('name')} /></Field>
+        <Field label="Email"><Input type="email" required {...field('email')} /></Field>
+        <Field label="Qualifications"><Input {...field('qualifications')} /></Field>
+      </FormCard>
+      <FormMessage message={message} />
       <CsvImport
         kind="officials"
         context={{ existingEmails: new Set(officials.map((o) => o.invite_email).filter(Boolean)) }}
@@ -271,26 +258,14 @@ function Officials() {
         onDone={reload}
       />
 
-      <h2>Officials</h2>
-      {error && <p className="error">{error}</p>}
-      {officials.length === 0 ? (
-        <p className="muted">No officials yet.</p>
-      ) : (
-        <table>
-          <thead>
-            <tr><th>Name</th><th>Qualifications</th><th>Login</th></tr>
-          </thead>
-          <tbody>
-            {officials.map((o) => (
-              <tr key={o.id}>
-                <td>{o.name}</td>
-                <td>{o.qualifications || '—'}</td>
-                <td><LoginBadge record={o} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <Section title="Officials">
+        <ErrorAlert>{error}</ErrorAlert>
+        {officials.length === 0 ? (
+          <Muted>No officials yet.</Muted>
+        ) : (
+          <Table {...tableProps} rowKey="id" columns={columns} dataSource={officials} />
+        )}
+      </Section>
     </section>
   )
 }
