@@ -75,7 +75,7 @@ export default function AdminPage() {
 function TestData() {
   const [busy, setBusy] = useState(null) // 'seed' or 'clear' while running
   const [message, setMessage] = useState(null)
-  const counts = (c) => `${c.events} events, ${c.clubs} clubs and ${c.athletes} athletes`
+  const counts = (c) => `${c.events} events, ${c.clubs} clubs, ${c.athletes} athletes and ${c.accounts ?? 0} demo accounts`
 
   async function run(kind) {
     setBusy(kind)
@@ -93,10 +93,22 @@ function TestData() {
   return (
     <Section title="Test data">
       <Muted>
-        Loads two Active events you own: TEST One-Day Card on 1 January 3000 with 20 athletes entered, and
+        Loads two Active events: TEST One-Day Card on 1 January 3000 with 20 athletes entered, and
         TEST Multi-Day Open from 8 to 10 January 3000 with 100. Both have the same 5 TEST clubs. Birth dates
         are in the 2950s to 2990s so the athletes fall into every age group in year 3000. Clearing removes
-        every event, athlete and club whose name starts with &ldquo;TEST &rdquo;, with their bouts and results.
+        every event, athlete, club and official whose name starts with &ldquo;TEST &rdquo;, with their bouts and results,
+        and the demo accounts.
+      </Muted>
+      <Muted>
+        It also makes three demo accounts. Each signs in with the code <strong>123456</strong>, and no email is sent:
+      </Muted>
+      <ul>
+        <li><strong>event-owner@demo.test</strong>: Owner of both TEST events</li>
+        <li><strong>club-owner@demo.test</strong>: Owner of TEST North End Boxing</li>
+        <li><strong>official@demo.test</strong>: an official accepted for every day of both events, and their Chief Official</li>
+      </ul>
+      <Muted>
+        Anyone who knows these can sign in as them while test data is loaded, so clear it when you&rsquo;re done.
       </Muted>
       <Space style={{ marginTop: 16 }}>
         <Popconfirm title="Load test data?" okText="Load" cancelText="Cancel" onConfirm={() => run('seed')}>
@@ -104,7 +116,7 @@ function TestData() {
         </Popconfirm>
         <Popconfirm
           title="Clear test data?"
-          description="Everything named TEST is deleted, including bouts and results. This can't be undone."
+          description="Everything named TEST and the demo accounts are deleted, including bouts and results. This can't be undone."
           okText="Clear"
           okButtonProps={{ danger: true }}
           cancelText="Cancel"

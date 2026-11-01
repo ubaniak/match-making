@@ -850,8 +850,22 @@ export const mockApi = {
       current.athletes.push(athlete)
       current.eventAthletes.push({ event_id: events[ev].id, athlete_id: athlete.id, club_id: athlete.club_id, added_by: owner })
     }
+    // Demo accounts, as migration 20 makes them. In demo mode, use "Viewing as" to try them.
+    const demo = [['demo-event-owner', 'event-owner@demo.test', 'TEST Demo Event Owner'], ['demo-club-owner', 'club-owner@demo.test', 'TEST Demo Club Owner'], ['demo-official', 'official@demo.test', 'TEST Demo Official']]
+    demo.forEach(([id, email, name]) => current.users.push({ id, email, name, state: 'Active' }))
+    current.eventMembers = current.eventMembers.filter((m) => !Object.values(events).some((e) => e.id === m.event_id))
+    const official = { id: crypto.randomUUID(), name: 'TEST Demo Official', qualifications: 'Level 3 referee', invite_email: 'official@demo.test', user_id: 'demo-official' }
+    current.officials.push(official)
+    current.officialInvitations = current.officialInvitations ?? []
+    current.eventOfficials = current.eventOfficials ?? []
+    for (const event of Object.values(events)) {
+      current.eventMembers.push({ event_id: event.id, user_id: 'demo-event-owner', role: 'owner' })
+      current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), respond_by: null, invited_at: now(), responded_at: now() })
+      current.eventOfficials.push({ event_id: event.id, role: 'chief', user_id: 'demo-official' })
+    }
+    current.clubMembers.push({ club_id: clubIds['TEST North End Boxing'], user_id: 'demo-club-owner', role: 'owner', status: 'active' })
     write(DATA_KEY, current)
-    return { events: 2, clubs: testClubs.length, athletes: testRoster.length }
+    return { events: 2, clubs: testClubs.length, athletes: testRoster.length, accounts: demo.length }
   },
 
   async clearTestData() {
@@ -861,7 +875,8 @@ export const mockApi = {
     const eventIds = new Set(current.events.filter(isTest).map((e) => e.id))
     const athleteIds = new Set(current.athletes.filter(isTest).map((a) => a.id))
     const clubIds = new Set(current.clubs.filter(isTest).map((c) => c.id))
-    const counts = { events: eventIds.size, clubs: clubIds.size, athletes: athleteIds.size }
+    const demoIds = new Set(current.users.filter((u) => u.email.endsWith('@demo.test')).map((u) => u.id))
+    const counts = { events: eventIds.size, clubs: clubIds.size, athletes: athleteIds.size, accounts: demoIds.size }
     const keep = (list, test) => (list ?? []).filter((x) => !test(x))
     current.events = keep(current.events, (e) => eventIds.has(e.id))
     for (const key of ['eventMembers', 'eventClubs', 'lateEntries', 'officialInvitations', 'eventOfficials', 'weighIns']) {
@@ -873,6 +888,13 @@ export const mockApi = {
     current.athletes = keep(current.athletes, (a) => athleteIds.has(a.id))
     current.clubMembers = keep(current.clubMembers, (m) => clubIds.has(m.club_id))
     current.clubs = keep(current.clubs, (c) => clubIds.has(c.id))
+    const officialIds = new Set(current.officials.filter(isTest).map((o) => o.id))
+    current.officialInvitations = keep(current.officialInvitations, (i) => officialIds.has(i.official_id))
+    current.officials = keep(current.officials, (o) => officialIds.has(o.id))
+    current.users = keep(current.users, (u) => demoIds.has(u.id))
+    current.eventMembers = keep(current.eventMembers, (m) => demoIds.has(m.user_id))
+    current.clubMembers = keep(current.clubMembers, (m) => demoIds.has(m.user_id))
+    current.eventOfficials = keep(current.eventOfficials, (o) => demoIds.has(o.user_id))
     write(DATA_KEY, current)
     return counts
   },
@@ -1227,7 +1249,7 @@ export const mockApi = {
     return bout.id
   },
 
-  // Mirrors request_bout_approvals (migration 18).
+  // Mirrors request_bout_approvals (migration 20).
   async requestBoutApprovals(boutIds) {
     const current = data()
     const bouts = boutIds.map((id) => findBout(current, id))
