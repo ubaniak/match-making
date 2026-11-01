@@ -146,6 +146,7 @@ function setSession(session) {
   listeners.forEach((callback) => callback(session))
 }
 
+const roleNames = { admin: 'Admins', user: 'Users', official: 'Officials', public: 'Public' }
 const byName = (a, b) => (a.name || a.email).localeCompare(b.name || b.email)
 
 function currentUserId() {
@@ -339,8 +340,41 @@ export const mockApi = {
     const current = data()
     return [
       { ...adminUser, role_id: 'admin', role_name: 'Admins' },
-      ...current.users.map((u) => ({ ...u, role_id: 'user', role_name: 'Users' })),
+      ...current.users.map((u) => ({ ...u, role_id: u.role_id ?? 'user', role_name: roleNames[u.role_id ?? 'user'] })),
     ].sort(byName)
+  },
+
+  async updateUser(user, { name, email, roleId, status }) {
+    if (user.id === ADMIN_ID) throw new Error('In demo mode the demo admin can\'t be changed')
+    const current = data()
+    const row = current.users.find((u) => (user.id ? u.id === user.id : !u.id && u.email === user.email))
+    if (!row) throw new Error('That user no longer exists')
+    row.name = name?.trim() || null
+    row.role_id = roleId
+    if (row.id) {
+      row.state = status === 'disabled' ? 'Disabled' : 'Active'
+    } else {
+      const clean = email.trim().toLowerCase()
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
+      row.email = clean
+    }
+    write(DATA_KEY, current)
+  },
+
+  async deleteUser(user) {
+    if (user.id === ADMIN_ID || user.id === currentUserId()) throw new Error('You can\'t delete your own account')
+    const current = data()
+    if (user.id && current.eventMembers.some((m) => m.user_id === user.id && m.role === 'owner')) {
+      throw new Error('This user owns an event. Change the event\'s Owner first, or disable the user instead.')
+    }
+    current.users = current.users.filter((u) => !(user.id ? u.id === user.id : !u.id && u.email === user.email))
+    if (user.id) {
+      current.eventMembers = current.eventMembers.filter((m) => m.user_id !== user.id)
+      current.clubMembers = current.clubMembers.filter((m) => m.user_id !== user.id)
+      current.eventOfficials = current.eventOfficials.filter((o) => o.user_id !== user.id)
+      current.officials.forEach((o) => { if (o.user_id === user.id) o.user_id = null })
+    }
+    write(DATA_KEY, current)
   },
 
   async addUser({ name, email }) {
@@ -569,6 +603,29 @@ export const mockApi = {
 
   async listOfficials() {
     return [...data().officials].sort(byName)
+  },
+
+  async updateOfficial(official, fields) {
+    if (fields.invite_email !== undefined && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fields.invite_email ?? '')) throw new Error('Officials need an email address')
+    const current = data()
+    const row = current.officials.find((o) => o.id === official.id)
+    if (!row) throw new Error('That official no longer exists')
+    if (fields.invite_email !== undefined && fields.invite_email !== row.invite_email) {
+      row.user_id = current.users.find((u) => u.id && u.email === fields.invite_email)?.id ?? null
+    }
+    Object.assign(row, fields)
+    write(DATA_KEY, current)
+  },
+
+  async deleteOfficial(officialId) {
+    const current = data()
+    const row = current.officials.find((o) => o.id === officialId)
+    if (!row) return
+    const events = new Set(current.officialInvitations.filter((i) => i.official_id === officialId).map((i) => i.event_id))
+    current.eventOfficials = current.eventOfficials.filter((o) => !(o.user_id === row.user_id && events.has(o.event_id)))
+    current.officialInvitations = current.officialInvitations.filter((i) => i.official_id !== officialId)
+    current.officials = current.officials.filter((o) => o.id !== officialId)
+    write(DATA_KEY, current)
   },
 
   async addOfficial(official) {
