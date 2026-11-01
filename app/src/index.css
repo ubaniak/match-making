@@ -1,17 +1,13 @@
+/* Plain black on white everywhere; no dark theme. */
 :root {
+  color-scheme: light;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  color: #1a1a1a;
-  background: #f4f4f5;
+  color: #000;
+  background: #fff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f4f4f5;
-    background: #18181b;
-  }
-  .card {
-    background: #27272a;
-  }
+a {
+  color: #000;
 }
 
 body {
@@ -40,17 +36,17 @@ button {
   padding: 0.6rem 1.2rem;
   border: none;
   border-radius: 8px;
-  background: #b91c1c;
+  background: #000;
   color: #fff;
   cursor: pointer;
 }
 
 button:hover {
-  background: #991b1b;
+  background: #333;
 }
 
 .error {
-  color: #dc2626;
+  color: #b00000;
 }
 
 button:disabled {
@@ -61,7 +57,7 @@ button:disabled {
 button.secondary {
   background: transparent;
   color: inherit;
-  border: 1px solid #a1a1aa;
+  border: 1px solid #000;
 }
 
 button.secondary:hover {
@@ -72,7 +68,7 @@ input,
 select {
   font: inherit;
   padding: 0.5rem 0.6rem;
-  border: 1px solid #a1a1aa;
+  border: 1px solid #000;
   border-radius: 8px;
   background: inherit;
   color: inherit;
@@ -84,11 +80,11 @@ select {
 }
 
 .muted {
-  color: #71717a;
+  color: #444;
 }
 
 .success {
-  color: #15803d;
+  color: #000;
 }
 
 /* Signed-in layout */
@@ -130,7 +126,7 @@ body:has(.page) {
 .tabs {
   display: flex;
   gap: 0.25rem;
-  border-bottom: 1px solid #d4d4d8;
+  border-bottom: 1px solid #000;
   margin-bottom: 1.5rem;
 }
 
@@ -146,7 +142,7 @@ body:has(.page) {
 }
 
 .tab.active {
-  border-bottom-color: #b91c1c;
+  border-bottom-color: #000;
   font-weight: 600;
 }
 
@@ -183,12 +179,12 @@ th,
 td {
   text-align: left;
   padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid #e4e4e7;
+  border-bottom: 1px solid #ccc;
 }
 
 th {
   font-size: 0.85rem;
-  color: #71717a;
+  color: #444;
 }
 
 .badge {
@@ -196,41 +192,24 @@ th {
   font-size: 0.8rem;
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
-  background: #e4e4e7;
-  color: #3f3f46;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
 }
 
 .badge.active {
-  background: #dcfce7;
-  color: #166534;
+  background: #fff;
+  color: #000;
 }
 
 .badge.invited {
-  background: #fef3c7;
-  color: #92400e;
+  background: #fff;
+  color: #000;
 }
 
 .badge.disabled {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-@media (prefers-color-scheme: dark) {
-  .topbar,
-  .row-form {
-    background: #27272a;
-  }
-  th,
-  td {
-    border-bottom-color: #3f3f46;
-  }
-  .tabs {
-    border-bottom-color: #3f3f46;
-  }
-  button.secondary:hover,
-  .tab:hover {
-    background: rgb(255 255 255 / 0.08);
-  }
+  background: #fff;
+  color: #333;
 }
 
 .demo-banner {
@@ -240,8 +219,8 @@ th {
   gap: 0.75rem;
   padding: 0.4rem 1rem;
   font-size: 0.9rem;
-  background: #fef3c7;
-  color: #92400e;
+  background: #fff;
+  color: #000;
 }
 
 button.link {
@@ -260,7 +239,7 @@ button.link:hover {
 .csv-import {
   margin-top: 1rem;
   padding: 0.75rem 1.25rem;
-  border: 1px dashed #a1a1aa;
+  border: 1px dashed #000;
   border-radius: 12px;
 }
 
@@ -280,13 +259,13 @@ button.link:hover {
   display: inline-block;
   padding: 0.6rem 1.2rem;
   border-radius: 8px;
-  background: #b91c1c;
+  background: #000;
   color: #fff;
   cursor: pointer;
 }
 
 .file-button:hover {
-  background: #991b1b;
+  background: #333;
 }
 
 .file-button input {
@@ -298,7 +277,7 @@ button.link:hover {
 }
 
 tr.row-error td {
-  background: rgb(220 38 38 / 0.08);
+  background: rgb(0 0 0 / 0.05);
 }
 
 code {
@@ -317,7 +296,7 @@ td.problems {
 }
 
 .nav .tab.active {
-  border-bottom: 2px solid #b91c1c;
+  border-bottom: 2px solid #000;
 }
 
 .heading-row {
@@ -343,8 +322,8 @@ button.link:disabled {
 }
 
 button.secondary.danger {
-  color: #dc2626;
-  border-color: #dc2626;
+  color: #b00000;
+  border-color: #b00000;
 }
 
 td .badge {
@@ -364,7 +343,7 @@ td.actions {
 
 .facts dt {
   font-size: 0.85rem;
-  color: #71717a;
+  color: #444;
 }
 
 .facts dd {
@@ -400,7 +379,7 @@ td.actions {
 
 .demo-banner select {
   padding: 0.15rem 0.4rem;
-  border-color: #d97706;
+  border-color: #000;
 }
 
 @media (max-width: 640px) {
@@ -418,18 +397,18 @@ td.actions button.link + button.link {
 }
 
 .badge.role-owner {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #fff;
+  color: #333;
 }
 
 .badge.role-admin {
-  background: #dbeafe;
-  color: #1e40af;
+  background: #fff;
+  color: #000;
 }
 
 .badge.role-coach {
-  background: #dcfce7;
-  color: #166534;
+  background: #fff;
+  color: #000;
 }
 
 td select {
@@ -441,34 +420,34 @@ td .badge.category {
 }
 
 .badge.category.open {
-  background: #dbeafe;
-  color: #1e40af;
+  background: #fff;
+  color: #000;
 }
 
 .badge.category.warning {
-  background: #fef3c7;
-  color: #92400e;
+  background: #fff;
+  color: #000;
 }
 
 /* Event lifecycle (stage 1) */
 .badge.status-requested {
-  background: #fef3c7;
-  color: #92400e;
+  background: #fff;
+  color: #000;
 }
 
 .badge.status-active {
-  background: #dcfce7;
-  color: #166534;
+  background: #fff;
+  color: #000;
 }
 
 .badge.status-done {
-  background: #e4e4e7;
-  color: #3f3f46;
+  background: #fff;
+  color: #000;
 }
 
 .badge.status-cancelled {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #fff;
+  color: #333;
 }
 
 .heading-row .badge {
@@ -476,15 +455,16 @@ td .badge.category {
 }
 
 .notice {
-  background: #dcfce7;
-  color: #166534;
+  border: 1px solid #000;
+  background: #fff;
+  color: #000;
   padding: 0.6rem 0.9rem;
   border-radius: 8px;
 }
 
 .notice.warning {
-  background: #fef3c7;
-  color: #92400e;
+  background: #fff;
+  color: #000;
 }
 
 .notice a,
@@ -503,7 +483,7 @@ td .badge.category {
 .file-button {
   display: inline-block;
   padding: 0.6rem 1.2rem;
-  border: 1px solid #a1a1aa;
+  border: 1px solid #000;
   border-radius: 8px;
   color: inherit;
   text-decoration: none;
@@ -516,7 +496,7 @@ td .badge.category {
 }
 
 button.link.danger {
-  color: #dc2626;
+  color: #b00000;
 }
 
 .row-form.compact {
@@ -578,30 +558,16 @@ button.link.danger {
   gap: 0.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  .public-event {
-    background: #27272a;
-  }
-  .notice {
-    background: #14532d;
-    color: #dcfce7;
-  }
-  .notice.warning {
-    background: #78350f;
-    color: #fef3c7;
-  }
-}
-
 /* Clubs (stage 2) */
 .badge.transfer-accepted,
 .badge.transfer-moved {
-  background: #dcfce7;
-  color: #166534;
+  background: #fff;
+  color: #000;
 }
 
 .badge.transfer-declined {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #fff;
+  color: #333;
 }
 
 td.actions button.link + span,
@@ -612,20 +578,20 @@ td.actions span + button.link {
 /* Entries (stage 3) */
 .badge.club-accepted,
 .badge.late-accepted {
-  background: #dcfce7;
-  color: #166534;
+  background: #fff;
+  color: #000;
 }
 
 .badge.club-requested,
 .badge.late-pending {
-  background: #fef3c7;
-  color: #92400e;
+  background: #fff;
+  color: #000;
 }
 
 .badge.club-declined,
 .badge.late-declined {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #fff;
+  color: #333;
 }
 
 .inline-edit {
