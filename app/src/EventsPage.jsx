@@ -4,6 +4,7 @@ import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
 import EventBouts from './Bouts'
+import { MyInvitations } from './Officials'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { categorise, compareByCategory } from './categories'
 import {
@@ -139,6 +140,7 @@ function EventList({ siteAdmin, profile, onOpen, onCreate }) {
         {siteAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={onCreate}>New event</Button>}
       </PageHeading>
       <ErrorAlert>{error}</ErrorAlert>
+      <MyInvitations onOpen={onOpen} />
       {events === null && !error && <Muted>Loading…</Muted>}
       {events?.length === 0 && (
         <Muted>

@@ -1,4 +1,4 @@
-// Stage 4 (plan/events.md sections 4 to 6): the event's officials, bout matching and
+// Stage 4 (plan/events.md sections 4 to 6): the event's officials (Officials.jsx), bout matching and
 // approvals, comments, the weigh-in, the card order and results.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import DataTable from './DataTable'
@@ -7,12 +7,12 @@ import { formatWeight } from './athletes'
 import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { checkMatch } from './matching'
+import { EventOfficials } from './Officials'
 import { Button, Card as AntCard, Collapse, Input, Space, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons'
 import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
-const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
 const statusLabels = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
 const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Official' }
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
@@ -66,69 +66,22 @@ export default function EventBouts({ event, may, clubs, profile, onEntriesChange
     siteAdmin: may.siteAdmin,
     owner: may.siteAdmin || may.role === 'owner',
     official: may.siteAdmin || Boolean(officialRole),
+    // The CO, the Deputy and every official who accepted record the weigh-in.
+    weighIn: may.siteAdmin || Boolean(officialRole) || Boolean(data.acceptedOfficial),
     officialRole,
     ownedClubs,
     cardOpen: event.status === 'active',
   }
-  const seesBouts = rights.owner || rights.official || event.athletes.length > 0
+  const seesBouts = rights.owner || rights.weighIn || event.athletes.length > 0
 
   return (
     <>
-      <Officials event={event} officials={data.officials} canEdit={may.edit} busy={busy} run={run} />
+      <EventOfficials event={event} may={may} officials={data.officials} busy={busy} run={run} />
       <ErrorAlert>{error}</ErrorAlert>
       {seesBouts && ['active', 'done'].includes(event.status) && (
         <Card event={event} data={data} rights={rights} busy={busy} run={run} />
       )}
     </>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Officials
-// ---------------------------------------------------------------------------
-
-function Officials({ event, officials, canEdit, busy, run }) {
-  const [users, setUsers] = useState([])
-  useEffect(() => {
-    if (canEdit) api.listUsers().then((all) => setUsers(all.filter((u) => u.id && u.state === 'Active')), () => setUsers([]))
-  }, [canEdit])
-  const byRole = Object.fromEntries(officials.map((o) => [o.role, o]))
-  const missing = ['chief', 'deputy'].filter((r) => !byRole[r])
-  const options = [{ value: '', label: 'Not chosen' }, ...users.map((u) => ({ value: u.id, label: u.name ? `${u.name} (${u.email})` : u.email }))]
-
-  return (
-    <Section title="Officials">
-      {missing.length > 0 && (
-        <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
-      )}
-      {canEdit ? (
-        <FormCard compact>
-          {['chief', 'deputy'].map((role) => (
-            <Field key={role} label={officialLabels[role]}>
-              <Pick
-                allowEmpty
-                aria-label={officialLabels[role]}
-                value={byRole[role]?.user_id ?? ''}
-                disabled={busy}
-                onChange={(value) => run(() => api.setEventOfficial(event.id, role, value))}
-                options={options}
-              />
-            </Field>
-          ))}
-        </FormCard>
-      ) : (
-        <AntCard size="small" className="form-card">
-          <Space size="large" wrap>
-            {['chief', 'deputy'].map((role) => (
-              <span key={role}>
-                <Text type="secondary">{officialLabels[role]}: </Text>
-                <Text strong>{byRole[role] ? personName(byRole[role].user) : 'Not chosen'}</Text>
-              </span>
-            ))}
-          </Space>
-        </AntCard>
-      )}
-    </Section>
   )
 }
 
@@ -222,10 +175,10 @@ function Card({ event, data, rights, busy, run }) {
         />
       )}
 
-      {rights.official && rights.cardOpen && (
+      {rights.weighIn && rights.cardOpen && (
         <WeighIn event={event} day={day} bouts={live} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
       )}
-      {!rights.official && weighIns.length > 0 && (
+      {!(rights.weighIn && rights.cardOpen) && weighIns.length > 0 && (
         <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
       )}
     </Section>
