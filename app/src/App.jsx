@@ -173,7 +173,11 @@ function Login() {
     return (
       <SignedOutCard title="Check your email">
         <form onSubmit={verifyCode} className="login-form">
-          <Paragraph>We sent a sign-in code to <strong>{sentTo}</strong>. Type it below, or click the link in the same email.</Paragraph>
+          {/@demo\.test$/i.test(sentTo) ? (
+            <Paragraph><strong>{sentTo}</strong> is a demo account from the test data. Type its demo code.</Paragraph>
+          ) : (
+            <Paragraph>We sent a sign-in code to <strong>{sentTo}</strong>. Type it below, or click the link in the same email.</Paragraph>
+          )}
           <Input
             size="large"
             required

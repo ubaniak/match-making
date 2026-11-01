@@ -33,6 +33,9 @@ Do these once, in this order. Everything is in the Supabase dashboard at https:/
    15. [`20261101070000_official_days.sql`](../supabase/migrations/20261101070000_official_days.sql): officials accept for chosen days or bout sessions (and record the weigh-in only on days they work), and the Chief Official and Deputy also see the officials lists
    16. [`20261101080000_full_crud.sql`](../supabase/migrations/20261101080000_full_crud.sql): site Admins can delete users (not themselves, the last Admin, or an event Owner), and deleting an official takes them off events where they were Chief Official or Deputy
    17. [`20261101090000_test_data.sql`](../supabase/migrations/20261101090000_test_data.sql): site Admins can load and clear TEST events, clubs and athletes from Admin > Test data (also `select public.seed_test_data();` / `select public.clear_test_data();` in the SQL Editor)
+   18. [`20261101100000_bout_approval_requests.sql`](../supabase/migrations/20261101100000_bout_approval_requests.sql)
+   19. [`20261101110000_public_bouts.sql`](../supabase/migrations/20261101110000_public_bouts.sql)
+   20. [`20261101120000_demo_accounts.sql`](../supabase/migrations/20261101120000_demo_accounts.sql): test data also makes three demo accounts (event-owner@demo.test, club-owner@demo.test, official@demo.test) that sign in with the code 123456; clearing test data deletes them. Needs 14-17 first
 
    Each file only runs once; running one again gives "already exists" errors. (With the Supabase CLI you can instead run `supabase link` then `supabase db push` from the repo root.)
 3. **Make yourself the site Admin.** Still in the SQL Editor, run this with your own email in lowercase, before you sign in for the first time:

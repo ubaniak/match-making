@@ -7,6 +7,10 @@ const eventColumns = `id, name, venue, start_date, end_date, status, poster_path
 
 const POSTERS = 'event-posters'
 
+// Demo accounts from "Load test data" (migration 20) sign in with the fixed code 123456, which is
+// really their password. Only these addresses ever try a password; nobody is emailed a code.
+const isDemoEmail = (email) => /@demo\.test$/i.test(email.trim())
+
 async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args)
   if (error) throw error
@@ -69,6 +73,7 @@ export const supabaseApi = {
   },
 
   async sendMagicLink(email) {
+    if (isDemoEmail(email)) return
     const { error } = await supabase.auth.signInWithOtp({
       email,
       // Come back to whatever URL the app is served from (local dev or GitHub Pages).
@@ -79,6 +84,11 @@ export const supabaseApi = {
 
   // Same email carries a 6-digit code and a link; either one signs you in.
   async verifyEmailCode(email, code) {
+    if (isDemoEmail(email)) {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: code })
+      if (error) throw new Error('That code is wrong, or the test data isn\'t loaded. A site Admin can load it from Admin > Test data.')
+      return
+    }
     const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' })
     if (error?.code === 'otp_expired' || /expired or is invalid/i.test(error?.message ?? '')) {
       throw new Error('That code is wrong or has expired. Use the newest email, or go back and send a new code.')
