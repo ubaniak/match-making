@@ -11,8 +11,8 @@ ideas that aren't part of the first build.
 | Site Admin | Users with the site `admin` role. They can do everything on the site. | Every event and club |
 | Event Owner | One user per event, assigned by a site Admin | Their event |
 | Club owner | Users a site Admin assigns to a club | Their club's athletes |
-| Chief Official (CO) and Deputy | Officials added to the event; every event needs one of each | Their event |
-| Event official | Other officials added to the event (**Later**) | Their event |
+| Chief Official (CO) and Deputy | Chosen from the event's officials; every event needs one of each | Their event |
+| Event official | An official who accepted the event's invitation | Their event |
 | Viewer | Anyone added as a viewer, and the public | Public page only |
 
 There is no event-level Admin: the `admin` role on event members (PR #8) goes away, and only
@@ -34,6 +34,27 @@ Event statuses are **Requested**, **Active**, **Done** and **Cancelled**.
    to cancel but can't do it themselves.
 7. An event becomes **Done** automatically the day after its end date. A site Admin can also mark
    it Done early.
+
+### Inviting officials
+
+Agreed with Bhavek on 2026-11-01.
+
+- Once the event is **Active**, the Owner or a site Admin invites officials. Anyone on the
+  Officials list (Admin page) with an email can be invited; one who has never signed in gets a
+  sign-in invite as well. Each invitation is emailed, with a ready-made email to send by hand if
+  the automatic one can't go out.
+- An invitation can have an optional **respond by** date. After it, an unanswered invitation
+  shows as **No response** and can't be accepted until the Owner re-invites.
+- The official accepts or declines from the Events page. They can change their answer until the
+  event's first day.
+- The Owner can re-invite an official who declined or didn't respond, and can cancel an
+  invitation or remove an official at any time.
+- The event shows how many officials accepted, declined and haven't answered, with a list of each.
+  Only the Owner and site Admins see the lists; an official sees their own invitation.
+- The Chief Official and Deputy are chosen from the officials who accepted. An official who
+  declines or is removed stops being CO or Deputy.
+- Every official who accepted can record the weigh-in (section 5).
+- **Later:** officials asking to join an event.
 
 ### Day times
 
@@ -107,9 +128,8 @@ applies them like this:
 
 ## 5. Weigh-in and medicals
 
-- On weigh-in day, any official added to the event records each athlete's actual weight and a
-  medical **pass** or **fail** with a note. (Until event officials are added, this is the CO and
-  Deputy.)
+- On weigh-in day, any official who accepted the event's invitation (including the CO and Deputy)
+  records each athlete's actual weight and a medical **pass** or **fail** with a note.
 - Every bout is checked again against the actual weights. A bout that fails is cancelled and
   pulled off the card. An athlete who fails the medical or doesn't show up comes off their bouts
   the same way.
@@ -128,25 +148,27 @@ applies them like this:
 
 ## Who can do what
 
-| Action | Site Admin | Owner | Club owner | CO / Deputy |
-|--------|:-:|:-:|:-:|:-:|
-| Create, approve, cancel, close event | ✓ | | | |
-| Edit details, times, poster | ✓ | ✓ | | |
-| Invite clubs, accept join and late-entry requests | ✓ | ✓ | | |
-| Submit, withdraw own athletes; suggest opponents | ✓ | | ✓ | |
-| Match bouts, set order | ✓ | ✓ | | |
-| Approve or reject a bout as coach | ✓ | | ✓ (own athletes) | |
-| Official approval; unlock U17 v U19 | ✓ | | | ✓ |
-| Record weights and medicals | ✓ | | | ✓ |
-| Re-match after weigh-in; override coach approval | ✓ | | | ✓ |
-| Record results | ✓ | | | ✓ |
-| Comment on a match-up | ✓ | ✓ | ✓ | ✓ |
+| Action | Site Admin | Owner | Club owner | CO / Deputy | Event official |
+|--------|:-:|:-:|:-:|:-:|:-:|
+| Create, approve, cancel, close event | ✓ | | | | |
+| Edit details, times, poster | ✓ | ✓ | | | |
+| Invite officials; choose CO and Deputy | ✓ | ✓ | | | |
+| Accept or decline an invitation | | | | ✓ | ✓ |
+| Invite clubs, accept join and late-entry requests | ✓ | ✓ | | | |
+| Submit, withdraw own athletes; suggest opponents | ✓ | | ✓ | | |
+| Match bouts, set order | ✓ | ✓ | | | |
+| Approve or reject a bout as coach | ✓ | | ✓ (own athletes) | | |
+| Official approval; unlock U17 v U19 | ✓ | | | ✓ | |
+| Record weights and medicals | ✓ | | | ✓ | ✓ |
+| Re-match after weigh-in; override coach approval | ✓ | | | ✓ | |
+| Record results | ✓ | | | ✓ | |
+| Comment on a match-up | ✓ | ✓ | ✓ | ✓ | |
 
 A site Admin can do anything on the site, including every action above.
 
 ## Later
 
-- Event officials beyond the CO and Deputy.
+- Officials asking to join an event.
 - Assigning referees and judges to bouts.
 - Tournament mode (brackets across days).
 - Showing the approved bout list on the public page.

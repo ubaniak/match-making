@@ -13,6 +13,20 @@ async function rpc(name, args) {
   return data
 }
 
+// Calls the send-event-email Edge Function and turns its error into a readable message.
+async function invokeEmail(body) {
+  const { error } = await supabase.functions.invoke('send-event-email', { body })
+  if (error) {
+    let message = error.message
+    try {
+      message = (await error.context.json()).error || message
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(message)
+  }
+}
+
 // Athletes carry their club's name as `club` so pages can show it directly.
 const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id,
   club_ref:clubs(name), coach:profiles!athletes_coach_id_fkey(name, email)`
@@ -336,16 +350,7 @@ export const supabaseApi = {
 
   // Emails the Owner "You have Requested an event". Needs the send-event-email Edge Function.
   async emailEventOwner(eventId) {
-    const { error } = await supabase.functions.invoke('send-event-email', { body: { event_id: eventId } })
-    if (error) {
-      let message = error.message
-      try {
-        message = (await error.context.json()).error || message
-      } catch {
-        // keep the generic message
-      }
-      throw new Error(message)
-    }
+    await invokeEmail({ event_id: eventId })
   },
 
   posterUrl(path) {
@@ -446,7 +451,7 @@ export const supabaseApi = {
 
   // The event's officials, bouts (with approvals and comments) and weigh-ins.
   async getBouts(eventId) {
-    const [officials, bouts, weighIns] = await Promise.all([
+    const [officials, bouts, weighIns, accepted] = await Promise.all([
       supabase.from('event_officials').select('role, user_id, user:profiles!event_officials_user_id_fkey(id, name, email)').eq('event_id', eventId),
       supabase.from('bouts').select(`*,
         red:athletes!bouts_red_athlete_id_fkey(id, name), blue:athletes!bouts_blue_athlete_id_fkey(id, name),
@@ -455,11 +460,13 @@ export const supabaseApi = {
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
       supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
+      supabase.rpc('is_accepted_official', { p_event_id: eventId }),
     ])
-    const failed = officials.error || bouts.error || weighIns.error
+    const failed = officials.error || bouts.error || weighIns.error || accepted.error
     if (failed) throw failed
     return {
       officials: officials.data,
+      acceptedOfficial: Boolean(accepted.data),
       bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
       weighIns: weighIns.data,
     }
@@ -467,6 +474,43 @@ export const supabaseApi = {
 
   async setEventOfficial(eventId, role, userId) {
     await rpc('set_event_official', { p_event_id: eventId, p_role: role, p_user_id: userId || null })
+  },
+
+  // ---------------------------------------------------------------------------
+  // Official invitations (plan/events.md, "Inviting officials")
+  // ---------------------------------------------------------------------------
+
+  // Everyone on the Officials list with an email: [{ id, name, email, signed_in }]. Owner or site Admin.
+  async listInvitableOfficials(eventId) {
+    return rpc('list_invitable_officials', { p_event_id: eventId })
+  },
+
+  // The event's invitations, for its Owner and site Admins (empty for anyone else).
+  async listEventInvitations(eventId) {
+    return rpc('list_event_invitations', { p_event_id: eventId })
+  },
+
+  // The signed-in user's own invitations, with each event's name, dates and status.
+  async listMyInvitations() {
+    return rpc('list_my_invitations')
+  },
+
+  // Returns the ids of the invitations sent (officials who already accepted are skipped).
+  async inviteOfficials(eventId, officialIds, respondBy) {
+    return rpc('invite_officials', { p_event_id: eventId, p_official_ids: officialIds, p_respond_by: respondBy || null })
+  },
+
+  async respondToInvitation(invitationId, accept) {
+    await rpc('respond_to_invitation', { p_invitation_id: invitationId, p_accept: accept })
+  },
+
+  async cancelInvitation(invitationId) {
+    await rpc('cancel_invitation', { p_invitation_id: invitationId })
+  },
+
+  // Emails the official their invitation. Needs the send-event-email Edge Function.
+  async emailOfficialInvitation(invitationId) {
+    await invokeEmail({ invitation_id: invitationId })
   },
 
   async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings }) {
