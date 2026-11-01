@@ -489,15 +489,17 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  async addUser({ name, email }) {
+  async addUser({ name, email, roleId = 'user' }) {
     const clean = email.trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
+    if (clean === adminUser.email.toLowerCase()) throw new Error('In demo mode the demo admin can\'t be changed')
     const current = data()
     const existing = current.users.find((u) => u.email === clean)
     if (existing) {
       existing.name = name.trim() || existing.name
+      existing.role_id = roleId || 'user'
     } else {
-      current.users.push({ id: null, email: clean, name: name.trim(), state: 'Invited' })
+      current.users.push({ id: null, email: clean, name: name.trim(), role_id: roleId || 'user', state: 'Invited' })
     }
     write(DATA_KEY, current)
     return existing ? 'updated' : 'invited'
