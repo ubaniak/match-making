@@ -474,9 +474,20 @@ export const supabaseApi = {
     return data.map((e) => ({ ...e, days: tidyDays(e.days), bouts: e.bouts ?? [] }))
   },
 
+  // Site Admin only. The database removes the event's bouts, entries, officials, weigh-ins
+  // and alerts with it (every table points at events with on delete cascade).
   async deleteEvent(eventId) {
-    const { error } = await supabase.from('events').delete().eq('id', eventId)
+    const { data, error } = await supabase.from('events').delete().eq('id', eventId).select('id')
     if (error) throw error
+    // Row security turns a refused delete into "nothing deleted" rather than an error.
+    if (!data?.length) throw new Error('That event could not be deleted. Only a site Admin can delete events, and it may already be gone.')
+    // Posters live under "<event id>/". Leftover files don't break anything, so this is best effort.
+    try {
+      const { data: files } = await supabase.storage.from(POSTERS).list(eventId)
+      if (files?.length) await supabase.storage.from(POSTERS).remove(files.map((f) => `${eventId}/${f.name}`))
+    } catch {
+      // ignore
+    }
   },
 
   // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.

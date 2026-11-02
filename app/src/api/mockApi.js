@@ -941,8 +941,10 @@ export const mockApi = {
     requireSiteAdmin('Only a site Admin can delete events')
     const current = data()
     current.events = current.events.filter((e) => e.id !== eventId)
-    current.eventMembers = current.eventMembers.filter((m) => m.event_id !== eventId)
-    current.eventAthletes = current.eventAthletes.filter((ea) => ea.event_id !== eventId)
+    // Everything that belongs to the event goes with it, like the database's on delete cascade.
+    for (const key of ['eventMembers', 'eventAthletes', 'eventClubs', 'lateEntries', 'officialInvitations', 'eventOfficials', 'weighIns', 'bouts', 'notifications']) {
+      current[key] = (current[key] ?? []).filter((x) => x.event_id !== eventId)
+    }
     write(DATA_KEY, current)
   },
 
