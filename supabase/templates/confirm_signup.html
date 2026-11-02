@@ -1,15 +1,30 @@
 <!-- Supabase email template: Confirm signup. Paste into Authentication > Emails > Confirm signup. -->
-<div style="font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: #ffffff; color: #000000; padding: 24px;">
-  <div style="max-width: 480px; margin: 0 auto; border: 1px solid #000000; border-radius: 8px; padding: 28px;">
-    <h1 style="margin: 0 0 16px; font-size: 22px; color: #000000;">Match Making</h1>
-    <p style="margin: 0 0 20px; font-size: 16px; line-height: 1.5; color: #000000;">Welcome! Type this code on the sign-in page to finish setting up your account.</p>
-    <p style="margin: 0 0 8px; font-size: 16px; line-height: 1.5; color: #000000;">Your sign-in code:</p>
-    <p style="margin: 0 0 20px; font-size: 32px; font-weight: 700; letter-spacing: 6px; font-family: 'SF Mono', Menlo, Consolas, monospace; color: #000000;">{{ .Token }}</p>
-    <p style="margin: 0 0 12px; font-size: 16px; line-height: 1.5; color: #000000;">Or sign in on this device:</p>
-    <p style="margin: 0 0 24px;">
-      <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: #000000; color: #ffffff; text-decoration: none; font-size: 16px; padding: 12px 22px; border-radius: 6px;">Sign in to Match Making</a>
-    </p>
-    <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5; color: #000000;">The code and link work once and expire in 1 hour. Asking for a new code cancels this one.</p>
-    <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #000000;">Didn't ask to sign in? You can ignore this email.</p>
-  </div>
-</div>
+<!-- Navy & Gold, like the site. Large text and high contrast for older readers. -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f3f5fa;">
+<tr><td align="center" style="padding: 24px 12px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 600px; background: #ffffff; border-radius: 18px; overflow: hidden; border: 1px solid #dde1e7; font-family: Roboto, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;">
+    <tr><td style="background: #1e3a8a; border-bottom: 5px solid #f5b800; padding: 22px 28px;">
+      <span style="font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: 0.3px;">&#129354; Match Making</span>
+    </td></tr>
+    <tr><td style="padding: 28px 28px 12px;">
+      <h1 style="margin: 0 0 20px; font-size: 26px; line-height: 1.3; font-weight: 700; color: #14245a;">Welcome to Match Making</h1>
+      <p style="margin: 0 0 20px; font-size: 18px; line-height: 1.6; color: #111111;">Welcome! Type this code on the sign-in page to finish setting up your account.</p>
+      <p style="margin: 0 0 8px; font-size: 18px; line-height: 1.6; color: #111111;">Your sign-in code:</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 24px;"><tr>
+        <td style="background: #fde68a; border: 2px solid #f5b800; border-radius: 12px; padding: 14px 24px; font-size: 36px; font-weight: 700; letter-spacing: 8px; font-family: 'SF Mono', Menlo, Consolas, monospace; color: #14245a;">{{ .Token }}</td>
+      </tr></table>
+      <p style="margin: 0 0 12px; font-size: 18px; line-height: 1.6; color: #111111;">Or sign in on this device:</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 24px;"><tr>
+        <td style="border-radius: 12px; background: #1e3a8a;">
+          <a href="{{ .ConfirmationURL }}" style="display: inline-block; padding: 16px 32px; font-family: Roboto, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 19px; font-weight: 700; line-height: 20px; color: #ffffff; text-decoration: none; border-radius: 12px; border: 2px solid #14245a;">Sign in to Match Making</a>
+        </td>
+      </tr></table>
+      <p style="margin: 0 0 8px; font-size: 16px; line-height: 1.5; color: #333333;">The code and link work once and expire in 1 hour. Asking for a new code cancels this one.</p>
+      <p style="margin: 0 0 16px; font-size: 16px; line-height: 1.5; color: #333333;">Didn't ask to sign in? You can ignore this email.</p>
+    </td></tr>
+    <tr><td style="background: #eef1f8; border-top: 1px solid #dde1e7; padding: 16px 28px;">
+      <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #333333;">Sent by Match Making.</p>
+    </td></tr>
+  </table>
+</td></tr>
+</table>

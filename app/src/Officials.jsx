@@ -264,6 +264,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
   const [officialsList, setOfficialsList] = useState([])
   const [choice, setChoice] = useState([])
   const [respondBy, setRespondBy] = useState('')
+  const [notes, setNotes] = useState('') // optional, added to each invitation email
   const [tab, setTab] = useState('accepted')
   const [email, setEmail] = useState(null) // { sent, failed: [{ name, email }], reason }
   const [newOfficial, setNewOfficial] = useState({ name: '', email: '' })
@@ -304,7 +305,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
       setEmail(null)
       return true
     }
-    const results = await Promise.allSettled(ids.map((id) => api.emailOfficialInvitation(id)))
+    const results = await Promise.allSettled(ids.map((id) => api.emailOfficialInvitation(id, notes)))
     const failedIds = ids.filter((_, n) => results[n].status === 'rejected')
     const reason = results.find((r) => r.status === 'rejected')?.reason?.message
     const latest = await api.listEventInvitations(event.id).catch(() => invitations)
@@ -348,7 +349,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
   // One CSV row: invite someone on the Officials list, or add and invite someone new, then email
   // the invitation. Problems with the emails come back as notes; the invitation still stands.
   async function importOfficial(row) {
-    const notes = []
+    const problems = []
     let invitationIds
     if (row.officialId) {
       invitationIds = await api.inviteOfficials(event.id, [row.officialId], respondBy)
@@ -357,17 +358,17 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
       invitationIds = [added.invitation_id]
       if (added.new_account) {
         const welcome = await sendWelcome({ name: row.name, email: row.email, roleId: 'official' })
-        if (!welcome.sent) notes.push(`the welcome email wasn't sent (${welcome.reason})`)
+        if (!welcome.sent) problems.push(`the welcome email wasn't sent (${welcome.reason})`)
       }
     }
     for (const id of invitationIds ?? []) {
       try {
-        await api.emailOfficialInvitation(id)
+        await api.emailOfficialInvitation(id, notes)
       } catch (err) {
-        notes.push(`the invitation email wasn't sent (${err.message}). Use Resend on their row`)
+        problems.push(`the invitation email wasn't sent (${err.message}). Use Resend on their row`)
       }
     }
-    return notes.length ? { note: notes.join('; ') } : null
+    return problems.length ? { note: problems.join('; ') } : null
   }
 
   async function reinvite(i) {
@@ -463,7 +464,18 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
             <DateInput value={respondBy} onChange={setRespondBy} min={today} />
           </Field>
           <FullRow>
-            <Muted>Each official gets an email with a link to accept or decline. Anyone who hasn't signed in before can sign in with that email address.</Muted>
+            <Field label="Notes for the email" hint="optional">
+              <Input.TextArea
+                value={notes}
+                maxLength={2000}
+                autoSize={{ minRows: 2, maxRows: 6 }}
+                placeholder="For example: parking is behind the arena; please bring your whites"
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </Field>
+          </FullRow>
+          <FullRow>
+            <Muted>Each official gets an email with the event's dates, weigh-in and bout times, these notes, and a link to accept or decline. The notes also go with Add and invite, the CSV import and Resend. Anyone who hasn't signed in before can sign in with that email address.</Muted>
           </FullRow>
         </FormCard>
       )}
@@ -506,7 +518,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
         </CsvImport>
       )}
       <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
-      <EmailNotice email={email} event={event} onDismiss={() => setEmail(null)} />
+      <EmailNotice email={email} event={event} notes={notes} onDismiss={() => setEmail(null)} />
 
       <FormCard compact>
         {['chief', 'deputy'].map((role) => (
@@ -557,7 +569,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
 }
 
 // After sending: did the emails go out? If not, offer a ready-made email.
-function EmailNotice({ email, event, onDismiss }) {
+function EmailNotice({ email, event, notes, onDismiss }) {
   if (!email) return null
   if (email.failed.length === 0) {
     return (
@@ -571,6 +583,8 @@ function EmailNotice({ email, event, onDismiss }) {
     '',
     `You're invited to officiate at ${event.name} (${formatDateRange(event.start_date, event.end_date)}${event.venue ? `, ${event.venue}` : ''}).`,
     deadline ? `Please accept or decline by ${formatDay(deadline)}.` : 'Please accept or decline.',
+    ...scheduleLines(event),
+    ...(notes?.trim() ? ['', 'Notes:', notes.trim()] : []),
     '',
     `Sign in with this email address and open Events: ${siteUrl()}`,
   ].join('\n')
@@ -586,6 +600,19 @@ function EmailNotice({ email, event, onDismiss }) {
       title={<>The invitations are saved, but the email to {names} wasn't sent automatically ({email.reason}). <a href={mailto}>Send it from your email app</a></>}
     />
   )
+}
+
+// The event's daily weigh-in and bout times for a hand-sent email, like the automatic one.
+function scheduleLines(event) {
+  const days = (event.days ?? []).filter((d) => d.weigh_in_start || d.sessions?.length)
+  if (days.length === 0) return []
+  const lines = ['', `Times (${event.timezone || 'local time'}):`]
+  for (const d of days) {
+    lines.push(formatDay(d.day))
+    if (d.weigh_in_start) lines.push(`  Weigh-in: ${d.weigh_in_start} to ${d.weigh_in_end}`)
+    if (d.sessions?.length) lines.push(`  Bouts start: ${d.sessions.map((s) => `${s.starts_at}${s.label ? ` (${s.label})` : ''}`).join(', ')}`)
+  }
+  return lines
 }
 
 // ---------------------------------------------------------------------------
