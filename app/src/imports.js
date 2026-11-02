@@ -157,10 +157,16 @@ export const importSpecs = {
     example: [['maria@example.com', 'owner'], ['sam@example.com', 'coach']],
     notes: { role: 'owner or coach; blank means coach' },
     describe: (values) => values.email,
-    check(values, errors, { usersByEmail, memberIds }) {
+    // byEmail: a club owner only sees their own club's people, so the server looks each email up.
+    check(values, errors, { usersByEmail, memberIds, byEmail }) {
       checkEmail(values.email, errors, { required: true })
       const role = lower(values.role) || 'coach'
       if (!['owner', 'coach'].includes(role)) errors.push(`Role "${values.role}" should be owner or coach`)
+      if (byEmail) {
+        const known = usersByEmail?.get(lower(values.email))
+        if (known && memberIds?.has(known.id)) errors.push(`${lower(values.email)} is already in this club`)
+        return { email: lower(values.email), role }
+      }
       const user = values.email && EMAIL.test(values.email) ? activeUser(values.email, usersByEmail, errors) : null
       if (user && memberIds?.has(user.id)) errors.push(`${lower(values.email)} is already in this club`)
       return { userId: user?.id, role }
