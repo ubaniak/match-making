@@ -13,6 +13,7 @@ import { api } from './api'
 import { askConfirm } from './dialogs'
 import { NotificationsContext, linkFor, useNotifications } from './notify'
 import { Badge, ErrorAlert, Muted, Text } from './ui'
+import { colors } from './theme'
 
 export function NotificationsProvider({ userId, children }) {
   const [items, setItems] = useState(null)
@@ -102,7 +103,7 @@ export function NotificationBell({ onOpen }) {
 
   return (
     <>
-      <AntBadge count={notes.unread} overflowCount={99} size="small" color="#000" offset={[-4, 4]}>
+      <AntBadge count={notes.unread} overflowCount={99} size="small" color={colors.gold} style={{ color: colors.navyDeep, fontWeight: 700 }} offset={[-4, 4]}>
         <Tooltip title="Notifications">
           <Button shape="circle" icon={<BellOutlined />} aria-label={label} onClick={() => setOpen(true)} />
         </Tooltip>
