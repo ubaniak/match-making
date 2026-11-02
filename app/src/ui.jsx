@@ -1,6 +1,7 @@
 // Shared Ant Design pieces in the scoreboard style. See .claude/skills/frontend-style/SKILL.md.
 // Light only: black on white, never a dark algorithm.
-import { App as AntApp, Alert, Button, Card, Col, ConfigProvider, DatePicker, Form, Input, InputNumber, Row, Select, Space, Statistic, Tag, TimePicker, Typography } from 'antd'
+import { useState } from 'react'
+import { App as AntApp, Alert, Button, Card, Col, ConfigProvider, DatePicker, Form, Input, InputNumber, Row, Segmented, Select, Space, Statistic, Tag, TimePicker, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { connectDialogs } from './dialogs'
 import { antdTheme } from './theme'
@@ -152,6 +153,56 @@ export function NumberInput({ value, onChange, ...rest }) {
       style={{ width: '100%' }}
       {...rest}
     />
+  )
+}
+
+const KG_PER_LB = 0.45359237
+const toKg = (n, unit) => (unit === 'lb' ? Math.round(n * KG_PER_LB * 100) / 100 : n)
+const fromKg = (kg, unit) => (unit === 'lb' ? Math.round((kg / KG_PER_LB) * 10) / 10 : kg)
+const readUnit = () => {
+  try { return localStorage.getItem('weightUnit') === 'lb' ? 'lb' : 'kg' } catch { return 'kg' }
+}
+
+// A weight box with a kg / lb toggle. `value` and `onChange` are always in kg (2 decimals, as the
+// database stores it), so only the typing is in pounds. The chosen unit is remembered on this device.
+export function WeightInput({ value, onChange, minKg = 20, maxKg = 200, ...rest }) {
+  const [unit, setUnit] = useState(readUnit)
+  const [shown, setShown] = useState({ kg: value, unit, text: value === '' || value == null ? '' : fromKg(Number(value), unit) })
+  // Follow changes made outside (a reset, a different athlete) without undoing the user's typing.
+  if (shown.kg !== value || shown.unit !== unit) {
+    setShown({ kg: value, unit, text: value === '' || value == null ? '' : fromKg(Number(value), unit) })
+  }
+  const type = (v) => {
+    const kg = v == null ? '' : toKg(v, unit)
+    setShown({ kg, unit, text: v ?? '' })
+    onChange(kg)
+  }
+  const pickUnit = (u) => {
+    setUnit(u)
+    try { localStorage.setItem('weightUnit', u) } catch { /* not saved, still works */ }
+  }
+  const empty = value === '' || value == null
+  return (
+    <div className="weight-input">
+      <div className="weight-input-row">
+        <InputNumber
+          value={shown.text === '' ? null : shown.text}
+          onChange={type}
+          min={fromKg(minKg, unit)}
+          max={fromKg(maxKg, unit)}
+          step={0.1}
+          style={{ flex: 1, minWidth: 0 }}
+          {...rest}
+        />
+        <Segmented
+          aria-label="Weight unit"
+          value={unit}
+          onChange={pickUnit}
+          options={[{ value: 'kg', label: 'kg' }, { value: 'lb', label: 'lb' }]}
+        />
+      </div>
+      {unit === 'lb' && !empty && <Typography.Text className="weight-input-kg">Saved as {Number(value)} kg</Typography.Text>}
+    </div>
   )
 }
 

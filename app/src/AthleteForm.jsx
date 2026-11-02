@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, Input } from 'antd'
 import { athleteProblems, genders } from './athletes'
-import { DateInput, Field, FormCard, FormMessage, NumberInput, Pick } from './ui'
+import { DateInput, Field, FormCard, FormMessage, NumberInput, Pick, WeightInput } from './ui'
 
 const fromAthlete = (a) => ({
   name: a?.name ?? '',
@@ -84,7 +84,7 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
         <Field label="Gender">
           <Pick value={form.gender} onChange={set('gender')} placeholder="Choose…" options={genders.map(([value, label]) => ({ value, label }))} />
         </Field>
-        <Field label="Weight (kg)"><NumberInput min={20} max={200} step={0.1} value={form.weightKg} onChange={set('weightKg')} /></Field>
+        <Field label="Weight" hint="saved in kg"><WeightInput value={form.weightKg} onChange={set('weightKg')} /></Field>
         <Field label="Experience (bouts)"><NumberInput min={0} max={1000} step={1} precision={0} value={form.bouts} onChange={set('bouts')} /></Field>
         {clubs && !editing && (
           <Field label="Club">
