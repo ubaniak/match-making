@@ -41,6 +41,34 @@ export function askText(question, { okText = 'OK', placeholder = 'Optional' } = 
   })
 }
 
+// For steps that can't be undone: OK stays disabled until the exact phrase is typed.
+// Resolves true on OK, false on Cancel.
+export function askTypedConfirm(question, { phrase, details, okText = 'Delete' } = {}) {
+  return new Promise((resolve) => {
+    let instance = null
+    const matches = (text) => text.trim().toLowerCase() === phrase.trim().toLowerCase()
+    const content = createElement('div', null,
+      details && createElement('div', { style: { marginBottom: 12 } }, details),
+      createElement('p', { style: { marginBottom: 8 } }, 'To confirm, type ', createElement('strong', null, phrase), ' below.'),
+      createElement(Input, {
+        autoFocus: true,
+        'aria-label': `Type ${phrase} to confirm`,
+        autoComplete: 'off',
+        onChange: (e) => instance?.update({ okButtonProps: { danger: true, disabled: !matches(e.target.value) } }),
+      }),
+    )
+    instance = modalApi.confirm({
+      title: question,
+      content,
+      okText,
+      okButtonProps: { danger: true, disabled: true },
+      cancelText: 'Cancel',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    })
+  })
+}
+
 export function showError(text) {
   messageApi.error(text)
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Checkbox, Descriptions, Input, Modal, Select, Space, Tabs, Upload } from 'antd'
-import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import CsvImport from './CsvImport'
 import { api } from './api'
@@ -15,7 +15,7 @@ import {
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 import { isOfficial } from './auth'
-import { askConfirm, dash, showError } from './dialogs'
+import { askConfirm, askTypedConfirm, dash, showError } from './dialogs'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
@@ -26,6 +26,32 @@ const personName = (user) => (user ? user.name || user.email : '—')
 const userLabel = (u) => (u.name ? `${u.name} (${u.email})` : u.email)
 // Emailed links go straight to sign-in and then Home; the bare root is the public page.
 const siteUrl = () => window.location.origin + import.meta.env.BASE_URL + '#home'
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// Site Admin only. Deleting removes the event and everything hanging off it, so the
+// Admin types the event's name first. Resolves true once the event is gone.
+async function confirmDeleteEvent(event, { athletes, clubs, bouts } = {}) {
+  const counts = [
+    athletes > 0 && plural(athletes, 'athlete'),
+    clubs > 0 && plural(clubs, 'club'),
+    bouts > 0 && plural(bouts, 'bout'),
+  ].filter(Boolean)
+  const details = (
+    <>
+      <p>
+        This removes the event for good, with all of its bouts and results, weigh-ins, medicals, officials,
+        club and athlete entries, people and alerts. It can't be undone.
+      </p>
+      {counts.length > 0 && <p>That includes {counts.join(', ')}.</p>}
+      {isEditableStatus(event) && <p>To stop the event but keep a record of it, use Cancel event instead.</p>}
+    </>
+  )
+  const ok = await askTypedConfirm(`Delete ${event.name}?`, { phrase: event.name, details, okText: 'Delete event' })
+  if (!ok) return false
+  await api.deleteEvent(event.id)
+  return true
+}
 
 // What the signed-in user can do on an event (plan/events.md, "Who can do what").
 function rightsFor(event, profile, siteAdmin) {
@@ -133,9 +159,18 @@ function EventList({ siteAdmin, profile, onOpen, onCreate }) {
   const [events, setEvents] = useState(null)
   const [error, setError] = useState(null)
 
-  useEffect(() => {
-    api.listEvents().then(setEvents, (err) => setError(err.message))
-  }, [])
+  const load = useCallback(() => api.listEvents().then(setEvents, (err) => setError(err.message)), [])
+  useEffect(() => { load() }, [load])
+
+  async function remove(event) {
+    setError(null)
+    try {
+      if (await confirmDeleteEvent(event, { athletes: event.athlete_count })) await load()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+  const tableProps = { profile, onOpen, onDelete: siteAdmin ? remove : null }
 
   const withStatus = events?.map((e) => ({ ...e, shownStatus: effectiveStatus(e) })) ?? []
   const requested = withStatus.filter((e) => e.shownStatus === 'requested')
@@ -157,15 +192,15 @@ function EventList({ siteAdmin, profile, onOpen, onCreate }) {
         </Muted>
       )}
       {requested.length > 0 && (
-        <EventTable title={siteAdmin ? 'Waiting for approval' : 'Requested'} events={requested} profile={profile} onOpen={onOpen} />
+        <EventTable title={siteAdmin ? 'Waiting for approval' : 'Requested'} events={requested} {...tableProps} />
       )}
-      {active.length > 0 && <EventTable title="Active" events={active} profile={profile} onOpen={onOpen} />}
-      {finished.length > 0 && <EventTable title="Done and cancelled" events={finished} profile={profile} onOpen={onOpen} />}
+      {active.length > 0 && <EventTable title="Active" events={active} {...tableProps} />}
+      {finished.length > 0 && <EventTable title="Done and cancelled" events={finished} {...tableProps} />}
     </>
   )
 }
 
-function EventTable({ title, events, profile, onOpen }) {
+function EventTable({ title, events, profile, onOpen, onDelete }) {
   const columns = [
     { title: 'Event', key: 'name', value: (e) => e.name, render: (_, e) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(e.id)}>{e.name}</Button> },
     { title: 'Status', key: 'status', value: (e) => statusLabels[e.shownStatus], render: (_, e) => <StatusBadge status={e.shownStatus} /> },
@@ -174,7 +209,15 @@ function EventTable({ title, events, profile, onOpen }) {
     { title: 'Owner', key: 'owner', render: (_, e) => personName(ownerOf(e)) },
     { title: 'Your role', key: 'role', value: (e) => roleLabels[myRole(e, profile)], render: (_, e) => <RoleBadge role={myRole(e, profile)} /> },
     { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
-  ]
+    onDelete && {
+      title: '',
+      key: 'actions',
+      csv: false,
+      render: (_, e) => (
+        <Button size="small" shape="circle" danger icon={<DeleteOutlined />} aria-label={`Delete ${e.name}`} title="Delete event" onClick={() => onDelete(e)} />
+      ),
+    },
+  ].filter(Boolean)
   return (
     <Section title={title}>
       <DataTable rowKey="id" columns={columns} dataSource={events} csvName={`Events ${title}`} />
@@ -433,10 +476,14 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
   }
 
   async function remove() {
-    if (!(await askConfirm(`Delete ${event.name} for good? Cancelling keeps a record; deleting doesn't.`, { okText: 'Delete', danger: true }))) return
+    setError(null)
     try {
-      await api.deleteEvent(event.id)
-      onBack()
+      const counts = {
+        athletes: event.athletes.length,
+        clubs: event.clubs.filter((ec) => ec.status === 'accepted').length,
+        bouts: bouts.data?.bouts?.length,
+      }
+      if (await confirmDeleteEvent(event, counts)) onBack()
     } catch (err) {
       setError(err.message)
     }
@@ -521,8 +568,8 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
             <EventMembers event={event} may={may} onChange={reload} />
             {siteAdmin && (
               <Section title="Delete">
-                <Muted>Cancelling keeps a record of the event; deleting removes it for good.</Muted>
-                <Button danger onClick={remove}>Delete this event</Button>
+                <Muted>Cancelling keeps a record of the event; deleting removes it and everything in it for good.</Muted>
+                <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={remove}>Delete this event</Button>
               </Section>
             )}
           </>
@@ -550,6 +597,12 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
           <Button danger disabled={busy} onClick={() => changeStatus('cancelled', `Cancel ${event.name}? This can't be undone.`, { okText: 'Cancel event', danger: true })}>
             Cancel event
           </Button>
+          <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={remove}>Delete event</Button>
+        </Space>
+      )}
+      {siteAdmin && !(status === 'requested' || status === 'active') && (
+        <Space wrap className="gap">
+          <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={remove}>Delete event</Button>
         </Space>
       )}
       {status === 'requested' && !siteAdmin && (

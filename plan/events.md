@@ -34,6 +34,10 @@ Event statuses are **Requested**, **Active**, **Done** and **Cancelled**.
    to cancel but can't do it themselves.
 7. An event becomes **Done** automatically the day after its end date. A site Admin can also mark
    it Done early.
+8. Only a site Admin can delete an event, at any status, from the Delete event button on the event
+   page or the bin icon in the events list. They type the event's name to confirm. Deleting removes
+   the event's bouts, results, weigh-ins, officials, club and athlete entries, people and alerts for
+   good; cancelling keeps a record.
 
 ### Inviting officials
 
