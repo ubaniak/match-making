@@ -211,6 +211,15 @@ export const supabaseApi = {
     return rpc('clear_test_data')
   },
 
+  // Site Admin only: add or remove the four helper logins on the TEST events (migration 33).
+  async seedHelperAccounts() {
+    return rpc('seed_helper_accounts')
+  },
+
+  async clearHelperAccounts() {
+    return rpc('clear_helper_accounts')
+  },
+
   // Clubs, each with its members and athlete count.
   async listClubs() {
     const { data, error } = await supabase

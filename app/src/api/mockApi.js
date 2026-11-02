@@ -348,6 +348,54 @@ function cancelAthleteBouts(current, eventId, athleteId, day, reason) {
   }
 }
 
+// The four helper logins from migration 33: [user id, email, name, event they own or lead].
+const HELPER_ACCOUNTS = [
+  ['demo-owner1', 'owner1@demo.test', 'TEST Event Owner 1'],
+  ['demo-owner2', 'owner2@demo.test', 'TEST Event Owner 2'],
+  ['demo-official1', 'official1@demo.test', 'TEST Official 1'],
+  ['demo-official2', 'official2@demo.test', 'TEST Official 2'],
+]
+
+// Adds the helper logins to the TEST events, as migration 33 does. Returns how many were new.
+function addHelperAccounts(current) {
+  const one = current.events.find((e) => e.name === 'TEST One-Day Card')
+  const multi = current.events.find((e) => e.name === 'TEST Multi-Day Open')
+  if (!one || !multi) throw new Error('Load test data first. The helper logins are added to the TEST events.')
+  let made = 0
+  for (const [id, email, name] of HELPER_ACCOUNTS) {
+    if (!current.users.some((u) => u.id === id)) {
+      current.users.push({ id, email, name, state: 'Active' })
+      made += 1
+    }
+  }
+  for (const [event, owner] of [[one, 'demo-owner1'], [multi, 'demo-owner2']]) {
+    current.eventMembers.forEach((m) => { if (m.event_id === event.id && m.role === 'owner' && m.user_id !== owner) m.role = 'viewer' })
+    current.eventMembers = current.eventMembers.filter((m) => !(m.event_id === event.id && m.user_id === owner))
+    current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
+  }
+  current.officialInvitations = current.officialInvitations ?? []
+  current.eventOfficials = current.eventOfficials ?? []
+  for (const [userId, , name] of HELPER_ACCOUNTS.filter(([id]) => id.startsWith('demo-official'))) {
+    const email = HELPER_ACCOUNTS.find(([id]) => id === userId)[1]
+    let official = current.officials.find((o) => o.user_id === userId)
+    if (!official) {
+      official = { id: crypto.randomUUID(), name, qualifications: 'Level 3 referee', invite_email: email, user_id: userId }
+      current.officials.push(official)
+    }
+    for (const event of [one, multi]) {
+      if (!current.officialInvitations.some((i) => i.event_id === event.id && i.official_id === official.id)) {
+        current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() })
+      }
+    }
+  }
+  current.eventOfficials = current.eventOfficials.filter((o) => o.event_id !== one.id && o.event_id !== multi.id)
+  current.eventOfficials.push(
+    { event_id: one.id, role: 'chief', user_id: 'demo-official1' }, { event_id: one.id, role: 'deputy', user_id: 'demo-official2' },
+    { event_id: multi.id, role: 'chief', user_id: 'demo-official2' }, { event_id: multi.id, role: 'deputy', user_id: 'demo-official1' },
+  )
+  return made
+}
+
 function requireSiteAdmin(message) {
   if (!isSiteAdmin()) throw new Error(message)
 }
@@ -994,8 +1042,40 @@ export const mockApi = {
       current.eventOfficials.push({ event_id: event.id, role: 'chief', user_id: 'demo-official' })
     }
     current.clubMembers.push({ club_id: clubIds['TEST North End Boxing'], user_id: 'demo-club-owner', role: 'owner', status: 'active' })
+    const helpers = addHelperAccounts(current)
     write(DATA_KEY, current)
-    return { events: 2, clubs: testClubs.length, athletes: testRoster.length, accounts: demo.length }
+    return { events: 2, clubs: testClubs.length, athletes: testRoster.length, accounts: demo.length + helpers }
+  },
+
+  async seedHelperAccounts() {
+    requireSiteAdmin('Only a site Admin can add helper logins')
+    const current = data()
+    const accounts = addHelperAccounts(current)
+    write(DATA_KEY, current)
+    return { accounts }
+  },
+
+  async clearHelperAccounts() {
+    requireSiteAdmin('Only a site Admin can remove helper logins')
+    const current = data()
+    const ids = new Set(HELPER_ACCOUNTS.map(([id]) => id))
+    const accounts = current.users.filter((u) => ids.has(u.id)).length
+    const officialIds = new Set(current.officials.filter((o) => ids.has(o.user_id)).map((o) => o.id))
+    current.officials = current.officials.filter((o) => !officialIds.has(o.id))
+    current.officialInvitations = (current.officialInvitations ?? []).filter((i) => !officialIds.has(i.official_id))
+    current.users = current.users.filter((u) => !ids.has(u.id))
+    current.eventMembers = current.eventMembers.filter((m) => !ids.has(m.user_id))
+    current.eventOfficials = (current.eventOfficials ?? []).filter((o) => !ids.has(o.user_id))
+    // Hand the TEST events back to the original demo accounts, as migration 33 does.
+    for (const event of current.events.filter((e) => e.name.startsWith('TEST '))) {
+      const member = current.eventMembers.find((m) => m.event_id === event.id && m.user_id === 'demo-event-owner')
+      if (member && !current.eventMembers.some((m) => m.event_id === event.id && m.role === 'owner')) member.role = 'owner'
+      if (current.users.some((u) => u.id === 'demo-official') && !current.eventOfficials.some((o) => o.event_id === event.id && (o.role === 'chief' || o.user_id === 'demo-official'))) {
+        current.eventOfficials.push({ event_id: event.id, role: 'chief', user_id: 'demo-official' })
+      }
+    }
+    write(DATA_KEY, current)
+    return { accounts }
   },
 
   async clearTestData() {
