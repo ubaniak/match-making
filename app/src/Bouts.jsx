@@ -598,6 +598,11 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           </Button>
         )}
         {canMatch && !hasResult && <Button size="small" disabled={busy} onClick={onRematch}>Re-match</Button>}
+        {canMatch && !hasResult && (
+          <Button size="small" icon={<SwapOutlined rotate={90} />} disabled={busy} onClick={() => run(() => api.swapBoutCorners(bout.id))}>
+            Swap corners
+          </Button>
+        )}
         {canMatch && !hasResult && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
         {rights.official && bout.status === 'approved' && !result && (
           <Button size="small" type="primary" disabled={busy} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>

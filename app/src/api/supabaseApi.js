@@ -637,6 +637,11 @@ export const supabaseApi = {
     await rpc('decide_bout', { p_bout_id: boutId, p_side: side, p_approve: approve, p_note: note || null })
   },
 
+  // Swaps red and blue on an existing bout; the pairing and its approval stay (migration 27).
+  async swapBoutCorners(boutId) {
+    await rpc('swap_bout_corners', { p_bout_id: boutId })
+  },
+
   async cancelBout(boutId, reason) {
     await rpc('cancel_bout', { p_bout_id: boutId, p_reason: reason || null })
   },
