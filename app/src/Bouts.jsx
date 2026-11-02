@@ -9,7 +9,7 @@ import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
 import { Alert, Button, Card as AntCard, Collapse, Input, Radio, Space, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, SendOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
@@ -315,6 +315,15 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
       <Field label={<span className="corner-label red">Red corner</span>}>
         <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={redOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
+      <FullRow>
+        <Button
+          icon={<SwapOutlined rotate={90} />}
+          disabled={!redId && !blueId}
+          onClick={() => { setRedId(blueId); setBlueId(redId) }}
+        >
+          Swap corner
+        </Button>
+      </FullRow>
       <Field label={<span className="corner-label blue">Blue corner</span>}>
         <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={blueOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
