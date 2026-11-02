@@ -1585,6 +1585,19 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  async swapBoutCorners(boutId) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!canMatch(current, bout.event_id, bout.day)) throw new Error('Only the event\'s Owner (before the weigh-in) or officials can change bouts')
+    if (bout.winner) throw new Error('This bout has a result, so its corners can\'t be swapped')
+    if (bout.status === 'cancelled') throw new Error('This bout is cancelled')
+    Object.assign(bout, {
+      red_athlete_id: bout.blue_athlete_id, blue_athlete_id: bout.red_athlete_id,
+      red_club_id: bout.blue_club_id, blue_club_id: bout.red_club_id,
+    })
+    write(DATA_KEY, current)
+  },
+
   async cancelBout(boutId, reason) {
     const current = data()
     const bout = findBout(current, boutId)
