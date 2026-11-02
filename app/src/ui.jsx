@@ -40,6 +40,11 @@ export function SuccessAlert({ children }) {
   return <Alert type="success" showIcon title={children} className="gap" />
 }
 
+export function WarningAlert({ children }) {
+  if (!children) return null
+  return <Alert type="warning" showIcon title={children} className="gap" />
+}
+
 // { error, text } message from a form.
 export function FormMessage({ message }) {
   if (!message) return null

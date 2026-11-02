@@ -4,12 +4,14 @@ import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { downloadCsv, parseCsv, rowsToRecords } from './csv'
 import { checkRecords, importSpecs } from './imports'
-import { ErrorAlert, Muted, Paragraph, SuccessAlert, Text } from './ui'
+import { ErrorAlert, Muted, Paragraph, SuccessAlert, Text, WarningAlert } from './ui'
 
 const count = (n, spec) => `${n} ${n === 1 ? spec.singular : spec.label}`
 
 // Bulk add from a CSV file: download a template, preview with per-row problems, then import the good rows.
-export default function CsvImport({ kind, context, importRow, onDone }) {
+// importRow(value) saves one row; it can return { note } to flag something (e.g. an email that didn't go out).
+// title replaces "Bulk add <things> from a CSV file"; children add help under the column list.
+export default function CsvImport({ kind, context, importRow, onDone, title, templateName, children }) {
   const spec = importSpecs[kind]
   const [fileName, setFileName] = useState(null)
   const [check, setCheck] = useState(null)
@@ -28,19 +30,23 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
     const ready = check.rows.filter((row) => row.errors.length === 0)
     setImporting(true)
     const failed = []
+    const notes = []
     for (const row of ready) {
+      const name = describe(row.values)
       try {
-        await importRow(row.value)
+        const saved = await importRow(row.value)
+        if (saved?.note) notes.push({ line: row.line, name, message: saved.note })
       } catch (err) {
-        failed.push({ line: row.line, name: row.values.name, message: err.message })
+        failed.push({ line: row.line, name, message: err.message })
       }
     }
     setImporting(false)
-    setResult({ added: ready.length - failed.length, failed, skipped: check.rows.length - ready.length })
+    setResult({ added: ready.length - failed.length, failed, notes, skipped: check.rows.length - ready.length })
     setCheck(null)
-    onDone()
+    await onDone?.()
   }
 
+  const describe = spec.describe ?? ((values) => values.name || values.email || '')
   const ready = check?.rows.filter((row) => row.errors.length === 0).length ?? 0
   const problems = (check?.rows.length ?? 0) - ready
 
@@ -60,11 +66,16 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
     <>
       <Muted>
         Columns: {spec.columns.map((c, i) => (
-          <span key={c}>{i > 0 && ', '}<code>{c}</code>{spec.required.includes(c) && ' (required)'}</span>
+          <span key={c}>
+            {i > 0 && ', '}<code>{c}</code>
+            {spec.required.includes(c) && ' (required)'}
+            {spec.notes?.[c] && ` (${spec.notes[c]})`}
+          </span>
         ))}. The first row must be the column names.
       </Muted>
+      {children}
       <Space wrap>
-        <Button icon={<DownloadOutlined />} onClick={() => downloadCsv(`${kind}-template.csv`, [spec.columns, ...spec.example])}>
+        <Button icon={<DownloadOutlined />} onClick={() => downloadCsv(`${templateName ?? kind}-template.csv`, [spec.columns, ...spec.example])}>
           Download template
         </Button>
         <Upload accept=".csv,text/csv" showUploadList={false} beforeUpload={(file) => { chooseFile(file); return false }}>
@@ -109,6 +120,14 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
             Added {count(result.added, spec)}.
             {result.skipped > 0 && ` Skipped ${result.skipped} with problems.`}
           </SuccessAlert>
+          {result.notes.length > 0 && (
+            <WarningAlert>
+              Added, but check these:
+              <ul style={{ margin: 0 }}>
+                {result.notes.map((n) => <li key={n.line}>Line {n.line} ({n.name}): {n.message}</li>)}
+              </ul>
+            </WarningAlert>
+          )}
           {result.failed.length > 0 && (
             <ErrorAlert>
               These rows couldn't be saved:
@@ -125,7 +144,7 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
   return (
     <Collapse
       className="gap"
-      items={[{ key: 'csv', label: <strong>Bulk add {spec.label} from a CSV file</strong>, children: body }]}
+      items={[{ key: 'csv', label: <strong>{title ?? `Bulk add ${spec.label} from a CSV file`}</strong>, children: body }]}
     />
   )
 }

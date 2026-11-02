@@ -4,6 +4,7 @@ import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
 import AthleteForm from './AthleteForm'
+import CsvImport from './CsvImport'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
 import { askConfirm, dash } from './dialogs'
 import { BackLink, Badge, PageHeading, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, SuccessAlert, Text, Title } from './ui'
@@ -12,6 +13,7 @@ const roleLabels = { owner: 'Owner', coach: 'Coach' }
 const personName = (user) => (user ? user.name || user.email : '—')
 const userLabel = (u) => (u.name ? `${u.name} (${u.email})` : u.email)
 const transferLabels = { pending: 'Waiting', accepted: 'Accepted', declined: 'Declined', cancelled: 'Withdrawn', moved: 'Moved by Admin' }
+const byEmail = (users) => new Map(users.map((u) => [u.email?.toLowerCase(), u]))
 const formatWhen = (iso) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '')
 
 function myClubRole(club, profile) {
@@ -73,6 +75,7 @@ function ClubList({ siteAdmin, profile, onOpen }) {
     <>
       <PageHeading title="Clubs" />
       {siteAdmin && <NewClubForm onCreated={onOpen} />}
+      {siteAdmin && clubs && <ClubsImport clubs={clubs} onDone={reload} />}
       {siteAdmin && <PendingInvites onChange={reload} />}
       <ErrorAlert>{error}</ErrorAlert>
       {clubs === null && !error && <Muted>Loading…</Muted>}
@@ -140,6 +143,21 @@ function NewClubForm({ onCreated }) {
       </FormCard>
       <ErrorAlert>{error}</ErrorAlert>
     </>
+  )
+}
+
+function ClubsImport({ clubs, onDone }) {
+  const users = useUsers()
+  return (
+    <CsvImport
+      kind="clubs"
+      title="Create clubs from a CSV file"
+      context={{ usersByEmail: byEmail(users), clubsByName: new Map(clubs.map((c) => [c.name.trim().toLowerCase(), c])) }}
+      importRow={async ({ name, ownerIds }) => {
+        await api.createClub({ name, ownerIds })
+      }}
+      onDone={onDone}
+    />
   )
 }
 
@@ -365,6 +383,21 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
             await api.addAthlete(record)
             await onChange()
           }}
+        />
+      )}
+      {may.manage && !editing && (
+        <CsvImport
+          kind="clubAthletes"
+          templateName="athletes"
+          title={`Add athletes to ${club.name} from a CSV file`}
+          context={{
+            clubId: club.id,
+            clubName: club.name,
+            usersByEmail: byEmail(users),
+            existingEmails: new Set(club.athletes.map((a) => a.invite_email).filter(Boolean)),
+          }}
+          importRow={api.addAthlete}
+          onDone={onChange}
         />
       )}
       {editingAthlete && (
@@ -639,6 +672,17 @@ function ClubPeople({ club, users, may, onChange }) {
             <Pick value={form.role} onChange={(role) => setForm({ ...form, role })} options={[{ value: 'coach', label: 'Coach' }, { value: 'owner', label: 'Owner' }]} />
           </Field>
         </FormCard>
+      )}
+      {may.manage && (
+        <CsvImport
+          kind="clubPeople"
+          title={`${may.siteAdmin ? 'Add' : 'Invite'} people from a CSV file`}
+          context={{ usersByEmail: byEmail(users), memberIds }}
+          importRow={({ userId, role }) => api.addClubMember(club.id, userId, role, { approved: may.siteAdmin })}
+          onDone={onChange}
+        >
+          {!may.siteAdmin && <Muted>A site Admin has to approve each invitation before they join.</Muted>}
+        </CsvImport>
       )}
       <SuccessAlert>{message}</SuccessAlert>
       <ErrorAlert>{error}</ErrorAlert>

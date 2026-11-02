@@ -29,6 +29,15 @@ async function ensureOfficial({ name, email }) {
   return true
 }
 
+// One row of the users CSV: the same steps as the Add a user form. Returns { note } when the
+// welcome email didn't go out (the envelope on their row sends it again).
+async function importUser(user) {
+  await api.addUser(user)
+  if (user.roleId === 'official') await ensureOfficial(user)
+  const welcome = await sendWelcome(user)
+  return welcome.sent ? null : { note: `the welcome email wasn't sent (${welcome.reason}). Use the envelope on their row to send it again` }
+}
+
 // Edit and delete buttons for a table row, as the frontend-style skill describes.
 function RowActions({ name, onEdit, onDelete, deleteText, busy }) {
   return (
@@ -256,7 +265,9 @@ function Users() {
         Account sets what they can do across the site: Admins manage everything, Officials are also added to the Officials list.
         Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
       </Muted>
-      <CsvImport kind="users" importRow={api.addUser} onDone={reload} />
+      <CsvImport kind="users" importRow={importUser} onDone={reload}>
+        <Muted>Each person gets the same welcome email as adding them above. Officials are added to the Officials list too.</Muted>
+      </CsvImport>
 
       <Section title="Users">
         <ErrorAlert>{error || changes.error}</ErrorAlert>

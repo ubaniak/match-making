@@ -105,6 +105,13 @@ new hex values.
   column's CSV text is `csv(row)`, else its `render` when that returns text, else its sort value;
   action columns drop out, `csv: false` drops any other. Lists that aren't tables (the bout card,
   the public approved bouts) use `DownloadCsvButton` from `DataTable.jsx` with their own rows.
+- **CSV upload:** every place that adds records also offers `<CsvImport kind=... />` (`CsvImport.jsx`)
+  under its add form, shown to the same people. It gives a template download, a preview with each
+  row's problems, then adds the good rows one by one through the same `api` call as the form (so
+  the database's role rules still apply). Describe the columns and per-row checks in `importSpecs`
+  (`imports.js`); look people, clubs and athletes up by email or name and say plainly why a row
+  can't be added. `importRow` can return `{ note }` for something to check (e.g. an email that
+  didn't go out).
 - **Row actions:** edit and delete are small circle icon buttons (`EditOutlined`, `DeleteOutlined`)
   with an `aria-label`, delete wrapped in a `Popconfirm`. Decisions (Approve, Accept, Decline) are
   small buttons, the positive one primary. Inline links (`type="link"`) for lighter actions.
