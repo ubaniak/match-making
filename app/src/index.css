@@ -370,10 +370,6 @@ body {
   margin-bottom: 4px;
 }
 
-.public-bouts-csv.ant-btn {
-  margin-left: auto;
-}
-
 .public-bouts .bout.ant-card {
   box-shadow: none;
   border-radius: var(--radius-md);

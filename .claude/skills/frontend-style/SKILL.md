@@ -103,8 +103,9 @@ new hex values.
   every row that matches the search (not just the current page) in the shown sort order, named
   `<csvName> <date>.csv`, so pass a `csvName` (e.g. `` csvName={`${event.name} athletes`} ``). A
   column's CSV text is `csv(row)`, else its `render` when that returns text, else its sort value;
-  action columns drop out, `csv: false` drops any other. Lists that aren't tables (the bout card,
-  the public approved bouts) use `DownloadCsvButton` from `DataTable.jsx` with their own rows.
+  action columns drop out, `csv: false` drops any other. Lists that aren't tables (the bout card)
+  use `DownloadCsvButton` from `DataTable.jsx` with their own rows. Never offer a download on the
+  public (signed-out) page.
 - **CSV upload:** every place that adds records also offers `<CsvImport kind=... />` (`CsvImport.jsx`)
   under its add form, shown to the same people. It gives a template download, a preview with each
   row's problems, then adds the good rows one by one through the same `api` call as the form (so
