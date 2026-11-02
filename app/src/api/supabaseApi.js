@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline, timezone,
+const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline, timezone, show_public_bouts,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
@@ -405,6 +405,17 @@ export const supabaseApi = {
       .select('id')
     if (error) throw error
     if (!data.length) throw new Error('You can\'t edit this event')
+  },
+
+  // Shows or hides the approved bout list on the public page. Owner or site Admin (the update policy checks).
+  async setPublicBouts(eventId, show) {
+    const { data, error } = await supabase
+      .from('events')
+      .update({ show_public_bouts: show })
+      .eq('id', eventId)
+      .select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('You can\'t change this event')
   },
 
   // days: [{ day, weigh_in_start, weigh_in_end, sessions: [{ starts_at, label }] }], one per day with bouts.

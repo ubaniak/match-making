@@ -847,6 +847,12 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  async setPublicBouts(eventId, show) {
+    const current = data()
+    requireEditor(current, eventId).show_public_bouts = !!show
+    write(DATA_KEY, current)
+  },
+
   // Mirrors save_event_times.
   async saveEventTimes(eventId, days) {
     const current = data()
@@ -915,7 +921,7 @@ export const mockApi = {
   async listPublicEvents() {
     return data().events
       .filter((e) => e.status === 'active' && e.end_date >= todayIso(e.timezone ?? DEFAULT_TIME_ZONE))
-      .map(({ id, name, venue, start_date, end_date, poster_path, days, timezone }) => ({ id, name, venue, start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE, bouts: publicBouts(data(), id, start_date, days) }))
+      .map(({ id, name, venue, start_date, end_date, poster_path, days, timezone, show_public_bouts }) => ({ id, name, venue, start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE, bouts: show_public_bouts ? publicBouts(data(), id, start_date, days) : [] }))
       .sort((a, b) => a.start_date.localeCompare(b.start_date) || a.name.localeCompare(b.name))
   },
 

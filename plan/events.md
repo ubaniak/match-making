@@ -82,7 +82,8 @@ Agreed with Bhavek on 2026-11-01.
 ### Public page
 
 A public link, with no sign-in, lists upcoming Active events. Each event shows its name, dates,
-location, poster, daily weigh-in and bout times, and (**Later**) the approved bout list. Athletes
+location, poster, daily weigh-in and bout times, and the approved bout list if the event's Owner
+(or a site Admin) has switched it on from the Bouts tab; it is hidden by default. Athletes
 are shown by category only; weight and date of birth are never shown publicly. Entered clubs and
 athletes are not listed. Viewers see only what is on the public page.
 
@@ -202,5 +203,4 @@ A site Admin can do anything on the site, including every action above.
 
 - Assigning referees and judges to bouts.
 - Tournament mode (brackets across days).
-- Showing the approved bout list on the public page.
 - Inviting people to events other than as Owner.

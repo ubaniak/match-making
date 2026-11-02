@@ -9,7 +9,7 @@ import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
-import { Alert, Button, Card as AntCard, Collapse, Input, Radio, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Collapse, Input, Radio, Space, Switch, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
@@ -78,13 +78,42 @@ function categoryText(athlete, eventDate) {
 }
 
 // The Bouts tab: the card, the weigh-in and results.
-export function EventBouts({ event, bouts }) {
+// publish: { canChange, busy, onChange(show) } for the public bout list switch.
+export function EventBouts({ event, bouts, publish }) {
   if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
   return (
     <>
       <ErrorAlert>{bouts.error}</ErrorAlert>
-      <Card event={event} data={bouts.data} rights={bouts.rights} busy={bouts.busy} run={bouts.run} />
+      <Card event={event} data={bouts.data} rights={bouts.rights} busy={bouts.busy} run={bouts.run} publish={publish} />
     </>
+  )
+}
+
+// The Owner's (or site Admin's) switch for the approved bout list on the public page. Off by default.
+function PublicBoutsSwitch({ event, data, publish }) {
+  const shown = !!event.show_public_bouts
+  const approved = data.bouts.filter((b) => b.status === 'approved').length
+  const count = `${approved} approved bout${approved === 1 ? '' : 's'}`
+  return (
+    <div className="public-bouts-switch">
+      <Switch
+        id="show-public-bouts"
+        checked={shown}
+        disabled={publish.busy}
+        onChange={(show) => publish.onChange(show)}
+        checkedChildren="Shown"
+        unCheckedChildren="Hidden"
+      />
+      <label htmlFor="show-public-bouts">
+        <Text strong>Show approved bouts on the public page</Text>
+        <br />
+        <Text type="secondary">
+          {shown
+            ? `Anyone can see the ${count} on the Upcoming events page, without signing in.`
+            : `Hidden. The public page doesn't list any bouts${approved ? ` (${count} so far)` : ''}.`}
+        </Text>
+      </label>
+    </div>
   )
 }
 
@@ -103,7 +132,7 @@ export function EventOfficialsTab({ event, may, profile, bouts }) {
 // The card: one day at a time
 // ---------------------------------------------------------------------------
 
-function Card({ event, data, rights, busy, run }) {
+function Card({ event, data, rights, busy, run, publish }) {
   const days = daysBetween(event.start_date, event.end_date)
   const [day, setDay] = useState(days[0])
   const [rematch, setRematch] = useState(null) // the bout being re-matched
@@ -186,6 +215,7 @@ function Card({ event, data, rights, busy, run }) {
         </Space>
       }
     >
+      {publish?.canChange && <PublicBoutsSwitch event={event} data={data} publish={publish} />}
       <SendNotice notice={notice} onDismiss={() => setNotice(null)} />
       {days.length > 1 && (
         <Tabs

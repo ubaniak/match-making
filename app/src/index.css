@@ -862,3 +862,27 @@ body {
     flex-direction: column;
   }
 }
+
+/* The Owner's "Show approved bouts on the public page" switch on the Bouts tab. */
+.public-bouts-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--gold);
+  border-radius: var(--radius-sm);
+}
+
+.public-bouts-switch .ant-switch {
+  flex: none;
+  margin-top: 2px;
+  min-width: 76px;
+}
+
+.public-bouts-switch label {
+  cursor: pointer;
+  min-width: 0;
+}
