@@ -6,8 +6,8 @@
 //   { bout_ids }       "Send for approval": emails everyone who still has to approve those bouts
 //                      (each corner's club Owners, the Chief Official and Deputy), one email per
 //                      person listing all their bouts. Called by the Owner, an official or a site Admin.
-//   { user_email }     welcomes someone a site Admin just added on Admin > Users: says which account
-//                      they have and how to sign in. Site Admins only.
+//   { user_email }     welcomes someone just added on Admin > Users, or a new official added to an
+//                      event: says which account they have and how to sign in.
 // Sends through Gmail (or any SMTP server) when SMTP_USER and SMTP_PASS are set, otherwise
 // through Resend (https://resend.com). Setup steps are in app/README.md ("Owner emails").
 //
@@ -106,18 +106,15 @@ async function send(to: string, subject: string, text: string, html: string) {
 // means the caller isn't allowed.
 // deno-lint-ignore no-explicit-any
 async function sendWelcome(supabase: any, email: string) {
-  const { data: isAdmin, error: adminError } = await supabase.rpc('is_site_admin')
-  if (adminError || !isAdmin) return json({ error: 'Only a site Admin can send this email' }, 403)
-
-  const [profile, invite] = await Promise.all([
-    supabase.from('profiles').select('name, roles(name)').eq('email', email).maybeSingle(),
-    supabase.from('invites').select('name, roles(name)').eq('email', email).maybeSingle(),
-  ])
-  const person = profile.data ?? invite.data
-  if (!person) return json({ error: 'There is no user with that email' }, 404)
+  // welcome_email_details returns nothing unless the caller is a site Admin, or an official who
+  // just invited this person to an event (migration 24).
+  const { data, error } = await supabase.rpc('welcome_email_details', { p_email: email })
+  if (error) return json({ error: error.message }, 400)
+  const person = data?.[0]
+  if (!person) return json({ error: 'There is no user with that email you can welcome' }, 404)
 
   const site = appUrl()
-  const account = accountPhrase(person.roles?.name)
+  const account = accountPhrase(person.role_name)
   const greeting = person.name ? `Hi ${person.name},` : 'Hi,'
   const text = [
     greeting,

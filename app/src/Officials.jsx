@@ -1,13 +1,15 @@
-// Officials on an event (plan/events.md, "Inviting officials"): a site Admin or the event's
-// Chief Official invites officials, officials accept or decline, and the CO and Deputy are picked from
+// Officials on an event (plan/events.md, "Inviting officials"): a site Admin or any official
+// on the event invites officials, officials accept or decline, and the CO and Deputy are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card as AntCard, Checkbox, Modal, Segmented, Select, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Checkbox, Input, Modal, Segmented, Select, Space, Tabs } from 'antd'
 import DataTable from './DataTable'
 import { api } from './api'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
 import { askConfirm } from './dialogs'
+import WelcomeNotice from './WelcomeNotice'
+import { sendWelcome } from './welcome'
 import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, Text } from './ui'
 
 const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
@@ -159,24 +161,29 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
   // the nominated CO"). Only a site Admin picks the Chief Official; either picks the Deputy.
   const chief = officials.some((o) => o.role === 'chief' && o.user_id === profile?.id)
   const manager = may.siteAdmin || chief
-  // The event's Owner, the Chief Official and the Deputy see the lists too, but can't change them.
-  const seesLists = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
+  // Any official who accepted can invite more officials and resend invitations (Bhavek: "an
+  // official is allowed to add other officials"), and sees the lists. Removing stays with managers.
+  const onEvent = officials.some((o) => o.user_id === profile?.id) || mine?.status === 'accepted'
+  const canAdd = manager || onEvent
+  // The event's Owner sees the lists too, but can't change them.
+  const seesLists = canAdd || may.role === 'owner'
+  const listsByRole = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
 
   const load = useCallback(async () => {
     try {
-      if (seesLists) {
+      const own = (await api.listMyInvitations()).find((i) => i.event_id === event.id) ?? null
+      setMine(own)
+      if (listsByRole || own?.status === 'accepted') {
         setInvitations(await api.listEventInvitations(event.id))
       }
-      const own = await api.listMyInvitations()
-      setMine(own.find((i) => i.event_id === event.id) ?? null)
       setError(null)
     } catch (err) {
       setError(err.message)
     }
-  }, [event.id, seesLists])
+  }, [event.id, listsByRole])
 
   useEffect(() => {
     load()
@@ -202,7 +209,7 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
         <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
       )}
       {seesLists ? (
-        <Manage event={event} may={may} manager={manager} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
+        <Manage event={event} may={may} manager={manager} canAdd={canAdd} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
       ) : (
         <AntCard size="small" className="form-card">
           <Space size="large" wrap>
@@ -245,24 +252,30 @@ function MyAnswer({ invitation, event, busy, act }) {
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
         )}
       </Space>
-      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or the Chief Official to invite you again.</Muted>}
+      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or one of the event's officials to invite you again.</Muted>}
     </AntCard>
   )
 }
 
-// The lists of who answered what. Site Admins and the Chief Official also invite and pick here.
-// The CO and Deputy get the same lists without the buttons.
-function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
+// The lists of who answered what. Site Admins and the event's officials also invite here (and
+// add someone new); site Admins and the Chief Official also remove and pick the CO and Deputy.
+function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, act }) {
   const [officialsList, setOfficialsList] = useState([])
   const [choice, setChoice] = useState([])
   const [respondBy, setRespondBy] = useState('')
   const [tab, setTab] = useState('accepted')
   const [email, setEmail] = useState(null) // { sent, failed: [{ name, email }], reason }
-  const canInvite = manager && may.open
+  const [newOfficial, setNewOfficial] = useState({ name: '', email: '' })
+  const [welcome, setWelcome] = useState(null) // the welcome email to a newly added official
+  const canInvite = canAdd && may.open
 
-  useEffect(() => {
+  const loadOfficialsList = useCallback(() => {
     if (canInvite) api.listInvitableOfficials(event.id).then(setOfficialsList, () => setOfficialsList([]))
   }, [canInvite, event.id])
+
+  useEffect(() => {
+    loadOfficialsList()
+  }, [loadOfficialsList])
 
   const byOfficial = Object.fromEntries(invitations.map((i) => [i.official_id, i]))
   const accepted = invitations.filter((i) => answerOf(i, event.timezone) === 'accepted')
@@ -275,12 +288,17 @@ function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
   const roleOf = (userId) => Object.entries(byRole).find(([, o]) => o.user_id === userId)?.[0]
   const today = todayIso(event.timezone)
 
-  async function send(officialIds, deadline) {
+  const send = (officialIds, deadline) => deliver(() => api.inviteOfficials(event.id, officialIds, deadline))
+
+  // create() makes or renews the invitations and returns their ids; then each one is emailed.
+  // afterCreate runs in between (the welcome email for someone new goes before the invitation).
+  async function deliver(create, afterCreate) {
     let ids = []
     const ok = await act(async () => {
-      ids = await api.inviteOfficials(event.id, officialIds, deadline)
+      ids = await create()
     })
     if (!ok) return false
+    if (afterCreate) await afterCreate()
     if (ids.length === 0) {
       setEmail(null)
       return true
@@ -300,6 +318,29 @@ function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
     if (await send(choice, respondBy)) {
       setChoice([])
       setTab('waiting')
+    }
+  }
+
+  // Someone not on the Officials list: the same onboarding as Admin > Add a user (an Official
+  // account and the welcome email), then the event invitation.
+  async function addNew(e) {
+    e.preventDefault()
+    const person = { name: newOfficial.name.trim(), email: newOfficial.email.trim().toLowerCase(), roleId: 'official' }
+    let added = null
+    setWelcome(null)
+    const ok = await deliver(
+      async () => {
+        added = await api.addEventOfficial(event.id, person.name, person.email, respondBy)
+        return [added.invitation_id]
+      },
+      async () => {
+        if (added.new_account) setWelcome(await sendWelcome(person))
+      },
+    )
+    if (ok) {
+      setNewOfficial({ name: '', email: '' })
+      setTab('waiting')
+      loadOfficialsList()
     }
   }
 
@@ -346,7 +387,7 @@ function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
       title: 'Invited', key: 'invited_at', value: (i) => i.invited_at,
       render: (_, i) => formatDay(i.invited_at.slice(0, 10)),
     },
-    manager && {
+    canAdd && {
       key: 'actions',
       className: 'actions',
       render: (_, i) => {
@@ -356,7 +397,7 @@ function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
             {canInvite && answer !== 'accepted' && (
               <Button size="small" disabled={busy} onClick={() => reinvite(i)}>{answer === 'pending' ? 'Resend' : 'Invite again'}</Button>
             )}
-            {(may.siteAdmin || i.user_id !== me) && (
+            {manager && (may.siteAdmin || i.user_id !== me) && (
               <Button size="small" disabled={busy} onClick={() => remove(i)}>{answer === 'accepted' ? 'Remove' : 'Cancel'}</Button>
             )}
           </Space>
@@ -369,8 +410,8 @@ function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
 
   return (
     <>
-      {manager && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
-      {!manager && may.role === 'owner' && <Muted>A site Admin or the Chief Official invites the officials. A site Admin picks the Chief Official.</Muted>}
+      {canAdd && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
+      {!manager && may.role === 'owner' && <Muted>A site Admin or the event's officials invite more officials. A site Admin picks the Chief Official.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}
@@ -400,6 +441,24 @@ function Manage({ event, may, manager, me, invitations, byRole, busy, act }) {
           </FullRow>
         </FormCard>
       )}
+      {canInvite && (
+        <FormCard
+          compact
+          onSubmit={addNew}
+          actions={<Button htmlType="submit" disabled={busy || !newOfficial.name.trim() || !newOfficial.email.trim()}>Add and invite</Button>}
+        >
+          <Field label="Someone not on the list? Name">
+            <Input value={newOfficial.name} onChange={(e) => setNewOfficial({ ...newOfficial, name: e.target.value })} placeholder="Full name" />
+          </Field>
+          <Field label="Email">
+            <Input type="email" value={newOfficial.email} onChange={(e) => setNewOfficial({ ...newOfficial, email: e.target.value })} placeholder="name@example.com" />
+          </Field>
+          <FullRow>
+            <Muted>They're added to the Officials list with an Official account, get the same welcome email as a new user, then get this event's invitation.</Muted>
+          </FullRow>
+        </FormCard>
+      )}
+      <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
       <EmailNotice email={email} event={event} onDismiss={() => setEmail(null)} />
 
       <FormCard compact>

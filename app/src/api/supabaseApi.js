@@ -581,6 +581,12 @@ export const supabaseApi = {
   },
 
   // Returns the ids of the invitations sent (officials who already accepted are skipped).
+  // Someone not on the Officials list yet: adds them (with an Official account invite) and invites
+  // them to the event. Returns { invitation_id, official_id, new_account }.
+  async addEventOfficial(eventId, name, email, respondBy) {
+    return rpc('add_event_official', { p_event_id: eventId, p_name: name, p_email: email, p_respond_by: respondBy || null })
+  },
+
   async inviteOfficials(eventId, officialIds, respondBy) {
     return rpc('invite_officials', { p_event_id: eventId, p_official_ids: officialIds, p_respond_by: respondBy || null })
   },
