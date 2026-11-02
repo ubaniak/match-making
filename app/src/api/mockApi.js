@@ -1619,12 +1619,19 @@ export const mockApi = {
 
   async setCardOrder(eventId, day, order) {
     const current = data()
-    if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner sets the order of the card')
+    // Mirrors migration 29: the Owner, Chief Official or Deputy; every bout that day is renumbered,
+    // the ones sent first in the order sent, then the rest in their old order.
+    if (!isOwnerOf(current, eventId) && !isOfficial(current, eventId)) throw new Error('Only the event\'s Owner, Chief Official or Deputy sets the order of the card')
     if (!cardOpen(findEvent(current, eventId))) throw new Error('The card can change only while the event is Active')
-    order.forEach(({ id, session }, i) => {
-      const bout = current.bouts.find((b) => b.id === id && b.event_id === eventId && b.day === day)
-      if (bout) Object.assign(bout, { position: i + 1, session_starts_at: session || null })
-    })
+    const sent = new Map()
+    order.forEach(({ id, session }) => { if (!sent.has(id)) sent.set(id, { n: sent.size, session: session || null }) })
+    const dayBouts = current.bouts.filter((b) => b.event_id === eventId && b.day === day)
+    dayBouts
+      .sort((x, y) => (sent.get(x.id)?.n ?? Infinity) - (sent.get(y.id)?.n ?? Infinity) || x.position - y.position)
+      .forEach((bout, i) => {
+        bout.position = i + 1
+        if (sent.has(bout.id)) bout.session_starts_at = sent.get(bout.id).session
+      })
     write(DATA_KEY, current)
   },
 

@@ -882,3 +882,22 @@ body {
   cursor: pointer;
   min-width: 0;
 }
+
+/* Drag-and-drop running order: the grip handle on each bout card. */
+.drag-handle.ant-btn {
+  min-width: 44px;
+  height: 44px;
+  cursor: grab;
+  touch-action: none;
+  color: var(--navy);
+  font-size: 20px;
+}
+
+.drag-handle.ant-btn:active {
+  cursor: grabbing;
+}
+
+.bout-dragging .bout.ant-card {
+  box-shadow: var(--shadow-sm), var(--shadow-md);
+  outline: 3px solid var(--gold);
+}
