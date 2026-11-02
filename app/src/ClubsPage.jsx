@@ -81,18 +81,19 @@ function ClubList({ siteAdmin, profile, onOpen }) {
       {clubs === null && !error && <Muted>Loading…</Muted>}
       {clubs?.length === 0 && <Muted>{siteAdmin ? 'No clubs yet. Create one above.' : 'No clubs yet.'}</Muted>}
       {mine.length > 0 && <ClubTable title="Your clubs" clubs={mine} profile={profile} onOpen={onOpen} />}
-      {others.length > 0 && <ClubTable title={mine.length ? 'Other clubs' : 'All clubs'} clubs={others} profile={profile} onOpen={onOpen} />}
+      {others.length > 0 && <ClubTable title={mine.length ? 'Other clubs' : 'All clubs'} clubs={others} profile={profile} onOpen={onOpen} namesOnly={!siteAdmin} />}
     </>
   )
 }
 
-function ClubTable({ title, clubs, profile, onOpen }) {
+// namesOnly: other clubs' people and athletes are private to them (migration 30), so only names show.
+function ClubTable({ title, clubs, profile, onOpen, namesOnly = false }) {
   const columns = [
     { title: 'Club', key: 'name', value: (c) => c.name, render: (_, c) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(c.id)}>{c.name}</Button> },
-    { title: 'Owners', key: 'owners', render: (_, c) => c.members.filter((m) => m.role === 'owner' && m.status === 'active').map((m) => personName(m.user)).join(', ') || '—' },
-    { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
-    { title: 'Your role', key: 'role', value: (c) => roleLabels[myClubRole(c, profile)], render: (_, c) => <RoleBadge role={myClubRole(c, profile)} /> },
-  ]
+    !namesOnly && { title: 'Owners', key: 'owners', render: (_, c) => c.members.filter((m) => m.role === 'owner' && m.status === 'active').map((m) => personName(m.user)).join(', ') || '—' },
+    !namesOnly && { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
+    !namesOnly && { title: 'Your role', key: 'role', value: (c) => roleLabels[myClubRole(c, profile)], render: (_, c) => <RoleBadge role={myClubRole(c, profile)} /> },
+  ].filter(Boolean)
   return (
     <Section title={title}>
       <DataTable rowKey="id" columns={columns} dataSource={clubs} csvName={title} />
@@ -274,18 +275,28 @@ function ClubDetail({ id, siteAdmin, profile, onBack }) {
         </PageHeading>
       )}
       <ErrorAlert>{error}</ErrorAlert>
-      <Descriptions
-        size="small"
-        column={{ xs: 1, sm: 2, md: 4 }}
-        items={[
-          { key: 'athletes', label: 'Athletes', children: club.athletes.length },
-          { key: 'role', label: 'Your role', children: siteAdmin ? <Badge>Site admin</Badge> : <RoleBadge role={role} /> },
-        ]}
-      />
-
-      <ClubAthletes club={club} clubs={clubs} users={users} may={may} onChange={reload} />
-      <Transfers club={club} may={may} role={role} profile={profile} onChange={reload} />
-      <ClubPeople club={club} users={users} may={may} onChange={reload} />
+      {may.member ? (
+        <>
+          <Descriptions
+            size="small"
+            column={{ xs: 1, sm: 2, md: 4 }}
+            items={[
+              { key: 'athletes', label: 'Athletes', children: club.athletes.length },
+              { key: 'role', label: 'Your role', children: siteAdmin ? <Badge>Site admin</Badge> : <RoleBadge role={role} /> },
+            ]}
+          />
+          <ClubAthletes club={club} clubs={clubs} users={users} may={may} onChange={reload} />
+          <Transfers club={club} may={may} role={role} profile={profile} onChange={reload} />
+          <ClubPeople club={club} users={users} may={may} onChange={reload} />
+        </>
+      ) : (
+        // Event Owners and officials still see a club's people and the athletes in their events.
+        <>
+          <Muted>A club's people and athletes are only shown to its own members.</Muted>
+          {club.athletes.length > 0 && <ClubAthletes club={club} clubs={clubs} users={users} may={may} onChange={reload} />}
+          {club.members.length > 0 && <ClubPeople club={club} users={users} may={may} onChange={reload} />}
+        </>
+      )}
 
       {siteAdmin && <div className="section"><Button danger onClick={remove}>Delete this club</Button></div>}
     </>
@@ -576,7 +587,8 @@ function TransferTable({ transfers, actions, showStatus, csvName = 'Transfers' }
 
 // Owners and Coaches. Club owners invite people; a site Admin approves each invite.
 function ClubPeople({ club, users, may, onChange }) {
-  const [form, setForm] = useState({ userId: '', role: 'coach' })
+  // Site Admins pick from everyone; club owners only see their own club's people, so they type an email.
+  const [form, setForm] = useState({ userId: '', email: '', role: 'coach' })
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -595,7 +607,7 @@ function ClubPeople({ club, users, may, onChange }) {
     try {
       await action()
       await onChange()
-      if (done) setMessage(done)
+      if (done) setMessage(typeof done === 'function' ? done() : done)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -605,12 +617,20 @@ function ClubPeople({ club, users, may, onChange }) {
 
   function invite(e) {
     e.preventDefault()
-    if (!form.userId) return
-    const user = users.find((u) => u.id === form.userId)
+    if (may.siteAdmin) {
+      if (!form.userId) return
+      run(async () => {
+        await api.addClubMember(club.id, form.userId, form.role, { approved: true })
+        setForm({ ...form, userId: '' })
+      })
+      return
+    }
+    if (!form.email.trim()) return
+    let name = form.email.trim()
     run(async () => {
-      await api.addClubMember(club.id, form.userId, form.role, { approved: may.siteAdmin })
-      setForm({ userId: '', role: form.role })
-    }, may.siteAdmin ? null : `${personName(user)} is invited. A site Admin has to approve it before they join.`)
+      name = (await api.inviteClubMember(club.id, form.email.trim(), form.role)) || name
+      setForm({ ...form, email: '' })
+    }, () => `${name} is invited. A site Admin has to approve it before they join.`)
   }
 
   const roleOptions = [{ value: 'owner', label: 'Owner' }, { value: 'coach', label: 'Coach' }]
@@ -658,16 +678,22 @@ function ClubPeople({ club, users, may, onChange }) {
       {may.manage && (
         <FormCard
           onSubmit={invite}
-          actions={<Button type="primary" htmlType="submit" disabled={busy || !form.userId}>{may.siteAdmin ? 'Add' : 'Invite'}</Button>}
+          actions={<Button type="primary" htmlType="submit" disabled={busy || (may.siteAdmin ? !form.userId : !form.email.trim())}>{may.siteAdmin ? 'Add' : 'Invite'}</Button>}
         >
-          <Field label={may.siteAdmin ? 'Add a person' : 'Invite a person'}>
-            <Pick
-              value={form.userId}
-              onChange={(userId) => setForm({ ...form, userId })}
-              placeholder={addable.length ? 'Choose a user…' : 'Everyone is already in this club'}
-              options={addable.map((u) => ({ value: u.id, label: userLabel(u) }))}
-            />
-          </Field>
+          {may.siteAdmin ? (
+            <Field label="Add a person">
+              <Pick
+                value={form.userId}
+                onChange={(userId) => setForm({ ...form, userId })}
+                placeholder={addable.length ? 'Choose a user…' : 'Everyone is already in this club'}
+                options={addable.map((u) => ({ value: u.id, label: userLabel(u) }))}
+              />
+            </Field>
+          ) : (
+            <Field label="Invite a person" hint="the email they sign in with">
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@example.com" />
+            </Field>
+          )}
           <Field label="As">
             <Pick value={form.role} onChange={(role) => setForm({ ...form, role })} options={[{ value: 'coach', label: 'Coach' }, { value: 'owner', label: 'Owner' }]} />
           </Field>
@@ -677,8 +703,10 @@ function ClubPeople({ club, users, may, onChange }) {
         <CsvImport
           kind="clubPeople"
           title={`${may.siteAdmin ? 'Add' : 'Invite'} people from a CSV file`}
-          context={{ usersByEmail: byEmail(users), memberIds }}
-          importRow={({ userId, role }) => api.addClubMember(club.id, userId, role, { approved: may.siteAdmin })}
+          context={{ usersByEmail: byEmail(users), memberIds, byEmail: !may.siteAdmin }}
+          importRow={({ userId, email, role }) => (may.siteAdmin
+            ? api.addClubMember(club.id, userId, role, { approved: true })
+            : api.inviteClubMember(club.id, email, role))}
           onDone={onChange}
         >
           {!may.siteAdmin && <Muted>A site Admin has to approve each invitation before they join.</Muted>}

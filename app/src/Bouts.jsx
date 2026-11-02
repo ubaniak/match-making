@@ -601,7 +601,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
 
   const corner = (side, athlete, fallback, club) => (
     <div className={`corner ${side}`}>
-      <Text strong>{athlete?.name ?? fallback?.name ?? 'Unknown'}</Text>
+      <Text strong>{athlete?.name ?? fallback?.name ?? 'Not shown'}</Text>
       <Text type="secondary">{club?.name ?? '—'}</Text>
       {athlete && <Text type="secondary">{categoryText(athlete, event.start_date)}{weights[athlete.id] != null ? ` · weighed ${formatWeight(weights[athlete.id])}` : ''}</Text>}
       {bout.winner === side && <span><Badge strong>Winner · {methodLabels[bout.method]}</Badge></span>}

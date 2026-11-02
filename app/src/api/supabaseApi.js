@@ -273,6 +273,12 @@ export const supabaseApi = {
     if (error) throw error.code === '23505' ? new Error('That person is already in the club or invited') : error
   },
 
+  // Club owners only see their own club's people (migration 30), so they invite by email. A site
+  // Admin's invite joins straight away; an owner's waits for a site Admin. Returns the person's name.
+  async inviteClubMember(clubId, email, role) {
+    return rpc('invite_club_member', { p_club_id: clubId, p_email: email, p_role: role || 'coach' })
+  },
+
   async approveClubMember(clubId, userId) {
     const { error } = await supabase.from('club_members').update({ status: 'active' }).eq('club_id', clubId).eq('user_id', userId)
     if (error) throw error

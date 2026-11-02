@@ -634,6 +634,14 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  async inviteClubMember(clubId, email, role) {
+    const clean = (email ?? '').trim().toLowerCase()
+    const user = data().users.find((u) => u.id && u.email?.toLowerCase() === clean)
+    if (!user) throw new Error(`Nobody has signed in with ${clean} yet. Ask them to sign in once, then invite them.`)
+    await mockApi.addClubMember(clubId, user.id, role || 'coach', { approved: isSiteAdmin() })
+    return user.name || user.email
+  },
+
   async approveClubMember(clubId, userId) {
     requireSiteAdmin('Only a site Admin can approve club members')
     const current = data()

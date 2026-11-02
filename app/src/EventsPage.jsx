@@ -974,7 +974,8 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
       value: (ec) => ownersOfClub(ec.club_id).map((m) => personName(m.user)).join(', '),
       render: (_, ec) => ownersOfClub(ec.club_id).map((m) => personName(m.user)).join(', ') || '—',
     },
-    { title: 'Athletes entered', key: 'count', render: (_, ec) => (ec.status === 'accepted' ? event.athletes.filter((a) => a.entry_club_id === ec.club_id).length : '') },
+    // A club only sees its own entries (migration 30), so other clubs' counts aren't shown to it.
+    { title: 'Athletes entered', key: 'count', render: (_, ec) => (ec.status !== 'accepted' ? '' : may.siteAdmin || may.role === 'owner' || owns(ec.club_id) ? event.athletes.filter((a) => a.entry_club_id === ec.club_id).length : '—') },
     {
       key: 'actions',
       className: 'actions',
