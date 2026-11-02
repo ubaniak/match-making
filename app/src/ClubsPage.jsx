@@ -79,21 +79,22 @@ function ClubList({ siteAdmin, profile, onOpen }) {
       {siteAdmin && <PendingInvites onChange={reload} />}
       <ErrorAlert>{error}</ErrorAlert>
       {clubs === null && !error && <Muted>Loading…</Muted>}
-      {clubs?.length === 0 && <Muted>{siteAdmin ? 'No clubs yet. Create one above.' : 'No clubs yet.'}</Muted>}
+      {clubs?.length === 0 && <Muted>{siteAdmin ? 'No clubs yet. Create one above.' : 'You aren\'t in a club yet. A site Admin adds you to one.'}</Muted>}
       {mine.length > 0 && <ClubTable title="Your clubs" clubs={mine} profile={profile} onOpen={onOpen} />}
-      {others.length > 0 && <ClubTable title={mine.length ? 'Other clubs' : 'All clubs'} clubs={others} profile={profile} onOpen={onOpen} namesOnly={!siteAdmin} />}
+      {/* Club owners and coaches only see their own clubs (migration 31). */}
+      {siteAdmin && others.length > 0 && <ClubTable title={mine.length ? 'Other clubs' : 'All clubs'} clubs={others} profile={profile} onOpen={onOpen} />}
+      {!siteAdmin && clubs?.length > 0 && mine.length === 0 && <Muted>You aren't in a club yet. A site Admin adds you to one.</Muted>}
     </>
   )
 }
 
-// namesOnly: other clubs' people and athletes are private to them (migration 30), so only names show.
-function ClubTable({ title, clubs, profile, onOpen, namesOnly = false }) {
+function ClubTable({ title, clubs, profile, onOpen }) {
   const columns = [
     { title: 'Club', key: 'name', value: (c) => c.name, render: (_, c) => <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen(c.id)}>{c.name}</Button> },
-    !namesOnly && { title: 'Owners', key: 'owners', render: (_, c) => c.members.filter((m) => m.role === 'owner' && m.status === 'active').map((m) => personName(m.user)).join(', ') || '—' },
-    !namesOnly && { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
-    !namesOnly && { title: 'Your role', key: 'role', value: (c) => roleLabels[myClubRole(c, profile)], render: (_, c) => <RoleBadge role={myClubRole(c, profile)} /> },
-  ].filter(Boolean)
+    { title: 'Owners', key: 'owners', render: (_, c) => c.members.filter((m) => m.role === 'owner' && m.status === 'active').map((m) => personName(m.user)).join(', ') || '—' },
+    { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
+    { title: 'Your role', key: 'role', value: (c) => roleLabels[myClubRole(c, profile)], render: (_, c) => <RoleBadge role={myClubRole(c, profile)} /> },
+  ]
   return (
     <Section title={title}>
       <DataTable rowKey="id" columns={columns} dataSource={clubs} csvName={title} />
@@ -230,22 +231,23 @@ function ClubDetail({ id, siteAdmin, profile, onBack }) {
 
   const reload = useCallback(async () => {
     try {
-      const [detail, all] = await Promise.all([api.getClub(id), api.listClubs()])
+      // Only site Admins see every club; members get just the names they can transfer to.
+      const [detail, all] = await Promise.all([api.getClub(id), siteAdmin ? api.listClubs() : api.listTransferClubs()])
       setClub(detail)
       setClubs(all)
       setError(null)
     } catch (err) {
       setError(err.message)
     }
-  }, [id])
+  }, [id, siteAdmin])
 
   useEffect(() => {
     reload()
   }, [reload])
 
-  const backLink = <BackLink onClick={onBack}>All clubs</BackLink>
+  const backLink = <BackLink onClick={onBack}>{siteAdmin ? 'All clubs' : 'Your clubs'}</BackLink>
   if (club === undefined) return <>{backLink}{error ? <ErrorAlert>{error}</ErrorAlert> : <Muted>Loading…</Muted>}</>
-  if (club === null) return <>{backLink}<p>That club no longer exists.</p></>
+  if (club === null) return <>{backLink}<p>{siteAdmin ? 'That club no longer exists.' : 'That club doesn\'t exist, or you aren\'t one of its members.'}</p></>
 
   const role = myClubRole(club, profile)
   const may = {
