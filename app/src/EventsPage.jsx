@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Checkbox, Descriptions, Input, Modal, Select, Space, Tabs, Upload } from 'antd'
 import { EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
+import CsvImport from './CsvImport'
 import { api } from './api'
 import { EventBouts, EventOfficialsTab } from './Bouts'
 import { useEventBouts } from './useEventBouts'
@@ -118,6 +119,7 @@ export default function EventsPage({ profile, can, eventId, tab }) {
             you're ready.
           </Muted>
           <NewEventForm onCancel={back} onCreated={(id, email) => setView({ name: 'event', id, email })} />
+          <EventsImport onDone={back} />
         </>
       )}
       {view.name === 'event' && (
@@ -196,6 +198,43 @@ function useActiveUsers(enabled = true) {
     if (enabled) api.listUsers().then((all) => setUsers(all.filter((u) => u.id && u.state === 'Active')), () => setUsers([]))
   }, [enabled])
   return users
+}
+
+// Everyone, including invited and disabled users, so a CSV row can say why someone can't be picked.
+function useAllUsers(enabled = true) {
+  const [users, setUsers] = useState([])
+  useEffect(() => {
+    if (enabled) api.listUsers().then(setUsers, () => setUsers([]))
+  }, [enabled])
+  return users
+}
+
+const usersByEmail = (users) => new Map(users.map((u) => [u.email?.toLowerCase(), u]))
+
+// Several events at once. Each is created Requested and its Owner emailed, like the form above.
+function EventsImport({ onDone }) {
+  const users = useAllUsers()
+  const [created, setCreated] = useState(false)
+  return (
+    <CsvImport
+      kind="events"
+      title="Create events from a CSV file"
+      context={{ usersByEmail: usersByEmail(users), defaultTimeZone: browserTimeZone() }}
+      importRow={async (event) => {
+        const id = await api.createEvent(event)
+        setCreated(true)
+        try {
+          await api.emailEventOwner(id)
+          return null
+        } catch (err) {
+          return { note: `the email to its Owner wasn't sent (${err.message}). Open the event to see who to tell` }
+        }
+      }}
+    >
+      <Muted>Each event starts as Requested and its Owner is emailed, the same as the form above.</Muted>
+      {created && <Button className="gap" onClick={onDone}>See them in All events</Button>}
+    </CsvImport>
+  )
 }
 
 function DateFields({ form, setField }) {
@@ -995,6 +1034,9 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
           </FullRow>
         </FormCard>
       )}
+      {may.manageClubs && may.open && (
+        <EventClubsImport event={event} clubs={clubs} canCreate={managesOwners} statusByClub={Object.fromEntries(event.clubs.map((ec) => [ec.club_id, ec.status]))} onDone={onChange} />
+      )}
       {may.open && canJoin.length > 0 && (
         <Space wrap className="gap">
           {canJoin.map((c) => (
@@ -1017,6 +1059,26 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
         onClose={() => setOwnersOf(null)}
       />
     </Section>
+  )
+}
+
+// Clubs from a CSV: a club that exists is invited; a new one (with owner_emails) is made and joins.
+function EventClubsImport({ event, clubs, canCreate, statusByClub, onDone }) {
+  const users = useAllUsers()
+  return (
+    <CsvImport
+      kind="eventClubs"
+      templateName="event-clubs"
+      title="Invite or add clubs from a CSV file"
+      context={{ usersByEmail: usersByEmail(users), clubsByName: new Map(clubs.map((c) => [c.name.trim().toLowerCase(), c])), statusByClub, canCreate }}
+      importRow={async (row) => {
+        if (row.clubId) await api.inviteClub(event.id, row.clubId)
+        else await api.createEventClub(event.id, row.name, row.ownerIds)
+      }}
+      onDone={onDone}
+    >
+      <Muted>A club that already exists is invited. {canCreate && 'A club name we don\'t know is created with the owners in owner_emails and joins straight away.'}</Muted>
+    </CsvImport>
   )
 }
 
@@ -1190,6 +1252,27 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
           )}
         </FormCard>
       )}
+      {canEnter && (
+        <CsvImport
+          kind="entries"
+          templateName="entries"
+          title={late ? 'Ask for late entries from a CSV file' : 'Enter athletes from a CSV file'}
+          context={{
+            available,
+            entered: [...event.athletes, ...allAthletes.filter((a) => waitingLate.has(a.id))],
+          }}
+          importRow={async (row) => {
+            if (late) await api.requestLateEntry(event.id, row.athleteId, row.note)
+            else await api.enterAthlete(event.id, row.athleteId, row.opponentName, row.opponentClub)
+          }}
+          onDone={onChange}
+        >
+          <Muted>
+            Athletes are matched by name among {may.siteAdmin ? "the event's clubs" : 'your clubs in this event'}.
+            {late && ' The entry deadline has passed, so each row is a late entry request for the Owner to accept or decline.'}
+          </Muted>
+        </CsvImport>
+      )}
       <ErrorAlert>{error}</ErrorAlert>
       <LateEntries event={event} may={may} ownedIds={ownedIds} profile={profile} run={run} busy={busy} />
       {event.athletes.length === 0 ? (
@@ -1276,7 +1359,8 @@ function ExperienceCell({ category, bouts }) {
 // Who's on the event: the Owner, plus Viewers once the event is Active.
 // Only a site Admin changes the Owner (see ChangeOwner).
 function EventMembers({ event, may, onChange }) {
-  const users = useActiveUsers(may.addMembers)
+  const allUsers = useAllUsers(may.addMembers)
+  const users = allUsers.filter((u) => u.id && u.state === 'Active')
   const [form, setForm] = useState({ userId: '', role: 'viewer' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -1340,6 +1424,17 @@ function EventMembers({ event, may, onChange }) {
             />
           </Field>
         </FormCard>
+      )}
+      {may.addMembers && (
+        <CsvImport
+          kind="eventViewers"
+          title="Add viewers from a CSV file"
+          context={{ usersByEmail: usersByEmail(allUsers), memberIds }}
+          importRow={async ({ userId }) => {
+            await api.setEventMember(event.id, userId, 'viewer')
+          }}
+          onDone={onChange}
+        />
       )}
       <ErrorAlert>{error}</ErrorAlert>
       <DataTable rowKey="user_id" columns={columns} dataSource={members} csvName={`${event.name} people`} />

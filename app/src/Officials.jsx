@@ -3,6 +3,7 @@
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card as AntCard, Checkbox, Input, Modal, Segmented, Select, Space, Tabs } from 'antd'
+import CsvImport from './CsvImport'
 import DataTable from './DataTable'
 import { api } from './api'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
@@ -344,6 +345,31 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
     }
   }
 
+  // One CSV row: invite someone on the Officials list, or add and invite someone new, then email
+  // the invitation. Problems with the emails come back as notes; the invitation still stands.
+  async function importOfficial(row) {
+    const notes = []
+    let invitationIds
+    if (row.officialId) {
+      invitationIds = await api.inviteOfficials(event.id, [row.officialId], respondBy)
+    } else {
+      const added = await api.addEventOfficial(event.id, row.name, row.email, respondBy)
+      invitationIds = [added.invitation_id]
+      if (added.new_account) {
+        const welcome = await sendWelcome({ name: row.name, email: row.email, roleId: 'official' })
+        if (!welcome.sent) notes.push(`the welcome email wasn't sent (${welcome.reason})`)
+      }
+    }
+    for (const id of invitationIds ?? []) {
+      try {
+        await api.emailOfficialInvitation(id)
+      } catch (err) {
+        notes.push(`the invitation email wasn't sent (${err.message}). Use Resend on their row`)
+      }
+    }
+    return notes.length ? { note: notes.join('; ') } : null
+  }
+
   async function reinvite(i) {
     const when = respondBy ? ` They have until ${formatDay(respondBy)} to answer.` : ''
     if (!(await askConfirm(`Invite ${i.name} again?${when}`, { okText: 'Invite again' }))) return
@@ -457,6 +483,27 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
             <Muted>They're added to the Officials list with an Official account, get the same welcome email as a new user, then get this event's invitation.</Muted>
           </FullRow>
         </FormCard>
+      )}
+      {canInvite && (
+        <CsvImport
+          kind="eventOfficials"
+          templateName="event-officials"
+          title="Invite officials from a CSV file"
+          context={{
+            officialsByEmail: new Map(officialsList.filter((o) => o.email).map((o) => [o.email.toLowerCase(), { ...o, accepted: byOfficial[o.id]?.status === 'accepted' }])),
+          }}
+          importRow={importOfficial}
+          onDone={async () => {
+            await act(async () => {})
+            loadOfficialsList()
+            setTab('waiting')
+          }}
+        >
+          <Muted>
+            Someone on the Officials list is invited; anyone else is added with an Official account and gets the welcome email first.
+            {respondBy ? ` They have until ${formatDay(respondBy)} to answer (the Respond by date above).` : ' Set Respond by above first if they need a deadline.'}
+          </Muted>
+        </CsvImport>
       )}
       <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
       <EmailNotice email={email} event={event} onDismiss={() => setEmail(null)} />

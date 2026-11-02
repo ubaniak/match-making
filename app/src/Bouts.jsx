@@ -1,6 +1,7 @@
 // Stage 4 (plan/events.md sections 4 to 6): the event's officials (Officials.jsx), bout matching and
 // approvals, comments, the weigh-in, the card order and results.
 import { useMemo, useState } from 'react'
+import CsvImport from './CsvImport'
 import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
@@ -212,6 +213,10 @@ function Card({ event, data, rights, busy, run }) {
         />
       )}
 
+      {rights.cardOpen && (rights.official || rights.owner) && (
+        <BoutsImport event={event} data={data} days={days} official={rights.official} run={run} />
+      )}
+
       {live.length === 0 ? (
         <Muted>No bouts on {formatDay(day)} yet.</Muted>
       ) : (
@@ -256,6 +261,33 @@ function Card({ event, data, rights, busy, run }) {
 // ---------------------------------------------------------------------------
 // Making and re-matching a bout
 // ---------------------------------------------------------------------------
+
+// Many bouts at once, checked against the same match rules as the form.
+function BoutsImport({ event, data, days, official, run }) {
+  const live = data.bouts.filter((b) => b.status !== 'cancelled')
+  const takenByDay = {}
+  for (const b of live) (takenByDay[b.day] ??= []).push(b.red_athlete_id, b.blue_athlete_id)
+  const weightsByDay = {}
+  for (const w of data.weighIns) if (w.weight_kg != null) (weightsByDay[w.day] ??= {})[w.athlete_id] = Number(w.weight_kg)
+  // Once a day's weigh-in has started, only the Chief Official or Deputy makes bouts that day.
+  const lockedDays = new Set(official ? [] : data.weighIns.map((w) => w.day))
+  return (
+    <CsvImport
+      kind="bouts"
+      title="Make bouts from a CSV file"
+      context={{ days, athletes: event.athletes, takenByDay, weightsByDay, lockedDays, eventDate: event.start_date }}
+      importRow={async (bout) => {
+        await api.saveBout({ ...bout, eventId: event.id })
+      }}
+      onDone={() => run(async () => {})}
+    >
+      <Muted>
+        Athletes are matched by name among those entered in this event. Each bout goes to the end of its day's card.
+        Rows that break the match rules are skipped; make those on the form, where a Developmental bout can be overridden with a reason.
+      </Muted>
+    </CsvImport>
+  )
+}
 
 function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCancel, onSave }) {
   const [redId, setRedId] = useState(bout?.red_athlete_id ?? '')
