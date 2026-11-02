@@ -9,8 +9,12 @@ import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
-import { Alert, Button, Card as AntCard, Collapse, Input, Radio, Space, Switch, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
+import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
+import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
+import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import { CSS } from '@dnd-kit/utilities'
 import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
@@ -147,6 +151,20 @@ function Card({ event, data, rights, busy, run, publish }) {
   const cancelled = dayBouts.filter((b) => b.status === 'cancelled')
   const sessions = event.days.find((d) => d.day === day)?.sessions ?? []
   const canSend = rights.cardOpen && (rights.owner || rights.official)
+  // The Owner, Chief Official and Deputy (and the site Admin) set the running order (migration 29).
+  const canOrder = rights.cardOpen && (rights.owner || rights.official)
+  // The order just dropped, shown straight away while it saves; cleared once the card reloads.
+  const [draft, setDraft] = useState(null) // { day, ids }
+  const shown = draft?.day === day
+    ? [...draft.ids.map((id) => live.find((b) => b.id === id)).filter(Boolean), ...live.filter((b) => !draft.ids.includes(b.id))]
+    : live
+  // Mouse: drag the handle. Touch: press and hold the handle so a swipe still scrolls. Keyboard:
+  // Space to pick up, arrow keys to move, Space to drop, Escape to cancel.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
   const [notice, setNotice] = useState(null) // the result of the last "Send for approval"
   const waiting = data.bouts.filter(sendable)
   const unsent = waiting.filter((b) => !b.approval_requested_at)
@@ -183,17 +201,47 @@ function Card({ event, data, rights, busy, run, publish }) {
     }
   }
 
+  // Saves the day's running order. A failed save puts the card back as it was and shows the error.
+  async function saveOrder(list, sessionFor = (b) => b.session_starts_at?.slice(0, 5) ?? null) {
+    setDraft({ day, ids: list.map((b) => b.id) })
+    await run(() => api.setCardOrder(event.id, day, list.map((b) => ({ id: b.id, session: sessionFor(b) }))))
+    setDraft(null)
+  }
+
+  // Moves a bout to a place on the card, counted from 0.
+  function moveTo(bout, to) {
+    const from = shown.findIndex((b) => b.id === bout.id)
+    if (from < 0 || to < 0 || to >= shown.length || to === from) return
+    saveOrder(arrayMove(shown, from, to))
+  }
+
   function move(bout, delta) {
-    const order = [...live]
-    const i = order.findIndex((b) => b.id === bout.id)
-    const j = i + delta
-    if (j < 0 || j >= order.length) return
-    ;[order[i], order[j]] = [order[j], order[i]]
-    run(() => api.setCardOrder(event.id, day, order.map((b) => ({ id: b.id, session: b.session_starts_at?.slice(0, 5) ?? null }))))
+    moveTo(bout, shown.findIndex((b) => b.id === bout.id) + delta)
   }
 
   function setSession(bout, session) {
-    run(() => api.setCardOrder(event.id, day, live.map((b) => ({ id: b.id, session: b.id === bout.id ? session : b.session_starts_at?.slice(0, 5) ?? null }))))
+    saveOrder(shown, (b) => (b.id === bout.id ? session : b.session_starts_at?.slice(0, 5) ?? null))
+  }
+
+  function dropped({ active, over }) {
+    if (!over || active.id === over.id) return
+    const to = shown.findIndex((b) => b.id === over.id)
+    const bout = shown.find((b) => b.id === active.id)
+    if (bout && to >= 0) moveTo(bout, to)
+  }
+
+  // What a screen reader says while a bout is moved with the keyboard.
+  const place = (id) => shown.findIndex((b) => b.id === id) + 1
+  const accessibility = {
+    screenReaderInstructions: {
+      draggable: 'To move this bout, press Space or Enter to pick it up, use the up and down arrow keys to move it, then press Space or Enter to drop it. Press Escape to cancel.',
+    },
+    announcements: {
+      onDragStart: ({ active }) => `Picked up bout ${place(active.id)}.`,
+      onDragOver: ({ active, over }) => (over ? `Bout ${place(active.id)} is at place ${place(over.id)} of ${shown.length}.` : `Bout ${place(active.id)} is not over a place.`),
+      onDragEnd: ({ active, over }) => (over ? `Bout ${place(active.id)} moved to place ${place(over.id)} of ${shown.length}.` : `Bout ${place(active.id)} was dropped and stays where it was.`),
+      onDragCancel: ({ active }) => `Move cancelled. Bout ${place(active.id)} stays where it was.`,
+    },
   }
 
   return (
@@ -250,15 +298,25 @@ function Card({ event, data, rights, busy, run, publish }) {
       {live.length === 0 ? (
         <Muted>No bouts on {formatDay(day)} yet.</Muted>
       ) : (
-        <div className="bout-list">
-          {live.map((b, i) => (
-            <BoutRow
-              key={b.id} bout={b} index={i} count={live.length} event={event} athletes={athletes} weights={weights}
-              rights={rights} canMatch={canMatch} canSend={canSend} sessions={sessions} busy={busy} run={run} officials={data.officials}
-              onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
-            />
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis]} onDragEnd={dropped} accessibility={accessibility}>
+          <SortableContext items={shown.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+            <div className="bout-list">
+              {canOrder && shown.length > 1 && <Muted>Drag a bout by its handle to change the running order. On a phone, press and hold the handle first.</Muted>}
+              {shown.map((b, i) => (
+                <SortableBout key={b.id} id={b.id} disabled={!canOrder || busy}>
+                  {(handle) => (
+                    <BoutRow
+                      bout={b} index={i} count={shown.length} event={event} athletes={athletes} weights={weights}
+                      rights={rights} canMatch={canMatch} canSend={canSend} canOrder={canOrder} handle={handle} sessions={sessions} busy={busy} run={run} officials={data.officials}
+                      onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onMoveTo={(to) => moveTo(b, to)}
+                      onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
+                    />
+                  )}
+                </SortableBout>
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {cancelled.length > 0 && (
@@ -473,7 +531,19 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
 // One bout on the card
 // ---------------------------------------------------------------------------
 
-function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, canSend, sessions, busy, run, officials = [], onSend, onMove, onSession, onRematch }) {
+// One bout on the card that can be dragged by its handle. Passes the handle's props to the card,
+// or null when this person can't reorder.
+function SortableBout({ id, disabled, children }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled })
+  const style = { transform: CSS.Translate.toString(transform), transition, position: 'relative', zIndex: isDragging ? 2 : undefined }
+  return (
+    <div ref={setNodeRef} style={style} className={isDragging ? 'bout-dragging' : undefined}>
+      {children(disabled ? null : { ref: setActivatorNodeRef, ...attributes, ...listeners })}
+    </div>
+  )
+}
+
+function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState('')
   const [result, setResult] = useState(null) // { winner, method, note } while recording
@@ -538,7 +608,19 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
     </div>
   )
 
-  const order = rights.owner && rights.cardOpen ? (
+  // "Move to" for anyone who'd rather not drag: first, last or a bout number.
+  const moveItems = [
+    { key: 'first', label: 'Move to first', disabled: index === 0 },
+    { key: 'last', label: 'Move to last', disabled: index === count - 1 },
+    ...(count > 2 ? [{
+      type: 'group',
+      label: 'Move to bout number',
+      children: Array.from({ length: count }, (_, k) => k).filter((k) => k !== index).map((k) => ({ key: String(k), label: `Bout ${k + 1}` })),
+    }] : []),
+  ]
+  const moveChosen = ({ key }) => onMoveTo(key === 'first' ? 0 : key === 'last' ? count - 1 : Number(key))
+
+  const order = canOrder ? (
     <Space size={4}>
       {sessions.length > 0 && (
         <Pick
@@ -551,6 +633,11 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           onChange={(v) => onSession(v || null)}
           options={[{ value: '', label: 'No session' }, ...sessions.map((s) => ({ value: s.starts_at, label: s.label ? `${s.label} ${s.starts_at}` : s.starts_at }))]}
         />
+      )}
+      {count > 1 && (
+        <Dropdown trigger={['click']} disabled={busy} menu={{ items: moveItems, onClick: moveChosen, style: { maxHeight: 360, overflowY: 'auto' } }}>
+          <Button size="small" aria-label={`Move bout ${index + 1} to another place`}>Move to <DownOutlined /></Button>
+        </Dropdown>
       )}
       <Button size="small" shape="circle" icon={<ArrowUpOutlined />} disabled={busy || index === 0} onClick={() => onMove(-1)} aria-label="Move up" />
       <Button size="small" shape="circle" icon={<ArrowDownOutlined />} disabled={busy || index === count - 1} onClick={() => onMove(1)} aria-label="Move down" />
@@ -565,6 +652,17 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
       className={`bout status-${bout.status}`}
       title={
         <Space size={8} wrap>
+          {handle && (
+            <Button
+              type="text"
+              className="drag-handle"
+              icon={<HolderOutlined />}
+              disabled={busy}
+              title="Drag to move this bout"
+              {...handle}
+              aria-label={`Drag bout ${index + 1} to move it`}
+            />
+          )}
           <span>Bout {index + 1}</span>
           <Badge strong={type !== 'scored'}>{boutTypeLabels[type]}</Badge>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
