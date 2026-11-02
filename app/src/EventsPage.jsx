@@ -481,7 +481,13 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
       bouts.seesBouts && {
         key: 'bouts',
         label: 'Bouts',
-        children: <EventBouts event={event} bouts={bouts} />,
+        children: (
+          <EventBouts
+            event={event}
+            bouts={bouts}
+            publish={{ canChange: may.edit, busy, onChange: (show) => run(() => api.setPublicBouts(event.id, show)) }}
+          />
+        ),
       },
       {
         key: 'officials',
