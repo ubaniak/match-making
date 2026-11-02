@@ -122,20 +122,20 @@ athletes are not listed. Viewers see only what is on the public page.
 ## 4. Matching bouts
 
 - The event Owner pairs athletes into bouts.
-- Each bout needs:
-  - approval from **both** corners' coaches, and
-  - approval from **one** of the Chief Official or Deputy.
-- If anyone rejects a bout, it goes back to the Owner to re-match.
+- Only the event's Chief Official or Deputy approves or rejects a bout; one decision from either
+  is enough. Clubs and coaches don't approve. A site Admin can also decide, but only the Chief
+  Official and Deputy get the "Approve bout" to-do and email.
+- If the official rejects a bout, it goes back to the Owner to re-match.
 - Everyone involved in a bout can comment on the match-up. Comments are plain text only.
 
 ### Bout types
 
 Every bout is one of three types, picked when it is made (default Scored):
 
-- **Scored:** must follow every match rule. No override. Needs both corners and an official.
+- **Scored:** must follow every match rule. No override. Needs the official approval.
 - **Developmental:** the match rules apply, but the Chief Official, Deputy or a site Admin can
   override a rule break by giving a reason. The bout keeps the reason, who overrode it, when, and
-  the rules it broke. It still needs both corners and an official to approve.
+  the rules it broke. It still needs the official approval.
 - **Sparring:** must follow the match rules, but needs no approval: it is Approved as soon as it is
   made, and isn't sent for approval.
 - Male against female, a boxer who is too young, or missing details can't be overridden on any type.
@@ -153,7 +153,7 @@ applies them like this:
 - When two athletes are in different weight classes, the lighter boxer's band sets the allowed
   weight difference.
 - Inside the limits, the app still shows the gaps (for example "Novice vs Open, 4 bouts apart")
-  as warnings, so coaches and officials see them before approving.
+  as warnings, so coaches and officials see them before the bout is approved.
 
 ## 5. Weigh-in and medicals
 
@@ -162,8 +162,8 @@ applies them like this:
 - Every bout is checked again against the actual weights. A bout that fails is cancelled and
   pulled off the card. An athlete who fails the medical or doesn't show up comes off their bouts
   the same way.
-- After the weigh-in, only an official can make a new bout. It still needs both coaches'
-  approval, but an official can override that.
+- After the weigh-in, only an official can make a new bout. It still needs the Chief Official's
+  or Deputy's approval.
 - An athlete can box on more than one day of an event, and weighs in on each day they box.
 
 ## 6. The card and results
@@ -190,10 +190,9 @@ applies them like this:
 | Create clubs in the event; add or remove club owners | ✓ | ✓ | | | |
 | Submit, withdraw own athletes; suggest opponents | ✓ | | ✓ | | |
 | Match bouts, set order | ✓ | ✓ | | | |
-| Approve or reject a bout as coach | ✓ | | ✓ (own athletes) | | |
-| Official approval; unlock U17 v U19 | ✓ | | | ✓ | |
+| Approve or reject a bout; unlock U17 v U19 | ✓ | | | ✓ | |
 | Record weights and medicals | ✓ | | | ✓ | ✓ |
-| Re-match after weigh-in; override coach approval | ✓ | | | ✓ | |
+| Re-match after weigh-in | ✓ | | | ✓ | |
 | Record results | ✓ | | | ✓ | |
 | Comment on a match-up | ✓ | ✓ | ✓ | ✓ | |
 

@@ -14,15 +14,14 @@ import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
 const statusLabels = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
-const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Official' }
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
 // Bout types (migration 25). Scored follows every rule; Developmental lets the Chief Official or
 // Deputy override a rule break with a reason; Sparring follows the rules but needs no approval.
 const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparring: 'Sparring' }
 const boutTypeHelp = {
-  scored: 'Must follow every match rule. Needs both corners and an official to approve.',
-  developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. Needs both corners and an official to approve.',
+  scored: 'Must follow every match rule. The Chief Official or Deputy approves it.',
+  developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. The Chief Official or Deputy approves it.',
   sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
 }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
@@ -111,7 +110,7 @@ function Card({ event, data, rights, busy, run }) {
     const what = unsent.length
       ? `Send ${list.length} bout${list.length === 1 ? '' : 's'} that ${list.length === 1 ? "hasn't" : "haven't"} been sent yet for approval?`
       : `Every waiting bout has been sent already. Send a reminder for all ${list.length}?`
-    if (await askConfirm(`${what} Each club Owner and official still to approve gets one email listing their bouts.`, { okText: 'Send' })) {
+    if (await askConfirm(`${what} The Chief Official and Deputy each get one email listing the bouts.`, { okText: 'Send' })) {
       sendForApproval(list)
     }
   }
@@ -355,7 +354,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
         <FullRow><Text>Check before approving: {check.warnings.join('; ')}.</Text></FullRow>
       )}
       {check && check.blocks.length === 0 && check.warnings.length === 0 && <FullRow><Text strong>These two are a good match.</Text></FullRow>}
-      {bout && <FullRow><Muted>Re-matching clears the bout's approvals; both corners and an official approve it again.</Muted></FullRow>}
+      {bout && <FullRow><Muted>Re-matching clears the bout's approval; the Chief Official or Deputy approves it again.</Muted></FullRow>}
     </FormCard>
   )
 }
@@ -384,20 +383,17 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   const recheck = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
   const newBlocks = recheck ? recheck.blocks.filter((b) => !(bout.override_blocks ?? []).includes(b)) : []
 
-  const canDecide = (side) => {
-    if (!open) return false
-    if (side === 'official') return rights.official
-    const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
-    return rights.siteAdmin || rights.ownedClubs.has(club) || (bout.after_weigh_in && Boolean(rights.officialRole))
-  }
+  // Only the event's Chief Official or Deputy (or a site Admin) approves or rejects a bout.
+  const canDecide = open && rights.official
+  const decision = approval.official
 
-  async function decide(side, approve) {
+  async function decide(approve) {
     let note = null
     if (!approve) {
       note = await askText('Why are you rejecting this bout? (optional)', { okText: 'Reject' })
       if (note === null) return
     }
-    run(() => api.decideBout(bout.id, side, approve, note))
+    run(() => api.decideBout(bout.id, 'official', approve, note))
   }
 
   async function cancel() {
@@ -497,23 +493,18 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
         <Muted>Sparring: no approval needed.</Muted>
       ) : (
       <ul className="approvals">
-        {['red', 'blue', 'official'].map((side) => {
-          const a = approval[side]
-          return (
-            <li key={side}>
-              <Space size={6} wrap>
-                <span className={side === 'official' ? undefined : `corner-label ${side}`}>{sideLabels[side]}:</span>
-                {a ? (
-                  <span>{a.decision === 'approved' ? 'Approved' : 'Rejected'}{a.override ? ' by an official' : ''}{a.note ? ` (“${a.note}”)` : ''}</span>
-                ) : (
-                  <Text type="secondary">Waiting</Text>
-                )}
-                {canDecide(side) && a?.decision !== 'approved' && <Button size="small" type="link" disabled={busy} onClick={() => decide(side, true)}>Approve</Button>}
-                {canDecide(side) && a?.decision !== 'rejected' && <Button size="small" type="link" danger disabled={busy} onClick={() => decide(side, false)}>Reject</Button>}
-              </Space>
-            </li>
-          )
-        })}
+        <li>
+          <Space size={6} wrap>
+            <span>Chief Official or Deputy:</span>
+            {decision ? (
+              <span>{decision.decision === 'approved' ? 'Approved' : 'Rejected'}{decision.note ? ` (“${decision.note}”)` : ''}</span>
+            ) : (
+              <Text type="secondary">Waiting</Text>
+            )}
+            {canDecide && decision?.decision !== 'approved' && <Button size="small" type="link" disabled={busy} onClick={() => decide(true)}>Approve</Button>}
+            {canDecide && decision?.decision !== 'rejected' && <Button size="small" type="link" danger disabled={busy} onClick={() => decide(false)}>Reject</Button>}
+          </Space>
+        </li>
       </ul>
       )}
 
@@ -599,7 +590,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
 // Send for approval
 // ---------------------------------------------------------------------------
 
-const approvalSideText = { red: 'red corner', blue: 'blue corner', official: 'official approval' }
+const approvalSideText = { official: 'official approval' }
 
 // One entry per person: { name, email, event, bouts: [{ line, sides }] }, each bout listed once.
 function groupByPerson(rows) {
@@ -616,20 +607,13 @@ function groupByPerson(rows) {
   return [...people.values()].map((p) => ({ ...p, bouts: [...p.bouts.values()] }))
 }
 
-// Approvals still needed that nobody could be told about: a club with no Owner, or no Chief
-// Official or Deputy yet.
+// Approvals still needed that nobody could be told about: no Chief Official or Deputy yet, or
+// they have no email.
 function missingApprovers(list, rows, officials) {
-  const told = new Set(rows.map((r) => `${r.bout_id}:${r.side}`))
+  const told = new Set(rows.map((r) => r.bout_id))
   const notes = new Set()
   for (const b of list.filter(sendable)) {
-    const approved = new Set(b.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
-    for (const side of ['red', 'blue']) {
-      if (!approved.has(side) && !told.has(`${b.id}:${side}`)) {
-        const club = side === 'red' ? b.red_club?.name : b.blue_club?.name
-        notes.add(club ? `${club} has no club Owner with an email` : 'an athlete has no club')
-      }
-    }
-    if (!approved.has('official') && !told.has(`${b.id}:official`)) {
+    if (!told.has(b.id)) {
       notes.add(officials.length ? 'the Chief Official and Deputy have no email' : 'the event has no Chief Official or Deputy yet')
     }
   }

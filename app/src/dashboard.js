@@ -133,11 +133,8 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
     const inEvent = (event.clubs ?? []).filter((ec) => myClubIds.has(ec.club_id))
     const entered = event.athletes.filter((a) => myClubIds.has(a.entry_club_id ?? a.club_id))
     const myBouts = bouts.bouts.filter((b) => b.status !== 'cancelled' && (myClubIds.has(b.red_club_id) || myClubIds.has(b.blue_club_id)))
-    // Bouts waiting for my corner's answer: my club is in it, I own that club, and that side hasn't decided.
-    const toApprove = myBouts.filter((b) => b.status === 'pending' && !b.winner && ['red', 'blue'].some((side) => {
-      const club = side === 'red' ? b.red_club_id : b.blue_club_id
-      return ownedClubIds.has(club) && !b.approvals.some((a) => a.side === side)
-    }))
+    // My club's bouts still waiting for the Chief Official or Deputy to decide. Clubs don't approve.
+    const waiting = myBouts.filter((b) => b.status === 'pending' && !b.winner)
     return {
       event: e,
       joined: inEvent.some((ec) => ec.status === 'accepted'),
@@ -146,7 +143,7 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
       entered: entered.length,
       bouts: myBouts.length,
       approved: myBouts.filter((b) => b.status === 'approved').length,
-      toApprove,
+      waiting,
     }
   })
 
@@ -157,7 +154,7 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
     events: events.filter((r) => r.joined || r.asked || r.entriesOpen),
     joined: events.filter((r) => r.joined).length,
     entered: events.reduce((total, r) => total + r.entered, 0),
-    toApprove: events.flatMap((r) => r.toApprove.map((b) => ({ ...b, event: r.event }))),
+    waiting: events.flatMap((r) => r.waiting.map((b) => ({ ...b, event: r.event }))),
   }
 }
 
@@ -168,8 +165,8 @@ function officialStats(invitations, officialEvents, me) {
   const roles = officialEvents.map(({ event, bouts }) => ({
     event,
     role: bouts.officials.find((o) => o.user_id === me)?.role,
-    // Bouts still missing the official approval.
-    toApprove: bouts.bouts.filter((b) => b.status === 'pending' && !b.winner && !b.approvals.some((a) => a.side === 'official')),
+    // Bouts still waiting for the official decision; only the Chief Official and Deputy decide.
+    toApprove: !bouts.officials.some((o) => o.user_id === me) ? [] : bouts.bouts.filter((b) => b.status === 'pending' && !b.winner && !b.approvals.some((a) => a.side === 'official')),
     weighIns: bouts.weighIns.length,
     athletes: event.athlete_count ?? event.athletes?.length ?? 0,
   }))
