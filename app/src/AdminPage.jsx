@@ -112,7 +112,7 @@ export function OfficialsPage() {
 
 // One click to load or remove the TEST events, clubs and athletes (migration 17).
 function TestData() {
-  const [busy, setBusy] = useState(null) // 'seed' or 'clear' while running
+  const [busy, setBusy] = useState(null) // 'seed', 'clear', 'seed-helpers' or 'clear-helpers' while running
   const [message, setMessage] = useState(null)
   const counts = (c) => `${c.events} events, ${c.clubs} clubs, ${c.athletes} athletes and ${c.accounts ?? 0} demo accounts`
 
@@ -120,6 +120,12 @@ function TestData() {
     setBusy(kind)
     setMessage(null)
     try {
+      if (kind === 'seed-helpers' || kind === 'clear-helpers') {
+        const c = kind === 'seed-helpers' ? await api.seedHelperAccounts() : await api.clearHelperAccounts()
+        const n = `${c.accounts} helper login${c.accounts === 1 ? '' : 's'}`
+        setMessage({ text: kind === 'seed-helpers' ? `Added ${n}. Owners and Chief/Deputy roles are set on both TEST events.` : `Removed ${n}.` })
+        return
+      }
       const c = kind === 'seed' ? await api.seedTestData() : await api.clearTestData()
       setMessage({ text: kind === 'seed' ? `Loaded ${counts(c)}.` : `Removed ${counts(c)}.` })
     } catch (err) {
@@ -139,13 +145,21 @@ function TestData() {
         and the demo accounts.
       </Muted>
       <Muted>
-        It also makes three demo accounts. Each signs in with the code <strong>123456</strong>, and no email is sent:
+        It also makes seven demo accounts. Each signs in with the code <strong>123456</strong>, and no email is sent:
       </Muted>
       <ul>
-        <li><strong>event-owner@demo.test</strong>: Owner of both TEST events</li>
+        <li><strong>owner1@demo.test</strong>: Owner of TEST One-Day Card</li>
+        <li><strong>owner2@demo.test</strong>: Owner of TEST Multi-Day Open</li>
+        <li><strong>official1@demo.test</strong>: Chief Official of TEST One-Day Card and Deputy of TEST Multi-Day Open</li>
+        <li><strong>official2@demo.test</strong>: Chief Official of TEST Multi-Day Open and Deputy of TEST One-Day Card</li>
+        <li><strong>event-owner@demo.test</strong>: a viewer on both TEST events (their Owner when the helper logins are removed)</li>
         <li><strong>club-owner@demo.test</strong>: Owner of TEST North End Boxing</li>
-        <li><strong>official@demo.test</strong>: an official accepted for every day of both events, and their Chief Official</li>
+        <li><strong>official@demo.test</strong>: an official accepted for every day of both events (their Chief Official when the helper logins are removed)</li>
       </ul>
+      <Muted>
+        All four officials above are accepted for every day of both events. Use the helper login buttons to add or
+        remove just the first four accounts while test data is loaded.
+      </Muted>
       <Muted>
         Anyone who knows these can sign in as them while test data is loaded, so clear it when you&rsquo;re done.
       </Muted>
@@ -162,6 +176,27 @@ function TestData() {
           onConfirm={() => run('clear')}
         >
           <Button danger loading={busy === 'clear'} disabled={Boolean(busy)}>Clear test data</Button>
+        </Popconfirm>
+      </Space>
+      <Space wrap style={{ marginTop: 12 }}>
+        <Popconfirm
+          title="Add helper logins?"
+          description="Adds owner1, owner2, official1 and official2 @demo.test to the TEST events."
+          okText="Add"
+          cancelText="Cancel"
+          onConfirm={() => run('seed-helpers')}
+        >
+          <Button loading={busy === 'seed-helpers'} disabled={Boolean(busy)}>Add helper logins</Button>
+        </Popconfirm>
+        <Popconfirm
+          title="Remove helper logins?"
+          description="Deletes the four helper accounts. The TEST events go back to event-owner@ and official@demo.test."
+          okText="Remove"
+          okButtonProps={{ danger: true }}
+          cancelText="Cancel"
+          onConfirm={() => run('clear-helpers')}
+        >
+          <Button danger loading={busy === 'clear-helpers'} disabled={Boolean(busy)}>Remove helper logins</Button>
         </Popconfirm>
       </Space>
       <FormMessage message={message} />
