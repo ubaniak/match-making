@@ -609,11 +609,16 @@ export const supabaseApi = {
     await invokeEmail({ invitation_id: invitationId })
   },
 
-  async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings }) {
-    return rpc('save_bout', {
+  // boutType: 'scored', 'developmental' or 'sparring' (migration 25). blocks: the rule breaks an
+  // official overrides on a Developmental bout, with overrideReason.
+  async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings, boutType = 'scored', blocks = [], overrideReason = null }) {
+    const args = {
       p_bout_id: id || null, p_event_id: eventId, p_day: day, p_red_athlete_id: redId, p_blue_athlete_id: blueId,
       p_needs_supervisor: Boolean(needsSupervisor), p_warnings: warnings ?? [],
-    })
+    }
+    // Plain Scored bouts send the old arguments, so they still save before migration 25 has run.
+    if (boutType !== 'scored' || blocks.length) Object.assign(args, { p_bout_type: boutType, p_blocks: blocks, p_override_reason: overrideReason || null })
+    return rpc('save_bout', args)
   },
 
   // "Send for approval": marks the waiting bouts as sent and returns who still has to approve them,

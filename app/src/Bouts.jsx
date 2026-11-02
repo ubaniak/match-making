@@ -8,7 +8,7 @@ import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
-import { Alert, Button, Card as AntCard, Collapse, Input, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Collapse, Input, Radio, Space, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, SendOutlined } from '@ant-design/icons'
 import { askConfirm, askText } from './dialogs'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
@@ -17,6 +17,15 @@ const statusLabels = { pending: 'Waiting for approval', approved: 'Approved', re
 const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Official' }
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
+// Bout types (migration 25). Scored follows every rule; Developmental lets the Chief Official or
+// Deputy override a rule break with a reason; Sparring follows the rules but needs no approval.
+const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparring: 'Sparring' }
+const boutTypeHelp = {
+  scored: 'Must follow every match rule. Needs both corners and an official to approve.',
+  developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. Needs both corners and an official to approve.',
+  sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
+}
+const boutTypeOf = (b) => b?.bout_type ?? 'scored'
 const personName = (user) => (user ? user.name || user.email : '—')
 // Emailed links go straight to sign-in and then Home; the bare root is the public page.
 const siteUrl = () => window.location.origin + import.meta.env.BASE_URL + '#home'
@@ -145,7 +154,7 @@ function Card({ event, data, rights, busy, run }) {
       {canMatch && (
         <MatchForm
           key={`${day}-${rematch?.id ?? 'new'}`}
-          event={event} day={day} bout={rematch} weights={weights} busy={busy}
+          event={event} day={day} bout={rematch} weights={weights} busy={busy} canOverride={rights.official}
           taken={new Set(live.filter((b) => b.id !== rematch?.id).flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]))}
           onCancel={() => setRematch(null)}
           onSave={async (fields) => {
@@ -163,7 +172,7 @@ function Card({ event, data, rights, busy, run }) {
           {live.map((b, i) => (
             <BoutRow
               key={b.id} bout={b} index={i} count={live.length} event={event} athletes={athletes} weights={weights}
-              rights={rights} canMatch={canMatch} canSend={canSend} sessions={sessions} busy={busy} run={run}
+              rights={rights} canMatch={canMatch} canSend={canSend} sessions={sessions} busy={busy} run={run} officials={data.officials}
               onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
             />
           ))}
@@ -201,9 +210,11 @@ function Card({ event, data, rights, busy, run }) {
 // Making and re-matching a bout
 // ---------------------------------------------------------------------------
 
-function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave }) {
+function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCancel, onSave }) {
   const [redId, setRedId] = useState(bout?.red_athlete_id ?? '')
   const [blueId, setBlueId] = useState(bout?.blue_athlete_id ?? '')
+  const [boutType, setBoutType] = useState(boutTypeOf(bout))
+  const [reason, setReason] = useState(bout?.override_reason ?? '')
   const byId = Object.fromEntries(event.athletes.map((a) => [a.id, a]))
   const red = byId[redId]
   const blue = byId[blueId]
@@ -244,13 +255,23 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
     : !red && !blue ? 'Pick a boxer to see only the opponents who fit them, closest first.'
     : null
 
+  // A Developmental bout can break the rules (not the hard ones) when an official gives a reason.
+  const blocked = Boolean(check && check.blocks.length)
+  const overridable = blocked && boutType === 'developmental' && check.hard.length === 0
+  const overriding = overridable && canOverride
+  const canSave = check && (!blocked || (overriding && reason.trim()))
+
   async function save(e) {
     e.preventDefault()
-    if (!check || check.blocks.length) return
-    const ok = await onSave({ redId, blueId, needsSupervisor: check.needsSupervisor, warnings: check.warnings })
+    if (!canSave) return
+    const ok = await onSave({
+      redId, blueId, needsSupervisor: check.needsSupervisor, warnings: check.warnings, boutType,
+      blocks: overriding ? check.blocks : [], overrideReason: overriding ? reason.trim() : null,
+    })
     if (ok && !bout) {
       setRedId('')
       setBlueId('')
+      setReason('')
     }
   }
 
@@ -262,11 +283,25 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
       onSubmit={save}
       actions={
         <>
-          <Button type="primary" htmlType="submit" disabled={busy || !check || check.blocks.length > 0}>{bout ? 'Save re-match' : 'Make bout'}</Button>
+          <Button type="primary" htmlType="submit" disabled={busy || !canSave}>
+            {overriding ? (bout ? 'Save re-match with override' : 'Make bout with override') : bout ? 'Save re-match' : 'Make bout'}
+          </Button>
           {bout && <Button onClick={onCancel}>Cancel</Button>}
         </>
       }
     >
+      <FullRow>
+        <Space direction="vertical" size={4}>
+          <Radio.Group
+            optionType="button"
+            aria-label="Bout type"
+            value={boutType}
+            onChange={(e) => setBoutType(e.target.value)}
+            options={Object.entries(boutTypeLabels).map(([value, label]) => ({ value, label }))}
+          />
+          <Muted>{boutTypeHelp[boutType]}</Muted>
+        </Space>
+      </FullRow>
       <FullRow>
         <Space wrap>
           <Button type={bestOnly ? 'primary' : 'default'} aria-pressed={bestOnly} onClick={() => setBestOnly(!bestOnly)}>
@@ -285,6 +320,28 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
       </Field>
       {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
       {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
+      {blocked && check.hard.length === 0 && boutType !== 'developmental' && (
+        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Developmental bout can, if the Chief Official or Deputy overrides them with a reason.</Muted></FullRow>
+      )}
+      {blocked && boutType === 'developmental' && check.hard.length > 0 && (
+        <FullRow><Muted>No one can override this, even on a Developmental bout.</Muted></FullRow>
+      )}
+      {overridable && !canOverride && (
+        <FullRow><Muted>Only the Chief Official or Deputy can override the match rules. Ask them to make this bout.</Muted></FullRow>
+      )}
+      {overriding && (
+        <FullRow>
+          <Field label="Reason for overriding the match rules">
+            <Input.TextArea
+              value={reason}
+              maxLength={500}
+              autoSize={{ minRows: 2, maxRows: 5 }}
+              placeholder="For example: both coaches agree, a development bout for experience"
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </Field>
+        </FullRow>
+      )}
       {check && check.blocks.length === 0 && check.warnings.length > 0 && (
         <FullRow><Text>Check before approving: {check.warnings.join('; ')}.</Text></FullRow>
       )}
@@ -298,7 +355,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, onCancel, onSave })
 // One bout on the card
 // ---------------------------------------------------------------------------
 
-function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, canSend, sessions, busy, run, onSend, onMove, onSession, onRematch }) {
+function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, canSend, sessions, busy, run, officials = [], onSend, onMove, onSession, onRematch }) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState('')
   const [result, setResult] = useState(null) // { winner, method, note } while recording
@@ -308,8 +365,15 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   const hasResult = Boolean(bout.winner)
   const open = rights.cardOpen && !hasResult
 
-  // Re-check against weigh-in weights, so officials see a bout that no longer fits.
+  const type = boutTypeOf(bout)
+  const sparring = type === 'sparring'
+  const overridden = Boolean(bout.override_reason)
+  const overrider = officials.find((o) => o.user_id === bout.override_by)?.user
+
+  // Re-check against weigh-in weights, so officials see a bout that no longer fits. Rule breaks an
+  // official already overrode on a Developmental bout aren't shown again.
   const recheck = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
+  const newBlocks = recheck ? recheck.blocks.filter((b) => !(bout.override_blocks ?? []).includes(b)) : []
 
   const canDecide = (side) => {
     if (!open) return false
@@ -387,6 +451,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
       title={
         <Space size={8} wrap>
           <span>Bout {index + 1}</span>
+          <Badge strong={type !== 'scored'}>{boutTypeLabels[type]}</Badge>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
           {bout.needs_supervisor && <Badge>U17 v U19: needs the official's approval</Badge>}
           {sendable(bout) && bout.approval_requested_at && <Badge muted title="Last sent for approval">Sent {sentLabel(bout.approval_requested_at)}</Badge>}
@@ -400,11 +465,28 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
         {corner('blue', blue, bout.blue, bout.blue_club)}
       </div>
       {bout.warnings.length > 0 && <Muted>Gaps: {bout.warnings.join('; ')}.</Muted>}
-      {recheck && recheck.blocks.length > 0 && !hasResult && (
-        <ErrorAlert>After the weigh-in this bout no longer fits: {recheck.blocks.join(' ')}</ErrorAlert>
+      {overridden && (
+        <Alert
+          type="info"
+          showIcon={false}
+          className="gap"
+          title={`Match rules overridden by ${overrider ? personName(overrider) : 'an official'}${bout.override_at ? ` on ${sentLabel(bout.override_at)}` : ''}`}
+          description={
+            <>
+              <div>Reason: {bout.override_reason}</div>
+              {bout.override_blocks?.length > 0 && <Muted>Rules broken: {bout.override_blocks.join(' ')}</Muted>}
+            </>
+          }
+        />
+      )}
+      {newBlocks.length > 0 && !hasResult && (
+        <ErrorAlert>After the weigh-in this bout no longer fits: {newBlocks.join(' ')}</ErrorAlert>
       )}
       {bout.result_note && <Muted>Result note: {bout.result_note}</Muted>}
 
+      {sparring ? (
+        <Muted>Sparring: no approval needed.</Muted>
+      ) : (
       <ul className="approvals">
         {['red', 'blue', 'official'].map((side) => {
           const a = approval[side]
@@ -424,6 +506,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           )
         })}
       </ul>
+      )}
 
       <Space size={4} wrap>
         <Button size="small" onClick={() => setShowComments(!showComments)}>
@@ -615,7 +698,9 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
       weights[athlete.id] = Number(form.weight)
       for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
         const check = checkMatch(athletes[b.red_athlete_id], athletes[b.blue_athlete_id], event.start_date, weights)
-        if (check.blocks.length) await api.cancelBout(b.id, `Doesn't fit after the weigh-in: ${check.blocks.join(' ')}`)
+        // On a Developmental bout, rule breaks an official already overrode don't count again.
+        const broken = check.blocks.filter((x) => !(b.override_blocks ?? []).includes(x))
+        if (broken.length) await api.cancelBout(b.id, `Doesn't fit after the weigh-in: ${broken.join(' ')}`)
       }
     })
   }
