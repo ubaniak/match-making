@@ -13,6 +13,7 @@ import {
   timeZoneOptions, yourTimes, zoneAbbr, zoneLabel, zonedInputToIso,
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
+import { isOfficial } from './auth'
 import { askConfirm, dash, showError } from './dialogs'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
@@ -39,6 +40,9 @@ function rightsFor(event, profile, siteAdmin) {
     addMembers: open && (siteAdmin || owner),
     // Invite clubs and answer join and late-entry requests.
     manageClubs: siteAdmin || (owner && editable),
+    // Officials don't see clubs: no Clubs tab and no club or entry numbers (unless they own this event).
+    // Bouts still name each corner's club, which officials need for matching.
+    seesClubs: siteAdmin || owner || !isOfficial(profile),
     open,
     editable,
     entriesOpen: open && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline)),
@@ -425,7 +429,7 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
         label: 'Dashboard',
         children: <Dashboard event={event} may={may} siteAdmin={siteAdmin} bouts={bouts} onOpenTab={setTab} />,
       },
-      {
+      may.seesClubs && {
         key: 'clubs',
         label: `Clubs (${event.clubs.filter((ec) => ec.status === 'accepted').length})`,
         children: (
@@ -549,8 +553,8 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
         ? `${waiting} waiting · ${declined} declined`
         : `Chief Official: ${roleName('chief')} · Deputy: ${roleName('deputy')}`,
     },
-    { key: 'clubs', tab: 'clubs', title: 'Clubs', value: clubsIn, note: asking ? `${asking} asking to join` : 'Clubs in the event' },
-    { key: 'athletes', tab: 'clubs', title: 'Athletes', value: event.athletes.length, note: 'Entered' },
+    may.seesClubs && { key: 'clubs', tab: 'clubs', title: 'Clubs', value: clubsIn, note: asking ? `${asking} asking to join` : 'Clubs in the event' },
+    may.seesClubs && { key: 'athletes', tab: 'clubs', title: 'Athletes', value: event.athletes.length, note: 'Entered' },
     bouts.seesBouts && { key: 'bouts', tab: 'bouts', title: 'Bouts', value: live.length, note: `${approved} approved · ${live.length - approved} waiting` },
     bouts.seesBouts && { key: 'results', tab: 'bouts', title: 'Results', value: results, note: `Of ${approved} approved bout${approved === 1 ? '' : 's'}` },
     { key: 'days', tab: null, title: days === 1 ? 'Day' : 'Days', value: days, note: bouts.seesBouts ? `${weighIns} weigh-in${weighIns === 1 ? '' : 's'} recorded` : formatDateRange(event.start_date, event.end_date) },

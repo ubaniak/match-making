@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
 import { CalendarOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
-import { useAuth } from './auth'
+import { isOfficial, useAuth } from './auth'
 import AdminPage from './AdminPage'
 import ClubsPage from './ClubsPage'
 import EventsPage from './EventsPage'
@@ -42,7 +42,8 @@ export default function App() {
   const pages = [
     ['home', 'Home'],
     can('pages:read') && ['events', 'Events'],
-    can('pages:read') && ['clubs', 'Clubs'],
+    // Officials don't see clubs (Bhavek, 2026-11-02).
+    can('pages:read') && !isOfficial(profile) && ['clubs', 'Clubs'],
     can('users:manage') && ['admin', 'Admin'],
   ].filter(Boolean)
   const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
