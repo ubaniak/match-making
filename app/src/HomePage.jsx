@@ -152,11 +152,8 @@ function ClubBlock({ club, onOpen, eventLink }) {
     { title: 'Entries', key: 'entries', value: (r) => (r.entriesOpen ? 'Open' : 'Closed'), render: (_, r) => (r.entriesOpen ? 'Open' : 'Closed') },
     { title: 'Athletes in', key: 'entered', value: (r) => r.entered, render: (_, r) => r.entered },
     { title: 'Bouts', key: 'bouts', value: (r) => r.bouts, render: (_, r) => (r.bouts ? `${r.approved} of ${r.bouts} approved` : '0') },
-    owns && {
-      title: 'To approve', key: 'approve', value: (r) => r.toApprove.length,
-      render: (_, r) => (r.toApprove.length ? <Button size="small" type="primary" onClick={() => onOpen({ page: 'events', eventId: r.event.id, tab: 'bouts' })}>{r.toApprove.length} to approve</Button> : '0'),
-    },
-  ].filter(Boolean)
+    { title: 'Waiting', key: 'waiting', value: (r) => r.waiting.length, render: (_, r) => r.waiting.length },
+  ]
   const title = club.clubs.length === 1 ? club.clubs[0].name : 'Your clubs'
   return (
     <Section title={title}>
@@ -166,7 +163,7 @@ function ClubBlock({ club, onOpen, eventLink }) {
           { key: 'athletes', title: 'Athletes', value: club.athletes, note: 'In your club' + (club.clubs.length > 1 ? 's' : ''), onClick: clubsLink },
           { key: 'events', title: 'Events', value: club.joined, note: 'Your club is in', onClick: () => onOpen({ page: 'events' }) },
           { key: 'entered', title: 'Entered', value: club.entered, note: 'Athletes in events' },
-          owns && { key: 'approve', title: 'To approve', value: club.toApprove.length, note: 'Bouts for your corner' },
+          { key: 'waiting', title: 'Waiting', value: club.waiting.length, note: 'Bouts for the officials to approve' },
           owns && { key: 'transfers', title: 'Transfers', value: club.transfersIn.length, note: 'Asking to join your club', onClick: clubsLink },
         ]}
       />
