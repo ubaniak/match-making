@@ -634,6 +634,10 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  async listTransferClubs() {
+    return data().clubs.map((c) => ({ id: c.id, name: c.name })).sort(byName)
+  },
+
   async inviteClubMember(clubId, email, role) {
     const clean = (email ?? '').trim().toLowerCase()
     const user = data().users.find((u) => u.id && u.email?.toLowerCase() === clean)

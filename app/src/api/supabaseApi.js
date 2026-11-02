@@ -221,6 +221,12 @@ export const supabaseApi = {
     return data.map((c) => ({ ...c, athlete_count: c.athletes[0]?.count ?? 0, athletes: undefined }))
   },
 
+  // Every other club's id and name, for picking where to send a transfer. Club members don't see
+  // other clubs otherwise (migration 31).
+  async listTransferClubs() {
+    return (await rpc('transfer_club_options')) ?? []
+  },
+
   async getClub(clubId) {
     const [club, transfers] = await Promise.all([
       supabase.from('clubs').select(`id, name, ${clubMemberColumns}, athletes(${athleteColumns})`).eq('id', clubId).maybeSingle(),
