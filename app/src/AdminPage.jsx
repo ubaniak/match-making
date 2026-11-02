@@ -71,10 +71,9 @@ function useRunner(reload) {
   return { busy, error, setError, run }
 }
 
+// Athletes and Officials have their own top-nav pages (Bhavek, 2026-11-02).
 const tabs = [
   ['users', 'Users'],
-  ['athletes', 'Athletes'],
-  ['officials', 'Officials'],
   ['test-data', 'Test data'],
 ]
 
@@ -86,9 +85,27 @@ export default function AdminPage() {
       <PageHeading title="Admin" />
       <Tabs activeKey={tab} onChange={setTab} items={tabs.map(([key, label]) => ({ key, label }))} />
       {tab === 'users' && <Users />}
-      {tab === 'athletes' && <Athletes />}
-      {tab === 'officials' && <Officials />}
       {tab === 'test-data' && <TestData />}
+    </main>
+  )
+}
+
+// Site Admin's top-nav Athletes page.
+export function AthletesPage() {
+  return (
+    <main className="panel">
+      <PageHeading title="Athletes" />
+      <Athletes />
+    </main>
+  )
+}
+
+// Site Admin's top-nav Officials page.
+export function OfficialsPage() {
+  return (
+    <main className="panel">
+      <PageHeading title="Officials" />
+      <Officials />
     </main>
   )
 }

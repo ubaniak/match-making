@@ -476,6 +476,26 @@ body {
   }
 }
 
+/* The site Admin's six pages need more room: below this width they move to their own row
+   under the brand (as everyone's do on phones) so they never run into Sign out. */
+@media (max-width: 1180px) {
+  .many-pages .app-header-inner {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .many-pages .pill-nav {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  .many-pages .pill {
+    padding: 8px 12px;
+  }
+}
+
 @media (max-width: 768px) {
   body {
     font-size: 16px;
