@@ -1,22 +1,29 @@
 ---
 name: frontend-style
-description: Use when adding or changing any screen, component or style in the React app in app/. The look follows the scoreboard app (Ant Design v6), kept black on white with no dark theme.
+description: Use when adding or changing any screen, component or style in the React app in app/. Ant Design v6 in the Navy & Gold scheme on light pages, sized for an older audience, never dark.
 ---
 
 # frontend-style
 
-The match-making web app (`app/`) uses Ant Design v6 and copies the look of the scoreboard app
+The match-making web app (`app/`) uses Ant Design v6 in the **Navy & Gold** scheme Bhavek picked on
+2026-11-02 (modern, glossy, accessible for an older audience). The layout copies the scoreboard app
 (github.com/ubaniak/scoreboard, `frontend/src/theme.ts`, `App.tsx`, `layouts/page.tsx`,
 `components/card/card.tsx`, `components/nav/GlobalNav.tsx`). Follow this guide for every UI change.
 Read `app/src/theme.js`, `app/src/ui.jsx` and `app/src/dialogs.js` before writing new UI.
 
 ## Hard rules
 
-- **Black on white, light only.** Never use `theme.darkAlgorithm`, a dark palette, a theme toggle or
-  `prefers-color-scheme: dark`. The page background is white.
-- **No colour except:** black and greys for everything, `#b00000` for errors and danger buttons, and
-  the boxing corners: red `#b91c1c` and blue `#1d4ed8`, used only to mark the red and blue corner
-  (labels, the bar beside a boxer). No blue buttons, no green success, no coloured status tags.
+- **Light pages only.** Never use `theme.darkAlgorithm`, a dark palette, a theme toggle or
+  `prefers-color-scheme: dark`. The page is a light navy tint (`#f3f5fa`), cards are white. The navy
+  header bar is the only dark band.
+- **Colours come from the scheme.** Navy `#1e3a8a` for primary buttons, links, active tabs and strong
+  tags; gold `#f5b800` for the header stripe, the active nav pill and primary buttons on the header;
+  soft gold `#fde68a` for table headers; `#b00000` for errors and danger buttons; the boxing corners
+  red `#b91c1c` and blue `#1d4ed8` only to mark the red and blue corner. Never add a new hex value: use
+  the tokens in `theme.js` or the CSS variables in `index.css`.
+- **Accessible for older users.** Body text 17px (16px on phones, never below 14px anywhere), buttons,
+  inputs and nav pills at least 44px tall, text `#111`/`#333` (no faint greys, placeholders `#6b7280`),
+  focus outlines 3px. Any text and background pair must reach WCAG AA (4.5:1); aim for AAA (7:1).
 - **Ant Design for every control.** Buttons, inputs, selects, pickers, tables, tags, tabs, alerts,
   modals. No raw `<button>`, `<input>`, `<select>` or `<table>` (the header's pill nav is the one exception).
 - Plain JavaScript (`.jsx`), no TypeScript. Keep demo mode (`api.mode === 'mock'`) working.
@@ -25,25 +32,32 @@ Read `app/src/theme.js`, `app/src/ui.jsx` and `app/src/dialogs.js` before writin
 
 | Token | Value |
 | --- | --- |
-| Font | Roboto 400/500/600/700 (Google Fonts link in `index.html`), then system sans |
-| Text | `#000`; muted `rgba(0,0,0,0.65)`; faint `rgba(0,0,0,0.55)` |
-| Borders | `rgba(0,0,0,0.18)`; subtle `rgba(0,0,0,0.10)`; antd `colorBorder #bfbfbf` |
-| Subtle fill | `#fafafa` (table headers, forms inside a section) |
-| Radius | sm 8 (inputs, selects, base), md 12 (buttons, tables, inner cards), lg 16 (cards, modals), pill 999 |
-| Shadows | sm `0 2px 8px rgba(0,0,0,0.08)` (header), md `0 6px 20px rgba(0,0,0,0.12)` (cards) plus `inset 0 1px 0 rgba(255,255,255,0.7)` |
+| Font | Roboto 400/500/600/700 (Google Fonts link in `index.html`), then system sans. Base 17px, LG 18, SM 15 |
+| Navy | `#1e3a8a` primary (10.4:1 on white); hover `#1d4ed8`; deep `#14245a` (page titles, text on gold); gloss top `#3b5bcc` |
+| Gold | `#f5b800` (stripe, active pill, header buttons); soft `#fde68a` (table headers) |
+| Page | `#f3f5fa`; cards and modals `#fff`; subtle fill `#eef1f8` (forms inside a section) |
+| Text | `#111`; muted `#333`; faint `#4a4a4a`; on navy `rgba(255,255,255,0.92)`; placeholder `#6b7280` |
+| Borders | antd `colorBorder #9aa1ab`; subtle `#dde1e7` |
+| Status | error `#b00000`, success `#15803d`, warning `#b45309` |
+| Controls | height 44 (SM 34, LG 52), focus line 3 |
+| Radius | sm 10 (inputs, selects, base), md 12 (buttons, tables, inner cards), lg 18 (cards, modals), pill 999 |
+| Shadows | sm `0 4px 16px rgba(30,58,138,0.18)` (header), md `0 8px 24px rgba(30,58,138,0.10), 0 2px 6px rgba(0,0,0,0.06)` (cards) plus `inset 0 1px 0 rgba(255,255,255,0.9)` |
 | Spacing | 4, 8, 16, 24, 32, 48. Cards are 16 apart with 16 padding |
-| Headings | h1 28, h2 22, h3 18, h4 16 |
+| Headings | h1 32, h2 26, h3 21, h4 18. Page titles are navy deep |
 | Page width | content max 1280, centred, 12px side padding |
 
-Primary buttons are black with the scoreboard gloss (a white top-to-clear gradient, in `index.css`).
+Primary buttons are glossy navy (a `#3b5bcc` to `#1e3a8a` to `#182f73` gradient with a white inner
+highlight and a soft navy glow, in `index.css`); on the navy header they are glossy gold with navy text.
+Danger buttons stay red. Card headers have a faint white-to-page-tint gloss.
 CSS variables with the same values live at the top of `app/src/index.css`; use them in CSS instead of
 new hex values.
 
 ## Layout
 
-- **Header:** white, sticky, `min-height 64`, subtle bottom border and the small shadow. Brand on the
-  left, then the pill nav (icon plus label, the active pill bold on a light grey pill), then the user's
-  name, role tag and a Sign out button on the right. At 768px and below the nav wraps onto its own row.
+- **Header:** glossy navy gradient bar with a 4px gold bottom stripe, sticky, `min-height 64`, white
+  22px brand on the left, then the pill nav (16px icon plus label in near-white, 44px tall; the active
+  pill bold navy text on a glossy gold pill), then the user's name, role tag and a white Sign out button
+  on the right. At 768px and below the nav moves onto its own row and its pills wrap, so none is cut off.
 - **Demo banner:** a full-width antd `Alert` above the header.
 - **Page:** `<main className="panel">`, then `<PageHeading title subtitle>` with the page's buttons as
   children (primary action last, on the right). Detail pages put a `<BackLink>` above the heading.
@@ -62,8 +76,8 @@ new hex values.
   `allowEmpty` with a `{ value: '', label: 'No coach' }` option when "none" is a real choice.
 - `DateInput`, `TimeInput`, `DateTimeInput`, `NumberInput`: antd pickers that take and return the same
   strings the API uses (`YYYY-MM-DD`, `HH:mm`, `YYYY-MM-DDTHH:mm`, `''` for empty).
-- `Badge`: an outlined neutral `Tag`. `strong` is solid black (Active, Approved, In, Winner); `muted`
-  is faint (Cancelled, Declined, Waiting for Admin).
+- `Badge`: an outlined navy `Tag` (14px). `strong` is solid navy (Active, Approved, In, Winner); `muted`
+  is grey (Cancelled, Declined, Waiting for Admin).
 - `ErrorAlert`, `SuccessAlert`, `FormMessage`: antd `Alert`s for results and errors.
 - `Muted`: grey paragraph for help text. `Title`, `Text`, `Paragraph` wrap antd Typography.
 
@@ -124,5 +138,6 @@ The app must work on a 390px-wide phone.
 1. `cd app && npm run lint && npm run build` pass.
 2. Run `npx vite`, sign in to demo mode (`admin@matchmaking.test` / `letmein`) and look at the screen
    you changed at 1280px and 390px wide. No console errors or antd deprecation warnings.
-3. No new colours, no dark styles, no raw HTML controls.
+3. No new hex values outside the scheme, no dark styles, no raw HTML controls, no text below 14px,
+   no tap target under 44px.
 4. Every record type you added or touched can be created, listed, edited and deleted in the UI.

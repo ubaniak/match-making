@@ -1,21 +1,30 @@
-/* Black on white everywhere; no dark theme ever. Ant Design draws the components (theme in theme.js);
-   this file lays them out in the scoreboard style. See .claude/skills/frontend-style/SKILL.md. */
+/* Navy & Gold on light pages; no dark theme ever. Ant Design draws the components (theme in theme.js);
+   this file lays them out. Sized for an older audience. See .claude/skills/frontend-style/SKILL.md. */
 :root {
   color-scheme: light;
-  color: #000;
-  background: #fff;
-  --text: #000;
-  --text-muted: rgba(0, 0, 0, 0.65);
-  --border-subtle: rgba(0, 0, 0, 0.1);
-  --bg-subtle: #fafafa;
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.12);
-  --inset-highlight: rgba(255, 255, 255, 0.7);
+  color: #111;
+  background: #f3f5fa;
+  --navy: #1e3a8a;
+  --navy-hover: #1d4ed8;
+  --navy-deep: #14245a;
+  --navy-top: #3b5bcc;
+  --gold: #f5b800;
+  --gold-soft: #fde68a;
+  --bg: #f3f5fa;
+  --bg-elevated: #fff;
+  --text: #111;
+  --text-muted: #333;
+  --text-on-navy: rgba(255, 255, 255, 0.92);
+  --border-subtle: #dde1e7;
+  --bg-subtle: #eef1f8;
+  --shadow-sm: 0 4px 16px rgba(30, 58, 138, 0.18);
+  --shadow-md: 0 8px 24px rgba(30, 58, 138, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --inset-highlight: rgba(255, 255, 255, 0.9);
   --corner-red: #b91c1c;
   --corner-blue: #1d4ed8;
-  --radius-sm: 8px;
+  --radius-sm: 10px;
   --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-lg: 18px;
   --page-width: 1280px;
 }
 
@@ -30,17 +39,40 @@ body,
 body {
   min-height: 100vh;
   min-height: 100dvh;
-  background: #fff;
-  color: #000;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.5;
   font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Gloss on primary buttons, as in scoreboard. */
-.ant-btn-primary:not(:disabled) {
+/* Glossy navy primary buttons with a soft glow. Danger buttons keep antd's red. */
+.ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  background: linear-gradient(180deg, var(--navy-top) 0%, var(--navy) 55%, #182f73 100%);
+  border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 4px 12px rgba(30, 58, 138, 0.35);
+}
+
+.ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover {
+  background: linear-gradient(180deg, #4a6ad6 0%, var(--navy-hover) 55%, var(--navy) 100%);
+}
+
+.ant-btn-primary.ant-btn-dangerous:not(:disabled) {
   background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 55%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 4px 12px rgba(176, 0, 0, 0.25);
+}
+
+/* Card headers get a faint top-to-tint gloss; page titles are navy. */
+.ant-card .ant-card-head {
+  background: linear-gradient(180deg, #fff, var(--bg));
+  font-size: 18px;
+}
+
+.page-heading h1.ant-typography,
+.page-heading h2.ant-typography {
+  color: var(--navy-deep);
 }
 
 /* Signed-out screens: one card in the middle. */
@@ -59,13 +91,15 @@ body {
   box-shadow: var(--shadow-md), inset 0 1px 0 var(--inset-highlight);
 }
 
-/* App shell: sticky white header with a soft shadow and pill nav. */
+/* App shell: sticky glossy navy header with a gold stripe and pill nav. */
 .app-header.ant-layout-header {
   height: auto;
   min-height: 64px;
   line-height: normal;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(180deg, #2a4aa8 0%, var(--navy) 55%, #182f73 100%);
+  color: #fff;
+  border-bottom: 4px solid var(--gold);
   box-shadow: var(--shadow-sm);
   position: sticky;
   top: 0;
@@ -82,8 +116,9 @@ body {
 }
 
 .app-header .brand {
-  font-weight: 700;
-  font-size: 18px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 22px;
   white-space: nowrap;
 }
 
@@ -100,34 +135,49 @@ body {
   align-items: center;
   gap: 6px;
   font: inherit;
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 16px;
+  color: var(--text-on-navy);
   background: transparent;
   border: none;
   border-radius: 999px;
-  padding: 4px 12px;
+  min-height: 44px;
+  padding: 8px 16px;
+  box-sizing: border-box;
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
 .pill:hover {
-  background: var(--bg-subtle);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 
 .pill.active {
-  color: var(--text);
-  font-weight: 600;
-  background: var(--border-subtle);
-  box-shadow: inset 0 1px 0 var(--inset-highlight);
+  color: var(--navy-deep);
+  font-weight: 700;
+  background: linear-gradient(180deg, #ffd23f 0%, var(--gold) 60%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .pill:focus-visible {
-  outline: 2px solid #000;
+  outline: 3px solid var(--gold);
   outline-offset: 2px;
 }
 
+/* A primary button on the navy header is gold, so it stands out. */
+.app-header .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
+  background: linear-gradient(180deg, #ffd23f 0%, var(--gold) 60%);
+  color: var(--navy-deep);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.app-header .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous):hover {
+  background: linear-gradient(180deg, #ffe066 0%, #ffc61a 60%);
+  color: var(--navy-deep);
+}
+
 .app-header .who {
+  color: var(--text-on-navy);
   margin-left: auto;
   display: flex;
   align-items: center;
@@ -245,22 +295,25 @@ body {
   margin-top: 4px;
 }
 
-/* Tags: outlined and neutral. Strong is solid black; muted is faint. */
+/* Tags: outlined navy. Strong is solid navy; muted is grey. */
 .badge.ant-tag {
   background: #fff;
-  border-color: rgba(0, 0, 0, 0.25);
-  color: #000;
+  border-color: rgba(30, 58, 138, 0.35);
+  color: var(--navy-deep);
+  font-size: 14px;
+  line-height: 24px;
+  padding-inline: 10px;
   margin-inline-end: 6px;
 }
 
 .badge.ant-tag.muted {
-  border-color: rgba(0, 0, 0, 0.12);
-  color: var(--text-muted);
+  border-color: #c9cdd4;
+  color: #444;
 }
 
 .badge.ant-tag.strong {
-  background: #000;
-  border-color: #000;
+  background: var(--navy);
+  border-color: var(--navy);
   color: #fff;
 }
 
@@ -341,7 +394,7 @@ body {
   width: 8rem !important;
 }
 
-/* Bouts: red and blue are the only colours, and only for the corners. */
+/* Bouts: red and blue mark the corners only. */
 .bout-list {
   display: grid;
   gap: 0;
@@ -350,7 +403,7 @@ body {
 
 .bout.status-rejected {
   border-style: dashed;
-  border-color: #000;
+  border-color: var(--text-muted);
 }
 
 .bout-corners {
@@ -419,7 +472,7 @@ body {
 
 @media (max-width: 768px) {
   body {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   /* Stop iOS Safari zooming in on focus. */
@@ -442,6 +495,11 @@ body {
   .pill-nav {
     order: 3;
     flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    padding: 8px 12px;
   }
 
   .who-name {
@@ -530,7 +588,7 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 6px 12px;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 
 .data-table.as-cards .ant-table-measure-row {
@@ -635,12 +693,12 @@ body {
 
   .demo-banner .ant-alert-title {
     gap: 6px;
-    font-size: 13px;
+    font-size: 15px;
   }
 
   .ant-descriptions-item-label,
   .ant-descriptions-item-content {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .form-card.compact .form-grid > .field {
@@ -665,13 +723,17 @@ body {
 .stat-note.ant-typography {
   display: block;
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 /* Fit the event page's five tabs on a phone instead of hiding some behind "…". */
 @media (max-width: 767px) {
   .event-tabs > .ant-tabs-nav .ant-tabs-tab + .ant-tabs-tab {
-    margin-left: 14px;
+    margin-left: 12px;
+  }
+
+  .event-tabs > .ant-tabs-nav .ant-tabs-tab {
+    font-size: 15px;
   }
 }
 
@@ -697,7 +759,7 @@ body {
 
 .alert-note.ant-typography {
   display: block;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 @media (max-width: 767px) {
@@ -734,7 +796,7 @@ body {
 }
 
 .notification-list > li.unread {
-  border-left-color: #000;
+  border-left-color: var(--navy);
 }
 
 .notification-list > li:last-child {
@@ -748,7 +810,7 @@ body {
 
 .notification-body.ant-typography {
   display: block;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .notification-meta {
@@ -757,11 +819,11 @@ body {
   align-items: center;
   gap: 6px;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .notification-meta .ant-typography {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .notification-actions {
