@@ -97,7 +97,7 @@ function seed() {
       {
         id: 'bout-1', event_id: 'event-1', day: start, session_starts_at: null, position: 1,
         red_athlete_id: 'athlete-1', blue_athlete_id: 'athlete-4', red_club_id: 'club-1', blue_club_id: 'club-2',
-        status: 'pending', needs_supervisor: false, warnings: ['Different weight classes, 1.3 kg apart', 'Open vs Open, 2 bouts apart'],
+        status: 'pending', bout_type: 'scored', needs_supervisor: false, warnings: ['Different weight classes, 1.3 kg apart', 'Open vs Open, 2 bouts apart'],
         after_weigh_in: false, made_by: 'user-1', made_at: new Date().toISOString(),
         approvals: [{ side: 'red', decision: 'approved', note: null, override: false, decided_by: 'user-1', decided_at: new Date().toISOString() }],
         comments: [],
@@ -335,6 +335,10 @@ function findBout(current, boutId) {
 
 function refreshBoutStatus(bout) {
   if (bout.status === 'cancelled') return
+  if (bout.bout_type === 'sparring') {
+    bout.status = 'approved'
+    return
+  }
   const rejected = bout.approvals.some((a) => a.decision === 'rejected')
   const approved = bout.approvals.filter((a) => a.decision === 'approved').length
   bout.status = rejected ? 'rejected' : approved === 3 ? 'approved' : 'pending'
@@ -1460,7 +1464,7 @@ export const mockApi = {
     throw new Error('Demo mode doesn\'t send email')
   },
 
-  async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings }) {
+  async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings, boutType = 'scored', blocks = [], overrideReason = null }) {
     const current = data()
     const event = findEvent(current, eventId)
     const old = id ? findBout(current, id) : null
@@ -1482,11 +1486,23 @@ export const mockApi = {
         [b.red_athlete_id, b.blue_athlete_id].some((x) => x === redId || x === blueId))) {
       throw new Error('One of these athletes already has a bout that day')
     }
+    if (!['scored', 'developmental', 'sparring'].includes(boutType)) throw new Error('Pick Scored, Developmental or Sparring')
+    let reason = overrideReason?.trim() || null
+    if (blocks.length) {
+      if (boutType === 'scored') throw new Error('A Scored bout must follow every match rule')
+      if (boutType === 'sparring') throw new Error('A Sparring bout must follow the match rules')
+      if (!isOfficial(current, eventId)) throw new Error('Only the Chief Official or Deputy can override the match rules')
+      if (!reason) throw new Error('Give a reason for overriding the match rules')
+    } else {
+      reason = null
+    }
     const nextPosition = Math.max(0, ...current.bouts.filter((b) => b.event_id === eventId && b.day === day).map((b) => b.position)) + 1
     const fields = {
+      bout_type: boutType, override_blocks: reason ? blocks : [], override_reason: reason,
+      override_by: reason ? currentUserId() : null, override_at: reason ? now() : null,
       red_athlete_id: redId, blue_athlete_id: blueId, red_club_id: red.club_id, blue_club_id: blue.club_id,
       needs_supervisor: Boolean(needsSupervisor), warnings: warnings ?? [], after_weigh_in: weighInStarted(current, eventId, day),
-      status: 'pending', cancel_reason: null, cancelled_at: null, made_by: currentUserId(), made_at: now(), approvals: [],
+      status: boutType === 'sparring' ? 'approved' : 'pending', cancel_reason: null, cancelled_at: null, made_by: currentUserId(), made_at: now(), approvals: [],
       approval_requested_at: null, approval_requested_by: null,
     }
     let bout = old
@@ -1550,6 +1566,7 @@ export const mockApi = {
   async decideBout(boutId, side, approve, note) {
     const current = data()
     const bout = findBout(current, boutId)
+    if (bout.bout_type === 'sparring') throw new Error('Sparring bouts don\'t need approval')
     if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
     let override = false

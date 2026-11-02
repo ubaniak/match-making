@@ -5,6 +5,8 @@
 //                    missing details)
 //   warnings:        gaps inside the allowances, shown to coaches and officials
 //   needsSupervisor: U17 v U19, which only the Chief Official or Deputy can approve
+//   hard:            the blocks no official can override, even on a Developmental bout (male v
+//                    female, too young, missing details). Every entry is also in blocks.
 import { ageCategory, experienceCategory, weightCategory } from './categories'
 
 const fmtKg = (kg) => `${Math.round(kg * 10) / 10} kg`
@@ -44,24 +46,25 @@ const ageLabel = { funbox: 'Fun Box', u13: 'U13', u15: 'U15', u17: 'U17', u19: '
 export function checkMatch(a, b, eventDate, weights = {}) {
   const blocks = []
   const warnings = []
+  const hard = []
   let needsSupervisor = false
 
-  if (!a || !b) return { blocks: ['Pick two athletes.'], warnings, needsSupervisor }
-  if (a.id && a.id === b.id) return { blocks: ['Pick two different athletes.'], warnings, needsSupervisor }
+  if (!a || !b) return { blocks: ['Pick two athletes.'], warnings, needsSupervisor, hard: ['Pick two athletes.'] }
+  if (a.id && a.id === b.id) return { blocks: ['Pick two different athletes.'], warnings, needsSupervisor, hard: ['Pick two different athletes.'] }
 
   const missing = [a, b].flatMap((x) =>
     [!x.date_of_birth && 'date of birth', !x.gender && 'gender', (x.weight_kg == null || x.weight_kg === '') && 'weight', (x.bouts == null || x.bouts === '') && 'experience']
       .filter(Boolean).map((what) => `${x.name} has no ${what}.`),
   )
-  if (missing.length) return { blocks: missing, warnings, needsSupervisor }
+  if (missing.length) return { blocks: missing, warnings, needsSupervisor, hard: missing }
 
-  if (a.gender !== b.gender) blocks.push('Male and female athletes can\'t box each other.')
+  if (a.gender !== b.gender) hard.push('Male and female athletes can\'t box each other.')
 
   // Age
   const ageA = ageCategory(a.date_of_birth, eventDate)
   const ageB = ageCategory(b.date_of_birth, eventDate)
   for (const [x, age] of [[a, ageA], [b, ageB]]) {
-    if (age?.key === 'too-young') blocks.push(`${x.name} is too young to box.`)
+    if (age?.key === 'too-young') hard.push(`${x.name} is too young to box.`)
   }
   const months = monthsApart(a.date_of_birth, b.date_of_birth)
   const ka = ageA?.key
@@ -127,7 +130,7 @@ export function checkMatch(a, b, eventDate, weights = {}) {
     }
   }
 
-  return { blocks, warnings, needsSupervisor }
+  return { blocks: [...hard, ...blocks], warnings, needsSupervisor, hard }
 }
 
 // How far apart two boxers are, for sorting "Best match" opponents: lower is closer. A kilo, a bout

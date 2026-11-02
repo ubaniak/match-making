@@ -128,6 +128,18 @@ athletes are not listed. Viewers see only what is on the public page.
 - If anyone rejects a bout, it goes back to the Owner to re-match.
 - Everyone involved in a bout can comment on the match-up. Comments are plain text only.
 
+### Bout types
+
+Every bout is one of three types, picked when it is made (default Scored):
+
+- **Scored:** must follow every match rule. No override. Needs both corners and an official.
+- **Developmental:** the match rules apply, but the Chief Official, Deputy or a site Admin can
+  override a rule break by giving a reason. The bout keeps the reason, who overrode it, when, and
+  the rules it broke. It still needs both corners and an official to approve.
+- **Sparring:** must follow the match rules, but needs no approval: it is Approved as soon as it is
+  made, and isn't sent for approval.
+- Male against female, a boxer who is too young, or missing details can't be overridden on any type.
+
 ### Match rules
 
 The age, weight and experience allowances are in `plan/categories.md` ("Matching rules"). The app
