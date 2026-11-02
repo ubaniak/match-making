@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
-import { CalendarOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
+import { CalendarOutlined, SafetyCertificateOutlined, UserOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { isOfficial, useAuth } from './auth'
-import AdminPage from './AdminPage'
+import AdminPage, { AthletesPage, OfficialsPage } from './AdminPage'
 import ClubsPage from './ClubsPage'
 import EventsPage from './EventsPage'
 import HomePage from './HomePage'
@@ -11,7 +11,7 @@ import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
 import { Badge, ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
-const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, admin: <SettingOutlined /> }
+const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
 
 export default function App() {
   const { session, profile, can, loading } = useAuth()
@@ -44,6 +44,9 @@ export default function App() {
     can('pages:read') && ['events', 'Events'],
     // Officials don't see clubs (Bhavek, 2026-11-02).
     can('pages:read') && !isOfficial(profile) && ['clubs', 'Clubs'],
+    // The site Admin gets Athletes and Officials in the top nav, not tucked under Admin (Bhavek, 2026-11-02).
+    can('users:manage') && ['athletes', 'Athletes'],
+    can('users:manage') && ['officials', 'Officials'],
     can('users:manage') && ['admin', 'Admin'],
   ].filter(Boolean)
   const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
@@ -63,7 +66,7 @@ export default function App() {
     <NotificationsProvider userId={profile?.id}>
       <Layout className="page">
         {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
-        <Layout.Header className="app-header">
+        <Layout.Header className={pages.length > 4 ? 'app-header many-pages' : 'app-header'}>
           <div className="app-header-inner">
             <span className="brand">Match Making</span>
             {pages.length > 1 ? (
@@ -94,6 +97,8 @@ export default function App() {
           {current === 'home' && <HomePage key={`${profile?.id}-${visit}`} profile={profile} can={can} onOpen={open} />}
           {current === 'events' && <EventsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} eventId={linked.eventId} tab={linked.tab} />}
           {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} clubId={linked.clubId} />}
+          {current === 'athletes' && <AthletesPage key={visit} />}
+          {current === 'officials' && <OfficialsPage key={visit} />}
           {current === 'admin' && <AdminPage key={visit} />}
         </Layout.Content>
       </Layout>
