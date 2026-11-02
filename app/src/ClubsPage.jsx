@@ -92,7 +92,7 @@ function ClubTable({ title, clubs, profile, onOpen }) {
   ]
   return (
     <Section title={title}>
-      <DataTable rowKey="id" columns={columns} dataSource={clubs} />
+      <DataTable rowKey="id" columns={columns} dataSource={clubs} csvName={title} />
     </Section>
   )
 }
@@ -197,7 +197,7 @@ function PendingInvites({ onChange }) {
   return (
     <Section title={`Club invites waiting for approval (${invites.length})`}>
       <ErrorAlert>{error}</ErrorAlert>
-      <DataTable rowKey={(i) => `${i.club_id}-${i.user_id}`} columns={columns} dataSource={invites} />
+      <DataTable rowKey={(i) => `${i.club_id}-${i.user_id}`} columns={columns} dataSource={invites} csvName="Club invites" />
     </Section>
   )
 }
@@ -401,7 +401,7 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
       {club.athletes.length === 0 ? (
         <Muted>No athletes in this club yet.</Muted>
       ) : (
-        <DataTable rowKey="id" columns={columns} dataSource={club.athletes} />
+        <DataTable rowKey="id" columns={columns} dataSource={club.athletes} csvName={`${club.name} athletes`} />
       )}
     </Section>
   )
@@ -495,6 +495,7 @@ function Transfers({ club, may, role, profile, onChange }) {
           )}
           <TransferTable
             transfers={incoming}
+            csvName={`${club.name} transfers in`}
             actions={(t) =>
               canDecide && (
                 <Space>
@@ -511,6 +512,7 @@ function Transfers({ club, may, role, profile, onChange }) {
           <Title level={5}>Waiting for the other club</Title>
           <TransferTable
             transfers={outgoing}
+            csvName={`${club.name} transfers out`}
             actions={(t) => canCancel(t) && <Button size="small" disabled={busy} onClick={() => run(() => api.cancelTransfer(t.id))}>Withdraw</Button>}
           />
         </>
@@ -518,14 +520,14 @@ function Transfers({ club, may, role, profile, onChange }) {
       {history.length > 0 && (
         <>
           <Title level={5}>History</Title>
-          <TransferTable transfers={history} showStatus />
+          <TransferTable transfers={history} showStatus csvName={`${club.name} transfer history`} />
         </>
       )}
     </Section>
   )
 }
 
-function TransferTable({ transfers, actions, showStatus }) {
+function TransferTable({ transfers, actions, showStatus, csvName = 'Transfers' }) {
   const columns = [
     { title: 'Athlete', key: 'athlete', render: (_, t) => t.athlete?.name ?? '—' },
     { title: 'From', key: 'from', render: (_, t) => t.from_club?.name ?? '—' },
@@ -536,7 +538,7 @@ function TransferTable({ transfers, actions, showStatus }) {
     showStatus && { title: 'Outcome', key: 'status', value: (t) => transferLabels[t.status], render: (_, t) => <Badge muted={['declined', 'cancelled'].includes(t.status)}>{transferLabels[t.status]}</Badge> },
     actions && { key: 'actions', className: 'actions', render: (_, t) => actions(t) },
   ].filter(Boolean)
-  return <DataTable rowKey="id" columns={columns} dataSource={transfers} className="gap" />
+  return <DataTable rowKey="id" columns={columns} dataSource={transfers} className="gap" csvName={csvName} />
 }
 
 // Owners and Coaches. Club owners invite people; a site Admin approves each invite.
@@ -643,7 +645,7 @@ function ClubPeople({ club, users, may, onChange }) {
       {members.length === 0 ? (
         <Muted>Nobody yet.{may.siteAdmin && ' Add an Owner above.'}</Muted>
       ) : (
-        <DataTable rowKey="user_id" columns={columns} dataSource={members} />
+        <DataTable rowKey="user_id" columns={columns} dataSource={members} csvName={`${club.name} people`} />
       )}
     </Section>
   )

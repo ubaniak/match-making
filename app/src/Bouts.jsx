@@ -1,7 +1,7 @@
 // Stage 4 (plan/events.md sections 4 to 6): the event's officials (Officials.jsx), bout matching and
 // approvals, comments, the weigh-in, the card order and results.
 import { useMemo, useState } from 'react'
-import DataTable from './DataTable'
+import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
 import { categorise } from './categories'
@@ -31,6 +31,44 @@ const siteUrl = () => window.location.origin + import.meta.env.BASE_URL + '#home
 const sentLabel = (iso) => new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 // A bout can be sent for approval while it's waiting for approval and has no result.
 const sendable = (b) => b.status === 'pending' && !b.winner
+
+// Every bout of the event as CSV rows: each day's card in order, then that day's cancelled bouts.
+function boutCsvRows(event, data, athletes, days) {
+  const weighedIn = Object.fromEntries(data.weighIns.map((w) => [`${w.day}|${w.athlete_id}`, w]))
+  const weighIn = (day, id) => {
+    const w = weighedIn[`${day}|${id}`]
+    if (!w) return ''
+    return [w.weight_kg != null ? formatWeight(w.weight_kg) : '', medicalLabels[w.medical] ?? ''].filter(Boolean).join(', ')
+  }
+  const side = (b, s) => {
+    const athlete = athletes[b[`${s}_athlete_id`]]
+    return [athlete?.name ?? b[s]?.name ?? '', b[`${s}_club`]?.name ?? '', categoryText(athlete, event.start_date), weighIn(b.day, b[`${s}_athlete_id`])]
+  }
+  const header = [
+    'Day', 'Bout', 'Session', 'Type', 'Status',
+    'Red boxer', 'Red club', 'Red category', 'Red weigh-in',
+    'Blue boxer', 'Blue club', 'Blue category', 'Blue weigh-in',
+    'Winner', 'Method', 'Result note', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason',
+  ]
+  const rows = days.flatMap((day) => {
+    const dayBouts = data.bouts.filter((b) => b.day === day)
+    const live = dayBouts.filter((b) => b.status !== 'cancelled').sort((a, b) => a.position - b.position)
+    const cancelled = dayBouts.filter((b) => b.status === 'cancelled')
+    return [...live, ...cancelled].map((b) => {
+      const decision = b.approvals.find((a) => a.side === 'official')
+      return [
+        day, b.status === 'cancelled' ? '' : live.indexOf(b) + 1, b.session_starts_at?.slice(0, 5) ?? '',
+        boutTypeLabels[boutTypeOf(b)], statusLabels[b.status] ?? b.status,
+        ...side(b, 'red'), ...side(b, 'blue'),
+        b.winner ? (b.winner === 'red' ? 'Red' : 'Blue') : '', b.method ? methodLabels[b.method] ?? b.method : '', b.result_note ?? '',
+        decision ? `${decision.decision === 'approved' ? 'Approved' : 'Rejected'}${decision.note ? `: ${decision.note}` : ''}` : '',
+        b.approval_requested_at ? sentLabel(b.approval_requested_at) : '',
+        b.override_reason ?? '', b.cancel_reason ?? '',
+      ]
+    })
+  })
+  return [header, ...rows]
+}
 
 function categoryText(athlete, eventDate) {
   if (!athlete?.date_of_birth) return ''
@@ -131,11 +169,21 @@ function Card({ event, data, rights, busy, run }) {
   return (
     <Section
       title="Bouts"
-      extra={canSend && waiting.length > 0 && (
-        <Button type="primary" icon={<SendOutlined />} disabled={busy} onClick={sendAll}>
-          {unsent.length ? `Send all for approval (${unsent.length})` : `Send reminders (${waiting.length})`}
-        </Button>
-      )}
+      extra={
+        <Space wrap>
+          <DownloadCsvButton
+            filename={`${event.name} bouts`}
+            disabled={data.bouts.length === 0}
+            getRows={() => boutCsvRows(event, data, athletes, days)}
+            title="Download every bout on every day, including cancelled ones"
+          />
+          {canSend && waiting.length > 0 && (
+            <Button type="primary" icon={<SendOutlined />} disabled={busy} onClick={sendAll}>
+              {unsent.length ? `Send all for approval (${unsent.length})` : `Send reminders (${waiting.length})`}
+            </Button>
+          )}
+        </Space>
+      }
     >
       <SendNotice notice={notice} onDismiss={() => setNotice(null)} />
       {days.length > 1 && (
@@ -700,11 +748,15 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
 
   // Each row keeps its own form; the key resets it when a new weigh-in is recorded.
   const columns = [
-    { title: 'Athlete', key: 'athlete', value: (a) => `${a.name} ${a.club ?? ''}`, render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
+    { title: 'Athlete', key: 'athlete', value: (a) => `${a.name} ${a.club ?? ''}`, csv: (a) => (a.club ? `${a.name} (${a.club})` : a.name), render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
     { title: 'Entered', key: 'entered', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
     {
       title: 'Weigh-in',
       key: 'form',
+      csv: (a) => {
+        const w = recorded[a.id]
+        return w ? [w.weight_kg != null ? formatWeight(w.weight_kg) : '', medicalLabels[w.medical] ?? '', w.note ?? ''].filter(Boolean).join(', ') : ''
+      },
       render: (_, a) => (
         <WeighInForm key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} />
       ),
@@ -717,7 +769,7 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
       {rows.length === 0 ? (
         <Muted>Nobody is boxing this day yet.</Muted>
       ) : (
-        <DataTable rowKey="id" columns={columns} dataSource={rows} />
+        <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} weigh-in ${day}`} />
       )}
       <Muted>A failed medical or a no-show takes the athlete's bouts off the card. A bout that no longer fits the weight allowance after the weigh-in is cancelled too.</Muted>
     </div>

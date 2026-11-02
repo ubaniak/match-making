@@ -279,7 +279,7 @@ function Users() {
         {users.length === 0 ? (
           <Muted>No users yet.</Muted>
         ) : (
-          <DataTable rowKey="email" columns={columns} dataSource={users} />
+          <DataTable rowKey="email" columns={columns} dataSource={users} csvName="Users" />
         )}
       </Section>
     </section>
@@ -379,7 +379,7 @@ function Athletes() {
         {athletes.length === 0 ? (
           <Muted>No athletes yet.</Muted>
         ) : (
-          <DataTable rowKey="id" columns={columns} dataSource={athletes} />
+          <DataTable rowKey="id" columns={columns} dataSource={athletes} csvName="Athletes" />
         )}
       </Section>
     </section>
@@ -493,7 +493,7 @@ function Officials() {
         {officials.length === 0 ? (
           <Muted>No officials yet.</Muted>
         ) : (
-          <DataTable rowKey="id" columns={columns} dataSource={officials} />
+          <DataTable rowKey="id" columns={columns} dataSource={officials} csvName="Officials" />
         )}
       </Section>
     </section>

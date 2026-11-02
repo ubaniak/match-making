@@ -406,7 +406,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
     },
   ].filter(Boolean)
 
-  const list = (rows, empty) => (rows.length ? <DataTable rowKey="id" columns={columns} dataSource={rows} /> : <Muted>{empty}</Muted>)
+  const list = (rows, empty, which) => (rows.length ? <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} officials ${which}`} /> : <Muted>{empty}</Muted>)
 
   return (
     <>
@@ -496,12 +496,12 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
                   {multiDay && accepted.length > 0 && (
                     <Muted>Officials each day: {eventDays.map((d) => `${formatShortDay(d)}: ${onDay(d)}`).join(' · ')}</Muted>
                   )}
-                  {list(accepted, 'No one has accepted yet.')}
+                  {list(accepted, 'No one has accepted yet.', 'accepted')}
                 </>
               ),
             },
-            { key: 'declined', label: `Declined (${declined.length})`, children: list(declined, 'No one has declined.') },
-            { key: 'waiting', label: `Waiting (${waiting.length})`, children: list(waiting, 'Everyone has answered.') },
+            { key: 'declined', label: `Declined (${declined.length})`, children: list(declined, 'No one has declined.', 'declined') },
+            { key: 'waiting', label: `Waiting (${waiting.length})`, children: list(waiting, 'Everyone has answered.', 'waiting') },
           ]}
         />
       )}
@@ -621,7 +621,7 @@ export function MyInvitations({ onOpen }) {
       {dialog}
       <ErrorAlert>{error}</ErrorAlert>
       <Muted>Accept for the days, or the bout sessions, you can work. You can change your answer or your days until the event's first day.</Muted>
-      <DataTable rowKey="id" columns={columns} dataSource={shown} />
+      <DataTable rowKey="id" columns={columns} dataSource={shown} csvName="Invitations to officiate" />
     </Section>
   )
 }
