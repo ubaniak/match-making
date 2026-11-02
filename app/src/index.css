@@ -901,3 +901,33 @@ body {
   box-shadow: var(--shadow-sm), var(--shadow-md);
   outline: 3px solid var(--gold);
 }
+
+/* Weight box with a kg / lb toggle (WeightInput in ui.jsx). */
+.weight-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.weight-input-row .ant-segmented {
+  padding: 3px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+}
+.weight-input-row .ant-segmented-item-label {
+  min-height: 36px;
+  line-height: 36px;
+  min-width: 44px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.weight-input-row .ant-segmented-item-selected {
+  background: var(--navy);
+}
+.weight-input-row .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #fff;
+}
+.weight-input-kg {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+}
