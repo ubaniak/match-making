@@ -99,6 +99,12 @@ new hex values.
   Columns with nothing to sort (action buttons, inline forms) don't sort; `sortable: false` and
   `searchable: false` opt a column out. Leave out a column with `cond && {...}` and `.filter(Boolean)`.
   Row actions go in a last column with `key: 'actions'`, `className: 'actions'` (right aligned) and no title.
+- **CSV download:** every `DataTable` has a "Download CSV" button beside its search box. It saves
+  every row that matches the search (not just the current page) in the shown sort order, named
+  `<csvName> <date>.csv`, so pass a `csvName` (e.g. `` csvName={`${event.name} athletes`} ``). A
+  column's CSV text is `csv(row)`, else its `render` when that returns text, else its sort value;
+  action columns drop out, `csv: false` drops any other. Lists that aren't tables (the bout card,
+  the public approved bouts) use `DownloadCsvButton` from `DataTable.jsx` with their own rows.
 - **Row actions:** edit and delete are small circle icon buttons (`EditOutlined`, `DeleteOutlined`)
   with an `aria-label`, delete wrapped in a `Popconfirm`. Decisions (Approve, Accept, Decline) are
   small buttons, the positive one primary. Inline links (`type="link"`) for lighter actions.

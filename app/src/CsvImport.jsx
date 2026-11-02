@@ -90,6 +90,7 @@ export default function CsvImport({ kind, context, importRow, onDone }) {
               rowKey="line"
               columns={columns}
               dataSource={check.rows}
+              csvName={`${fileName} checked`}
               rowClassName={(row) => (row.errors.length ? 'row-error' : '')}
             />
           )}

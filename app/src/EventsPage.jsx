@@ -175,7 +175,7 @@ function EventTable({ title, events, profile, onOpen }) {
   ]
   return (
     <Section title={title}>
-      <DataTable rowKey="id" columns={columns} dataSource={events} />
+      <DataTable rowKey="id" columns={columns} dataSource={events} csvName={`Events ${title}`} />
     </Section>
   )
 }
@@ -742,7 +742,7 @@ function Schedule({ event, canEdit, onEdit }) {
       ) : (
         <>
           <ZoneNote event={event} />
-          <DataTable rowKey={(day) => day} columns={columns} dataSource={days} />
+          <DataTable rowKey={(day) => day} columns={columns} dataSource={days} csvName={`${event.name} day times`} />
         </>
       )}
     </Section>
@@ -1005,7 +1005,7 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
         </Space>
       )}
       <ErrorAlert>{error}</ErrorAlert>
-      {rows.length > 0 && <DataTable rowKey="club_id" columns={columns} dataSource={rows} />}
+      {rows.length > 0 && <DataTable rowKey="club_id" columns={columns} dataSource={rows} csvName={`${event.name} clubs`} />}
       <ClubOwnersDialog
         club={ownersOf ? clubById[ownersOf] : null}
         owners={ownersOf ? ownersOfClub(ownersOf) : []}
@@ -1030,6 +1030,7 @@ function ClubOwnersDialog({ club, owners, users, busy, error, onAdd, onRemove, o
       <ErrorAlert>{error}</ErrorAlert>
       <DataTable
         rowKey="user_id"
+        csvName={`${club?.name ?? 'Club'} owners`}
         columns={[
           { title: 'Owner', key: 'name', render: (_, m) => personName(m.user) },
           { title: 'Email', key: 'email', render: (_, m) => m.user?.email ?? '' },
@@ -1199,7 +1200,7 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
             Age group is by year of birth as of {event.start_date.slice(0, 4)}. Weight class uses the athlete's current weight.
             Novice is 10 bouts or fewer, Open is more.
           </Muted>
-          <DataTable rowKey="id" columns={columns} dataSource={athletes} />
+          <DataTable rowKey="id" columns={columns} dataSource={athletes} csvName={`${event.name} athletes`} />
         </>
       )}
     </Section>
@@ -1237,7 +1238,7 @@ function LateEntries({ event, may, ownedIds, profile, run, busy }) {
   ]
   return (
     <Card size="small" title="Late-entry requests" className="gap">
-      <DataTable rowKey="id" columns={columns} dataSource={requests} />
+      <DataTable rowKey="id" columns={columns} dataSource={requests} csvName={`${event.name} late entries`} />
     </Card>
   )
 }
@@ -1341,7 +1342,7 @@ function EventMembers({ event, may, onChange }) {
         </FormCard>
       )}
       <ErrorAlert>{error}</ErrorAlert>
-      <DataTable rowKey="user_id" columns={columns} dataSource={members} />
+      <DataTable rowKey="user_id" columns={columns} dataSource={members} csvName={`${event.name} people`} />
     </Section>
   )
 }

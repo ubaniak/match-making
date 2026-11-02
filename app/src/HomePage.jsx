@@ -96,13 +96,13 @@ function AdminBlock({ admin, onOpen, eventLink }) {
       {admin.requested.length > 0 && (
         <>
           <Text strong>Waiting for your approval</Text>
-          <DataTable rowKey="id" columns={columns} dataSource={admin.requested} />
+          <DataTable rowKey="id" columns={columns} dataSource={admin.requested} csvName="Events waiting for approval" />
         </>
       )}
       {admin.soon.length + admin.running.length > 0 && (
         <>
           <Text strong>Running now and coming up</Text>
-          <DataTable rowKey="id" columns={columns} dataSource={[...admin.running, ...admin.soon.filter((e) => !admin.running.includes(e))]} />
+          <DataTable rowKey="id" columns={columns} dataSource={[...admin.running, ...admin.soon.filter((e) => !admin.running.includes(e))]} csvName="Events running and coming up" />
         </>
       )}
     </Section>
@@ -134,7 +134,7 @@ function OwnerBlock({ owner, onOpen, eventLink }) {
           { key: 'bouts', title: 'Bouts', value: totals.bouts, note: `${totals.approved} approved · ${totals.pending} waiting`, onClick: go('bouts') },
         ]}
       />
-      {rows.length > 0 ? <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={rows} /> : <Muted>None of your events are running right now.</Muted>}
+      {rows.length > 0 ? <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={rows} csvName="Your events" /> : <Muted>None of your events are running right now.</Muted>}
     </Section>
   )
 }
@@ -168,7 +168,7 @@ function ClubBlock({ club, onOpen, eventLink }) {
         ]}
       />
       {club.events.length > 0 ? (
-        <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={club.events} />
+        <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={club.events} csvName={title} />
       ) : (
         <Muted>No events are taking entries right now.</Muted>
       )}
@@ -206,7 +206,7 @@ function OfficialBlock({ official, onOpen, eventLink }) {
         ]}
       />
       {official.accepted.length > 0 ? (
-        <DataTable rowKey="id" columns={columns} dataSource={official.accepted} />
+        <DataTable rowKey="id" columns={columns} dataSource={official.accepted} csvName="Officiating" />
       ) : (
         <Muted>You haven't accepted any events yet.</Muted>
       )}

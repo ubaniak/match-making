@@ -370,6 +370,10 @@ body {
   margin-bottom: 4px;
 }
 
+.public-bouts-csv.ant-btn {
+  margin-left: auto;
+}
+
 .public-bouts .bout.ant-card {
   box-shadow: none;
   border-radius: var(--radius-md);
@@ -548,10 +552,23 @@ body {
   flex: 0 1 420px;
 }
 
-/* Tables: search box above, pagination below (DataTable.jsx). */
-.data-table-search.ant-input-affix-wrapper {
-  max-width: 320px;
+/* Tables: search box and Download CSV above, pagination below (DataTable.jsx). */
+.data-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
   margin-bottom: 12px;
+}
+
+.data-table-search.ant-input-affix-wrapper {
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+
+.data-table-csv.ant-btn {
+  min-height: 44px;
 }
 
 .data-table .ant-table-pagination.ant-pagination {
@@ -566,6 +583,10 @@ body {
 /* Phones: each row is a small card, each value labelled with its column. */
 .data-table.as-cards .data-table-search.ant-input-affix-wrapper {
   max-width: none;
+}
+
+.data-table.as-cards .data-table-csv.ant-btn {
+  flex: 1 1 100%;
 }
 
 .data-table.as-cards .ant-table-content {
