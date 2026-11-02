@@ -443,7 +443,7 @@ export const mockApi = {
     const user = data().users.find((u) => u.id && u.id === userId)
     if (user) {
       return {
-        profile: { id: user.id, email: user.email, name: user.name, role_id: 'user', status: 'active', roles: { name: 'Users' } },
+        profile: { id: user.id, email: user.email, name: user.name, role_id: user.role_id ?? 'user', status: 'active', roles: { name: roleNames[user.role_id ?? 'user'] } },
         permissions: userPermissions,
       }
     }
