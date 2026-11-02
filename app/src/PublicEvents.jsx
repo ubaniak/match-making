@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Button, Card, Layout } from 'antd'
 import { HomeOutlined, LoginOutlined } from '@ant-design/icons'
 import { api } from './api'
-import { DownloadCsvButton } from './DataTable'
 import { DEFAULT_TIME_ZONE, browserTimeZone, formatDateRange, formatDay, yourTimes, zoneAbbr, zoneLabel } from './dates'
 import { Badge, ErrorAlert, Muted, PageHeading, Paragraph, Text, Title } from './ui'
 
@@ -105,17 +104,6 @@ function PublicBouts({ event }) {
       <div className="public-bouts-heading">
         <Title level={4} style={{ margin: 0 }}>Approved bouts</Title>
         <Badge strong>Subject to change</Badge>
-        <DownloadCsvButton
-          className="public-bouts-csv"
-          filename={`${event.name} approved bouts`}
-          getRows={() => [
-            ['Day', 'Bout', 'Session', 'Red boxer', 'Red club', 'Red category', 'Blue boxer', 'Blue club', 'Blue category'],
-            ...event.bouts.map((b) => [
-              b.day, b.number, b.session_label ? `${b.session_label} ${b.session_starts_at ?? ''}`.trim() : b.session_starts_at ?? '',
-              b.red?.name ?? '', b.red?.club ?? '', b.red?.categories ?? '', b.blue?.name ?? '', b.blue?.club ?? '', b.blue?.categories ?? '',
-            ]),
-          ]}
-        />
       </div>
       <Muted>Bouts can change or be cancelled up to fight time, including after the weigh-in.</Muted>
       {days.map((day) => (
