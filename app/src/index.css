@@ -164,6 +164,12 @@ body {
   outline-offset: 2px;
 }
 
+/* The signed-in name sits on navy, so it is white (antd Text would make it near-black). */
+.app-header .who-name.ant-typography {
+  color: #fff;
+  font-weight: 500;
+}
+
 /* A primary button on the navy header is gold, so it stands out. */
 .app-header .ant-btn-primary:not(:disabled):not(.ant-btn-dangerous) {
   background: linear-gradient(180deg, #ffd23f 0%, var(--gold) 60%);
