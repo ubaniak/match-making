@@ -980,3 +980,17 @@ body {
   margin-top: 4px;
   color: var(--text-muted);
 }
+
+/* Admin > Test data: "Test as another role". */
+.test-as {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The yellow bar shown while a site Admin acts as a demo account. */
+.testing-bar .testing-bar-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
