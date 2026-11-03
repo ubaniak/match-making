@@ -1,4 +1,4 @@
--- Migration 34: a failed weigh-in flags the bout for discussion instead of cancelling it.
+-- Migration 35: a failed weigh-in flags the bout for discussion instead of cancelling it.
 --
 -- Bhavek (2026-11-03): "Failed medical or weight mismatch should not automatically cancel the bout.
 -- It should mark the bout for discussion, and the official in charge must cancel it. Also, allow
@@ -14,7 +14,7 @@
 --   * The Chief Official and Deputy get a "Discuss bout" to-do (action_key 'review:<bout id>'),
 --     done when the bout is kept or cancelled.
 --
--- Run after migration 33 (20261103010000_helper_demo_accounts.sql).
+-- Run after migration 34 (20261103020000_reject_uninvited_sign_ins.sql, PR #68).
 
 alter table public.bouts
   add column review_reason text check (review_reason is null or length(review_reason) <= 600),

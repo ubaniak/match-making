@@ -347,7 +347,7 @@ function refreshBoutStatus(bout) {
   bout.status = official?.decision === 'approved' ? 'approved' : official?.decision === 'rejected' ? 'rejected' : 'pending'
 }
 
-// Adds a reason to a bout's "needs discussion" flag, once (migration 34).
+// Adds a reason to a bout's "needs discussion" flag, once (migration 35).
 function flagBout(current, bout, reason) {
   if (bout.status === 'cancelled' || bout.winner) return
   const before = bout.review_reason ?? null
@@ -1666,7 +1666,7 @@ export const mockApi = {
     }
     let bout = old
     if (bout) resolveNotes(current, `bout:${bout.id}:%`)
-    // Re-matched to a different boxer: the "needs discussion" flag goes (migration 34).
+    // Re-matched to a different boxer: the "needs discussion" flag goes (migration 35).
     if (bout && ![[redId, blueId], [blueId, redId]].some(([r, b]) => r === bout.red_athlete_id && b === bout.blue_athlete_id)) {
       Object.assign(bout, { review_reason: null, review_at: null })
       resolveNotes(current, `review:${bout.id}`)
@@ -1840,7 +1840,7 @@ export const mockApi = {
     if (medical === 'pass' && kg == null) throw new Error('Enter the athlete\'s weight')
     current.weighIns = current.weighIns.filter((w) => !(w.event_id === eventId && w.day === day && w.athlete_id === athleteId))
     current.weighIns.push({ event_id: eventId, day, athlete_id: athleteId, weight_kg: kg, medical, note: note?.trim() || null, recorded_at: now() })
-    // A failed medical or a no-show flags the bouts for the officials to discuss; it doesn't cancel them (migration 34).
+    // A failed medical or a no-show flags the bouts for the officials to discuss; it doesn't cancel them (migration 35).
     const name = athleteName(current, athleteId) ?? 'A boxer'
     if (medical === 'fail') flagAthleteBouts(current, eventId, athleteId, day, `${name} failed the medical.`)
     if (medical === 'absent') flagAthleteBouts(current, eventId, athleteId, day, `${name} didn't come to the weigh-in.`)

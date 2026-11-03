@@ -707,12 +707,12 @@ export const supabaseApi = {
     await rpc('cancel_bout', { p_bout_id: boutId, p_reason: reason || null })
   },
 
-  // A bout that no longer fits after the weigh-in needs discussing (migration 34).
+  // A bout that no longer fits after the weigh-in needs discussing (migration 35).
   async flagBoutForReview(boutId, reason) {
     await rpc('flag_bout_for_review', { p_bout_id: boutId, p_reason: reason })
   },
 
-  // The Chief Official or Deputy keeps a bout that needed discussing (migration 34).
+  // The Chief Official or Deputy keeps a bout that needed discussing (migration 35).
   async clearBoutReview(boutId) {
     await rpc('clear_bout_review', { p_bout_id: boutId })
   },
