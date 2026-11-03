@@ -95,6 +95,10 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
 
 The rules are enforced by row-level security in the database, not just hidden in the app.
 
+## Who can sign in
+
+Only invited people can sign in (migration `20261103020000_reject_uninvited_sign_ins.sql`). An email is let in if it already has an account, was added under Admin > Users (or as a new official on an event), is on the Officials list, or is a `@demo.test` test account. Anyone else is told straight away that they haven't been invited, no email is sent, and no account is created; this covers Google sign-in too. To let someone in, add them in Admin > Users first.
+
 ## Sign-in emails
 
 Supabase's built-in mailer sends only about 2 emails an hour. Turn on custom SMTP under Authentication > Emails > SMTP Settings with the same Gmail account as [Owner emails](#owner-emails): sender email = the Gmail address, sender name `Match Making`, host `smtp.gmail.com`, port `465`, username = the Gmail address, password = its App password. Then raise the email limit under Authentication > Rate Limits (about 30 an hour). Later, with a domain, switch to Resend: host `smtp.resend.com`, port `465`, username `resend`, an API key as the password.

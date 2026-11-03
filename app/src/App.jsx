@@ -147,6 +147,17 @@ function goTo(hash) {
 // so the person lands on Home and not on the public list.
 const backFromSignIn = /access_token=|error_description=/.test(window.location.hash) || /[?&]code=/.test(window.location.search)
 
+// Google sign-in for an email nobody invited comes back with an error instead of a session.
+function signInErrorFromUrl() {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, '') + '&' + window.location.search.replace(/^\?/, ''))
+  const description = params.get('error_description')
+  if (!description) return null
+  return /database error saving new user|has not been invited/i.test(description)
+    ? 'That Google account\'s email hasn\'t been invited. Ask a site Admin or the person running your event to add you, then try again.'
+    : description
+}
+const signInErrorOnLoad = signInErrorFromUrl()
+
 function useHash() {
   const [hash, setHash] = useState(backFromSignIn ? '#home' : window.location.hash)
   useEffect(() => {
@@ -214,7 +225,7 @@ function Login() {
   const [email, setEmail] = useState('')
   const [sentTo, setSentTo] = useState(null)
   const [code, setCode] = useState('')
-  const [error, setError] = useState(null)
+  const [error, setError] = useState(signInErrorOnLoad)
   const [busy, setBusy] = useState(false)
 
   async function run(action) {
