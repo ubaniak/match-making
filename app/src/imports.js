@@ -55,7 +55,7 @@ function findAthlete(list, name, club, errors, { what = 'athlete', notFound } = 
   return null
 }
 
-const accountIds = { admin: 'admin', user: 'user', official: 'official', public: 'public' }
+const accountIds = { admin: 'admin', user: 'user', official: 'official', 'chief official': 'chief_official', chief_official: 'chief_official', public: 'public' }
 const boutTypes = { scored: 'scored', developmental: 'developmental', sparring: 'sparring' }
 
 export const importSpecs = {
@@ -65,12 +65,12 @@ export const importSpecs = {
     columns: ['name', 'email', 'account'],
     required: ['name', 'email'],
     example: [['Maria Lopez', 'maria@example.com', 'user'], ['Pat Kim', 'pat@example.com', 'official']],
-    notes: { account: 'admin, user, official or public; blank means user' },
+    notes: { account: 'admin, user, official, chief official or public; blank means user' },
     check(values, errors) {
       if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors, { required: true })
       const account = lower(values.account) || 'user'
-      if (!accountIds[account]) errors.push(`Account "${values.account}" should be admin, user, official or public`)
+      if (!accountIds[account]) errors.push(`Account "${values.account}" should be admin, user, official, chief official or public`)
       return { name: values.name, email: lower(values.email), roleId: accountIds[account] ?? 'user' }
     },
   },

@@ -39,7 +39,7 @@ export default function HomePage({ profile, can, onOpen }) {
   const eventLink = (event, tab) => (
     <Button type="link" size="small" style={{ padding: 0 }} onClick={() => onOpen({ page: 'events', eventId: event.id, tab })}>{event.name}</Button>
   )
-  const roles = data ? [data.admin && 'admin', data.owner && 'owner', data.club && 'club', data.official && 'official'].filter(Boolean) : []
+  const roles = data ? [data.admin && 'admin', data.approver && 'approver', data.owner && 'owner', data.club && 'club', data.official && 'official'].filter(Boolean) : []
 
   return (
     <main className="panel">
@@ -52,6 +52,7 @@ export default function HomePage({ profile, can, onOpen }) {
       <HomeAlerts profile={profile} can={can} onOpen={onOpen} dashboard={data} />
 
       {data?.admin && <AdminBlock admin={data.admin} onOpen={onOpen} eventLink={eventLink} />}
+      {data?.approver && <ApproverBlock approver={data.approver} onOpen={onOpen} eventLink={eventLink} />}
       {data?.owner && <OwnerBlock owner={data.owner} onOpen={onOpen} eventLink={eventLink} />}
       {data?.club && <ClubBlock club={data.club} onOpen={onOpen} eventLink={eventLink} />}
       {data?.official && <OfficialBlock official={data.official} onOpen={onOpen} eventLink={eventLink} />}
@@ -70,6 +71,30 @@ export default function HomePage({ profile, can, onOpen }) {
         </Section>
       )}
     </main>
+  )
+}
+
+// Chief Officials approve or deny requested events.
+function ApproverBlock({ approver, onOpen, eventLink }) {
+  const columns = [
+    { title: 'Event', key: 'name', value: (e) => e.name, render: (_, e) => eventLink(e) },
+    { title: 'Dates', key: 'dates', value: (e) => e.start_date, render: (_, e) => formatDateRange(e.start_date, e.end_date) },
+    { title: 'Location', key: 'venue', render: (_, e) => e.venue || '—' },
+  ]
+  return (
+    <Section title="Chief Official">
+      <StatGrid
+        stats={[{ key: 'requested', title: 'To approve', value: approver.requested.length, note: 'Events requested', onClick: () => onOpen({ page: 'events' }) }]}
+      />
+      {approver.requested.length > 0 ? (
+        <>
+          <Text strong>Waiting for your approval</Text>
+          <DataTable rowKey="id" columns={columns} dataSource={approver.requested} csvName="Events waiting for approval" />
+        </>
+      ) : (
+        <Muted>No events are waiting for approval.</Muted>
+      )}
+    </Section>
   )
 }
 

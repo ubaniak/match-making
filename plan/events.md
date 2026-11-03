@@ -20,18 +20,28 @@ site Admins have admin powers. Athletes don't log in; their club owner acts for 
 
 ## 1. Event setup
 
-Event statuses are **Requested**, **Active**, **Done** and **Cancelled**.
+Event statuses are **Requested**, **Active**, **Done**, **Cancelled** and **Denied**.
 
-1. Only a site Admin can create an event. Regular users can no longer create events (this
-   replaces the "any user creates an event" behaviour from PR #8 and PR #13).
-2. To create an event the Admin enters a name, start date, end date and Owner. The event starts as
-   **Requested**.
-3. The Owner is emailed "You have Requested an event" with a link to the site.
-4. The Owner can upload a poster (optional) and fills in the day times (below). These stay editable.
-5. A site Admin approves the event, turning it **Active**. They can approve at any time, even
-   before the times are filled in. Only Active events can invite clubs, coaches or officials.
-6. Only a site Admin can cancel an event, at any stage before Done. The Owner can ask the Admin
-   to cancel but can't do it themselves.
+Who creates and approves events (Bhavek, 2026-11-03):
+
+1. Event owners create events. Any signed-in User can request an event and becomes its Owner. A
+   site Admin can also create an event and pick any Owner. Officials and Chief Officials can't
+   create events. Required: name, start date, end date (and the Owner, when an Admin creates it).
+   The event starts as **Requested**.
+2. When a site Admin creates an event for someone, the Owner is emailed "You have Requested an
+   event" with a link to the site. Someone requesting their own event gets no email.
+3. The Owner can upload a poster (optional) and fills in the day times (below). These stay editable.
+4. A **Chief Official** approves (turning it **Active**) or denies (**Denied**, with an optional
+   reason the Owner sees) a Requested event. Chief Official is an account role the site Admin sets
+   on the Users page; it also works as an Official everywhere else. Chief Officials see every
+   event and get an "Approve or deny event" to-do for each request (site Admins get it when there
+   are no Chief Officials). Approval can happen at any time, even before the times are filled in.
+   Only Active events can invite clubs, coaches or officials. (Not to be confused with an event's
+   own CO, who runs bouts on an approved event.)
+5. A site Admin can do anything: create, approve, deny, and override any decision: send an Active
+   event back to Requested, or reopen a Denied, Cancelled or Done event as Requested.
+6. Only a site Admin can cancel an event. The Owner can ask the Admin to cancel but can't do it
+   themselves.
 7. An event becomes **Done** automatically the day after its end date. A site Admin can also mark
    it Done early.
 8. Only a site Admin can delete an event, at any status, from the Delete event button on the event
@@ -188,7 +198,9 @@ applies them like this:
 
 | Action | Site Admin | Owner | Club owner | CO / Deputy | Event official |
 |--------|:-:|:-:|:-:|:-:|:-:|
-| Create, approve, cancel, close event | ✓ | | | | |
+| Request (create) an event | ✓ | ✓ (any User) | | | |
+| Approve or deny a Requested event (also any Chief Official account) | ✓ | | | | |
+| Cancel, close, reopen, undo an approval | ✓ | | | | |
 | Edit details, times, poster | ✓ | ✓ | | | |
 | Choose the CO | ✓ | | | | |
 | Invite officials (including someone new) | ✓ | | | ✓ | ✓ (accepted) |

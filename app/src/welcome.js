@@ -2,7 +2,7 @@
 // to an event), and the notice that offers a ready-made email when it can't be sent.
 import { api } from './api'
 
-export const accountAs = { admin: 'an Admin', user: 'a User', official: 'an Official', public: 'a Public account' }
+export const accountAs = { admin: 'an Admin', user: 'a User', official: 'an Official', chief_official: 'a Chief Official', public: 'a Public account' }
 
 export const siteUrl = () => window.location.origin + import.meta.env.BASE_URL
 

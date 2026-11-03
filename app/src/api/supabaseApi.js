@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline, timezone, show_public_bouts,
+const eventColumns = `id, name, venue, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
@@ -418,7 +418,7 @@ export const supabaseApi = {
       p_venue: venue,
       p_start_date: startDate,
       p_end_date: endDate,
-      p_owner_id: ownerId,
+      p_owner_id: ownerId || null,
       p_timezone: timezone,
     })
     if (error) throw error
@@ -457,8 +457,9 @@ export const supabaseApi = {
   },
 
   // 'active' (approve), 'done' or 'cancelled'. Site Admins only.
-  async setEventStatus(eventId, status) {
-    const { error } = await supabase.rpc('set_event_status', { p_event_id: eventId, p_status: status })
+  // note: optional reason the Owner sees (most useful when denying).
+  async setEventStatus(eventId, status, note) {
+    const { error } = await supabase.rpc('set_event_status', { p_event_id: eventId, p_status: status, p_note: note || null })
     if (error) throw error
   },
 

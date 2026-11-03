@@ -43,5 +43,11 @@ export function useAuth() {
   return { session, profile, can, loading }
 }
 
-// Accounts with the Official role. Officials don't see clubs (Bhavek, 2026-11-02).
-export const isOfficial = (profile) => profile?.role_id === 'official'
+// Accounts with the Official or Chief Official role. Officials don't see clubs (Bhavek, 2026-11-02).
+export const isOfficial = (profile) => profile?.role_id === 'official' || profile?.role_id === 'chief_official'
+
+// Chief Officials approve or deny requested events, and can't create events (Bhavek, 2026-11-03).
+export const isChiefOfficial = (profile) => profile?.role_id === 'chief_official'
+
+// Account roles that also belong on the Officials list.
+export const officialRoles = ['official', 'chief_official']
