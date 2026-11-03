@@ -1147,17 +1147,45 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  // An invited club is in only once one of its Owners accepts (migration 34). If the club had
+  // already asked to join, the invite accepts that request.
   async inviteClub(eventId, clubId) {
     const current = data()
     const event = findEvent(current, eventId)
     if (!isOwnerOf(current, eventId)) throw new Error('Only the event\'s Owner or a site Admin can invite clubs')
     if (!eventOpen(event)) throw new Error('Clubs can be invited once the event is Active')
     const existing = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId)
-    const was = existing?.status
-    if (existing) existing.status = 'accepted'
-    else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'accepted', requested_at: now() })
-    if (was !== 'accepted') {
+    if (existing?.status === 'accepted') throw new Error('That club is already in this event')
+    if (existing?.status === 'invited') return
+    if (existing?.status === 'requested') {
+      existing.status = 'accepted'
       resolveNotes(current, `join:${eventId}:${clubId}`)
+      notify(current, clubPeopleIds(current, clubId, true), 'join_answer', `${clubName(current, clubId)} is in ${event.name}`, {
+        body: 'You can now enter athletes.', eventId, clubId, tab: 'clubs',
+      })
+    } else {
+      if (existing) Object.assign(existing, { status: 'invited', requested_at: now() })
+      else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'invited', requested_at: now() })
+      notify(current, clubPeopleIds(current, clubId), 'club_invite', `${clubName(current, clubId)} is invited to ${event.name}`, {
+        body: 'Accept to enter athletes. Only the athletes you enter take part.', eventId, clubId, tab: 'clubs', key: `club-invite:${eventId}:${clubId}`,
+      })
+    }
+    write(DATA_KEY, current)
+  },
+
+  // A club Owner (or a site Admin) accepts or declines their club's invitation.
+  async answerClubInvite(eventId, clubId, accept) {
+    const current = data()
+    const event = findEvent(current, eventId)
+    if (!isSiteAdmin() && clubRole(current, clubId) !== 'owner') throw new Error('Only the club\'s Owners can answer its invitation')
+    if (accept && !eventOpen(event)) throw new Error('This event is no longer taking clubs')
+    const invite = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId && ec.status === 'invited')
+    if (!invite) throw new Error('That invitation is no longer waiting')
+    invite.status = accept ? 'accepted' : 'declined'
+    resolveNotes(current, `club-invite:${eventId}:${clubId}`)
+    notify(current, eventOwnerIds(current, eventId), 'club_invite_answer',
+      `${clubName(current, clubId)} ${accept ? 'accepted' : 'declined'} the invitation to ${event.name}`, { eventId, clubId, tab: 'clubs' })
+    if (accept) {
       notify(current, clubPeopleIds(current, clubId, true), 'join_answer', `${clubName(current, clubId)} is in ${event.name}`, {
         body: 'You can now enter athletes.', eventId, clubId, tab: 'clubs',
       })
@@ -1172,6 +1200,8 @@ export const mockApi = {
     if (!eventOpen(event)) throw new Error('Clubs can join once the event is Active')
     const existing = current.eventClubs.find((ec) => ec.event_id === eventId && ec.club_id === clubId)
     if (existing?.status === 'accepted') throw new Error('That club is already in this event')
+    if (existing?.status === 'requested') return
+    if (existing?.status === 'invited') return mockApi.answerClubInvite(eventId, clubId, true)
     if (existing) Object.assign(existing, { status: 'requested', requested_at: now() })
     else current.eventClubs.push({ event_id: eventId, club_id: clubId, status: 'requested', requested_at: now() })
     notify(current, eventOwnerIds(current, eventId), 'join_request', `${clubName(current, clubId)} asked to join ${event.name}`, {
@@ -1239,6 +1269,7 @@ export const mockApi = {
     })
     current.eventClubs = current.eventClubs.filter((ec) => !(ec.event_id === eventId && ec.club_id === clubId))
     resolveNotes(current, `join:${eventId}:${clubId}`)
+    resolveNotes(current, `club-invite:${eventId}:${clubId}`)
     write(DATA_KEY, current)
   },
 

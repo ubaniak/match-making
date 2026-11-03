@@ -113,7 +113,9 @@ athletes are not listed. Viewers see only what is on the public page.
 
 ## 3. Entries
 
-- The event Owner (or a site Admin) invites clubs to the event.
+- The event Owner (or a site Admin) invites clubs to the event. An invited club is in only once
+  one of its club owners accepts (Bhavek 2026-11-03). Until then it can't enter athletes, and
+  accepting enters nobody: only the athletes the club submits take part.
 - A club owner can also request to join an Active event on the club's behalf. The Owner or a
   site Admin accepts or declines.
 - Once a club is in, its club owners submit their own athletes. Athletes are entered straight

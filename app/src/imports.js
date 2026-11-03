@@ -243,6 +243,7 @@ export const importSpecs = {
       const club = clubsByName?.get(lower(name))
       if (club) {
         if (statusByClub?.[club.id] === 'accepted') errors.push(`${club.name} is already in this event`)
+        else if (statusByClub?.[club.id] === 'invited') errors.push(`${club.name} is already invited`)
         return { clubId: club.id }
       }
       const emails = emailList(values.owner_emails)

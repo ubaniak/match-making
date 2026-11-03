@@ -951,9 +951,10 @@ function TimesForm({ event, onCancel, onSaved }) {
   )
 }
 
-const clubStatusLabels = { accepted: 'In', requested: 'Asked to join', declined: 'Declined' }
+const clubStatusLabels = { accepted: 'In', invited: 'Invited, waiting for the club', requested: 'Asked to join', declined: 'Declined' }
 
-// Clubs in the event. The Owner invites clubs and answers requests; club owners ask to join.
+// Clubs in the event. The Owner invites clubs and answers requests; club owners ask to join, and
+// accept or decline invitations. A club is in (and can enter athletes) only once it has accepted.
 function EventClubs({ event, may, clubs, profile, onChange }) {
   const [choice, setChoice] = useState('')
   const [newClub, setNewClub] = useState({ name: '', owners: [] })
@@ -967,9 +968,9 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
   const ownersOfClub = (clubId) => (clubById[clubId]?.members ?? []).filter((m) => m.role === 'owner' && m.status === 'active')
   const byClub = Object.fromEntries(event.clubs.map((ec) => [ec.club_id, ec]))
   const ownedClubs = clubs.filter((c) => c.members.some((m) => m.user_id === profile?.id && m.role === 'owner' && m.status === 'active'))
-  const canJoin = ownedClubs.filter((c) => !['accepted', 'requested'].includes(byClub[c.id]?.status))
-  const invitable = clubs.filter((c) => byClub[c.id]?.status !== 'accepted')
-  const order = { requested: 0, accepted: 1, declined: 2 }
+  const canJoin = ownedClubs.filter((c) => !['accepted', 'requested', 'invited'].includes(byClub[c.id]?.status))
+  const invitable = clubs.filter((c) => !['accepted', 'invited'].includes(byClub[c.id]?.status))
+  const order = { requested: 0, invited: 1, accepted: 2, declined: 3 }
   const rows = [...event.clubs].sort((a, b) => order[a.status] - order[b.status] || (a.club?.name ?? '').localeCompare(b.club?.name ?? ''))
   const owns = (clubId) => ownedClubs.some((c) => c.id === clubId)
 
@@ -1014,8 +1015,10 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
     const withdrawing = ec.status === 'requested' && owns(ec.club_id) && !may.manageClubs
     const question = withdrawing
       ? `Withdraw ${ec.club?.name}'s request to join?`
-      : `Take ${ec.club?.name} out of ${event.name}?${entered ? ` Its ${entered} entered athlete${entered === 1 ? ' is' : 's are'} withdrawn too.` : ''}`
-    if (!(await askConfirm(question, { okText: withdrawing ? 'Withdraw' : 'Remove', danger: !withdrawing }))) return
+      : ec.status === 'invited'
+        ? `Cancel the invitation to ${ec.club?.name}?`
+        : `Take ${ec.club?.name} out of ${event.name}?${entered ? ` Its ${entered} entered athlete${entered === 1 ? ' is' : 's are'} withdrawn too.` : ''}`
+    if (!(await askConfirm(question, { okText: withdrawing ? 'Withdraw' : ec.status === 'invited' ? 'Cancel invitation' : 'Remove', danger: !withdrawing }))) return
     run(() => api.removeEventClub(event.id, ec.club_id))
   }
 
@@ -1045,9 +1048,15 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
               <Button size="small" disabled={busy} onClick={() => run(() => api.decideJoinRequest(event.id, ec.club_id, false))}>Decline</Button>
             </>
           )}
-          {(may.manageClubs || (owns(ec.club_id) && may.editable)) && ec.status !== 'declined' && (
+          {ec.status === 'invited' && (owns(ec.club_id) || may.siteAdmin) && (
+            <>
+              <Button size="small" type="primary" disabled={busy || !may.open} onClick={() => run(() => api.answerClubInvite(event.id, ec.club_id, true))}>Accept invitation</Button>
+              <Button size="small" disabled={busy} onClick={() => run(() => api.answerClubInvite(event.id, ec.club_id, false))}>Decline</Button>
+            </>
+          )}
+          {(may.manageClubs || (owns(ec.club_id) && may.editable && ec.status !== 'invited')) && ec.status !== 'declined' && (
             <Button size="small" disabled={busy} onClick={() => remove(ec)}>
-              {ec.status === 'requested' && !may.manageClubs ? 'Withdraw request' : may.manageClubs ? 'Remove' : 'Leave event'}
+              {ec.status === 'requested' && !may.manageClubs ? 'Withdraw request' : ec.status === 'invited' ? 'Cancel invitation' : may.manageClubs ? 'Remove' : 'Leave event'}
             </Button>
           )}
         </Space>
@@ -1064,10 +1073,13 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
             <Pick
               value={choice}
               onChange={setChoice}
-              placeholder={invitable.length ? 'Choose a club…' : 'Every club is already in'}
+              placeholder={invitable.length ? 'Choose a club…' : 'Every club is already in or invited'}
               options={invitable.map((c) => ({ value: c.id, label: `${c.name}${byClub[c.id]?.status === 'requested' ? ' (asked to join)' : ''}` }))}
             />
           </Field>
+          <FullRow>
+            <Muted>An invited club is in once one of its owners accepts. Only the athletes the club enters take part. A club that asked to join is in straight away.</Muted>
+          </FullRow>
         </FormCard>
       )}
       {managesOwners && (
@@ -1139,7 +1151,7 @@ function EventClubsImport({ event, clubs, canCreate, statusByClub, onDone }) {
       }}
       onDone={onDone}
     >
-      <Muted>A club that already exists is invited. {canCreate && 'A club name we don\'t know is created with the owners in owner_emails and joins straight away.'}</Muted>
+      <Muted>A club that already exists is invited, and is in once one of its owners accepts. {canCreate && 'A club name we don\'t know is created with the owners in owner_emails and joins straight away.'}</Muted>
     </CsvImport>
   )
 }

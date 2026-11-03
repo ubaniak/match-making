@@ -519,8 +519,14 @@ export const supabaseApi = {
   },
 
   // Clubs and entries (plan/events.md section 3). Rules are enforced by the database functions.
+  // An invited club is in only after one of its Owners accepts (migration 34).
   async inviteClub(eventId, clubId) {
     await rpc('invite_club', { p_event_id: eventId, p_club_id: clubId })
+  },
+
+  // A club Owner (or a site Admin) accepts or declines the club's invitation (migration 34).
+  async answerClubInvite(eventId, clubId, accept) {
+    await rpc('answer_club_invite', { p_event_id: eventId, p_club_id: clubId, p_accept: accept })
   },
 
   async requestToJoin(eventId, clubId) {
