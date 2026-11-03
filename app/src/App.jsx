@@ -9,13 +9,12 @@ import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
-import { Badge, ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
+import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
 const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
 
 export default function App() {
   const { session, profile, can, loading } = useAuth()
-  const [page, setPage] = useState('home')
   // Bumped on every tab click so clicking the current tab again goes back to its list.
   const [visit, setVisit] = useState(0)
   // Where a link from Home (or an alert) asked to go: { eventId, tab } or { clubId }.
@@ -23,11 +22,12 @@ export default function App() {
   const hash = useHash()
   const route = routeFor(hash)
 
-  // Once signed in, the sign-in page moves on to Home, and the address bar shows #home rather
-  // than the bare root a sign-in link leaves behind.
+  // The page lives in the address bar (#home, #events, #clubs…), so refresh, Back and links keep it.
+  // Once signed in, the sign-in page (or the bare root a sign-in link leaves behind) moves on to Home.
+  const page = pageFor(hash)
   useEffect(() => {
-    if (session && (route === 'login' || (route === 'app' && !/^#\/?home$/.test(window.location.hash)))) goTo('#home')
-  }, [session, route, hash])
+    if (session && (route === 'login' || (route === 'app' && !page))) goTo('#home')
+  }, [session, route, page])
 
   // The site root is the public list of upcoming events; it needs no sign-in.
   if (route === 'public') return <PublicEvents signedIn={Boolean(session)} />
@@ -56,7 +56,7 @@ export default function App() {
   // Go to a page, optionally straight to one event (and tab) or club:
   // open({ page: 'events', eventId, tab }) or open({ page: 'clubs', clubId }).
   function open({ page: next, ...rest }) {
-    setPage(next)
+    if (pageFor(window.location.hash) !== next) window.location.hash = next
     setTarget({ ...rest, userId: profile?.id })
     setVisit((v) => v + 1)
     window.scrollTo(0, 0)
@@ -77,6 +77,7 @@ export default function App() {
                     type="button"
                     className={current === key ? 'pill active' : 'pill'}
                     aria-current={current === key ? 'page' : undefined}
+                    aria-label={label}
                     onClick={() => open({ page: key })}
                   >
                     {pageIcons[key]}
@@ -87,9 +88,10 @@ export default function App() {
             ) : <span style={{ flex: 1 }} />}
             <span className="who">
               <NotificationBell onOpen={open} />
-              <Text className="who-name">{profile?.name || session.user.email}</Text>
-              {profile && <Badge>{profile.roles?.name}</Badge>}
-              <Button icon={<LogoutOutlined />} onClick={() => api.signOut().then(() => goTo(''))}>Sign out</Button>
+              <Text className="who-name" title={profile?.name || session.user.email}>{profile?.name || session.user.email}</Text>
+              {/* The site role is a label, not a button. Everyone is a User, so only Admin and Official show. */}
+              {siteRoleLabel(profile) && <span className="who-role">{siteRoleLabel(profile)}</span>}
+              <Button icon={<LogoutOutlined />} aria-label="Sign out" onClick={() => api.signOut().then(() => goTo(''))}>Sign out</Button>
             </span>
           </div>
         </Layout.Header>
@@ -109,12 +111,29 @@ export default function App() {
 // Routes live in the URL hash so GitHub Pages serves them without any server setup:
 //   (none), #upcoming  public upcoming events (the site root)
 //   #login             sign-in page
-//   #home              the signed-in app (anything else counts too, e.g. a sign-in link's #access_token=…)
+//   #home, #events, #clubs, #athletes, #officials, #admin   the signed-in app's pages
+//                      (anything else goes to #home, e.g. a sign-in link's #access_token=…)
 function routeFor(hash) {
   const key = hash.replace(/^#\/?/, '')
   if (key === '' || key === 'upcoming') return 'public'
   if (key === 'login') return 'login'
   return 'app'
+}
+
+const appPages = ['home', 'events', 'clubs', 'athletes', 'officials', 'admin']
+
+// Which app page a hash names (#events, #/clubs…), or null.
+function pageFor(hash) {
+  const key = hash.replace(/^#\/?/, '')
+  return appPages.includes(key) ? key : null
+}
+
+const siteRoleLabels = { admin: 'Admin', official: 'Official' }
+function siteRoleLabel(profile) {
+  const key = profile?.role_id
+  if (siteRoleLabels[key]) return siteRoleLabels[key]
+  const name = profile?.roles?.name
+  return name === 'Admins' ? 'Admin' : name === 'Officials' ? 'Official' : null
 }
 
 function goTo(hash) {
@@ -269,6 +288,7 @@ function Login() {
       )}
       <form onSubmit={sendCode} className="login-form">
         <Paragraph>Enter your email and we'll send you a sign-in code.</Paragraph>
+        <Paragraph type="secondary">Testing with a demo account (ending @demo.test)? No email is sent: you'll type its demo code on the next screen.</Paragraph>
         <Input
           size="large"
           type="email"

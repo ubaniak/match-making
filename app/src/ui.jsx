@@ -1,6 +1,6 @@
 // Shared Ant Design pieces in the scoreboard style. See .claude/skills/frontend-style/SKILL.md.
 // Light only: black on white, never a dark algorithm.
-import { useState } from 'react'
+import { Children, cloneElement, isValidElement, useId, useState } from 'react'
 import { App as AntApp, Alert, Button, Card, Col, ConfigProvider, DatePicker, Form, Input, InputNumber, Row, Segmented, Select, Space, Statistic, Tag, TimePicker, Typography } from 'antd'
 import dayjs from 'dayjs'
 import { connectDialogs } from './dialogs'
@@ -68,13 +68,19 @@ export function FormCard({ title, onSubmit, children, actions, compact, classNam
   )
 }
 
+// The label is tied to the control inside (by id), so screen readers read it out and clicking the
+// label focuses the box.
 export function Field({ label, hint, full, children }) {
+  const autoId = useId()
+  const only = Children.count(children) === 1 && isValidElement(children) ? children : null
+  const id = only ? only.props.id ?? `field-${autoId.replace(/:/g, '')}` : undefined
   return (
     <Form.Item
       className={full ? 'field full' : 'field'}
+      htmlFor={id}
       label={label && <span>{label}{hint && <Text type="secondary"> ({hint})</Text>}</span>}
     >
-      {children}
+      {only && label ? cloneElement(only, { id }) : children}
     </Form.Item>
   )
 }
@@ -92,7 +98,8 @@ export function Pick({ value, onChange, options, placeholder, allowEmpty, ...res
       onChange={(v) => onChange(v ?? '')}
       options={options}
       placeholder={placeholder}
-      showSearch={options.length > 8 ? { optionFilterProp: 'label' } : false}
+      // Always searchable, so typing "Fem" picks Female instead of whatever was highlighted last.
+      showSearch={{ optionFilterProp: 'label' }}
       style={{ width: '100%' }}
       popupMatchSelectWidth={false}
       {...rest}
@@ -101,16 +108,37 @@ export function Pick({ value, onChange, options, placeholder, allowEmpty, ...res
 }
 
 // Date as 'YYYY-MM-DD' strings in and out.
+// The calendar closes as soon as a date is picked or typed in full, so it never covers the next
+// field, and Enter only confirms the date: it doesn't submit the form around it.
 export function DateInput({ value, onChange, min, ...rest }) {
+  const [open, setOpen] = useState(false)
+  // A whole date typed in: close the calendar (the date is kept).
+  const closeWhenTyped = (e) => {
+    const typed = e.target.value ?? ''
+    if (/^\d{4}-\d{2}-\d{2}$/.test(typed) && dayjs(typed).format('YYYY-MM-DD') === typed) setOpen(false)
+  }
   return (
-    <DatePicker
-      value={value ? dayjs(value) : null}
-      onChange={(d) => onChange(d ? d.format('YYYY-MM-DD') : '')}
-      format="YYYY-MM-DD"
-      disabledDate={min ? (d) => d.format('YYYY-MM-DD') < min : undefined}
-      style={{ width: '100%' }}
-      {...rest}
-    />
+    <div className="date-input" onKeyUp={closeWhenTyped}>
+      <DatePicker
+        open={open}
+        onOpenChange={setOpen}
+        value={value ? dayjs(value) : null}
+        onChange={(d) => {
+          onChange(d ? d.format('YYYY-MM-DD') : '')
+          setOpen(false)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            setOpen(false)
+          }
+        }}
+        format="YYYY-MM-DD"
+        disabledDate={min ? (d) => d.format('YYYY-MM-DD') < min : undefined}
+        style={{ width: '100%' }}
+        {...rest}
+      />
+    </div>
   )
 }
 
