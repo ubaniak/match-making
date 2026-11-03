@@ -603,6 +603,7 @@ export const supabaseApi = {
         red:athletes!bouts_red_athlete_id_fkey(id, name), blue:athletes!bouts_blue_athlete_id_fkey(id, name),
         red_club:clubs!bouts_red_club_id_fkey(id, name), blue_club:clubs!bouts_blue_club_id_fkey(id, name),
         approvals:bout_approvals(side, decision, note, override, decided_by, decided_at),
+        bout_officials(user_id, role, accepted_at, user:profiles!bout_officials_user_id_fkey(id, name, email)),
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
       supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
@@ -617,6 +618,16 @@ export const supabaseApi = {
       bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
       weighIns: weighIns.data,
     }
+  },
+
+  // An official takes a bout (migration 41). role: 'judge' (Judge only) or 'ref_judge' (Ref and Judge).
+  async acceptBout(boutId, role) {
+    await rpc('accept_bout', { p_bout_id: boutId, p_role: role })
+  },
+
+  // userId left out: the signed-in official withdraws. Otherwise the Owner, CO or Deputy removes them.
+  async withdrawFromBout(boutId, userId) {
+    await rpc('withdraw_from_bout', { p_bout_id: boutId, p_user_id: userId || null })
   },
 
   async setEventOfficial(eventId, role, userId) {

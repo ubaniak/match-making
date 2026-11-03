@@ -470,6 +470,25 @@ body {
   gap: 2px;
 }
 
+.bout-officials {
+  margin: 8px 0;
+}
+
+.bout-official {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bout-role-picker {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
 .comments {
   border-top: 1px solid var(--border-subtle);
   margin-top: 12px;
