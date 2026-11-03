@@ -1147,7 +1147,7 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  // An invited club is in only once one of its Owners accepts (migration 34). If the club had
+  // An invited club is in only once one of its Owners accepts (migration 36). If the club had
   // already asked to join, the invite accepts that request.
   async inviteClub(eventId, clubId) {
     const current = data()

@@ -1,5 +1,5 @@
--- Migration 34: an invited club must accept before it is in the event.
--- Needs migrations 1-33 first. Safe to run more than once.
+-- Migration 36: an invited club must accept before it is in the event.
+-- Needs migrations 1-35 first. Safe to run more than once.
 --
 -- Bhavek 2026-11-03: "When a club is invited to an event, do not add their athletes to the event
 -- until the club has accepted, and only add athletes that the club has submitted for the event."
