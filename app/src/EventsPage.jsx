@@ -244,8 +244,10 @@ function useActiveUsers(enabled = true) {
 }
 
 // Everyone, including invited and disabled users, so a CSV row can say why someone can't be picked.
+// Until the list arrives it is `usersLoading`, so a picker can say "Loading…" rather than "Everyone is already on".
+const usersLoading = Object.freeze([])
 function useAllUsers(enabled = true) {
-  const [users, setUsers] = useState([])
+  const [users, setUsers] = useState(usersLoading)
   useEffect(() => {
     if (enabled) api.listUsers().then(setUsers, () => setUsers([]))
   }, [enabled])
@@ -1479,7 +1481,7 @@ function EventMembers({ event, may, onChange }) {
             <Pick
               value={form.userId}
               onChange={(userId) => setForm({ ...form, userId })}
-              placeholder={addable.length ? 'Choose a user…' : 'Everyone is already on this event'}
+              placeholder={allUsers === usersLoading ? 'Loading people…' : addable.length ? 'Choose a user…' : 'Everyone is already on this event'}
               options={addable.map((u) => ({ value: u.id, label: userLabel(u) }))}
             />
           </Field>

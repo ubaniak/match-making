@@ -20,8 +20,10 @@ function myClubRole(club, profile) {
   return club.members.find((m) => m.user_id === profile?.id && m.status === 'active')?.role ?? null
 }
 
+// Until the list arrives it is `usersLoading`, so a picker can say "Loading…" rather than "Everyone is already in".
+const usersLoading = Object.freeze([])
 function useUsers() {
-  const [users, setUsers] = useState([])
+  const [users, setUsers] = useState(usersLoading)
   useEffect(() => {
     api.listUsers().then(setUsers, () => setUsers([]))
   }, [])
@@ -687,7 +689,7 @@ function ClubPeople({ club, users, may, onChange }) {
               <Pick
                 value={form.userId}
                 onChange={(userId) => setForm({ ...form, userId })}
-                placeholder={addable.length ? 'Choose a user…' : 'Everyone is already in this club'}
+                placeholder={users === usersLoading ? 'Loading people…' : addable.length ? 'Choose a user…' : 'Everyone is already in this club'}
                 options={addable.map((u) => ({ value: u.id, label: userLabel(u) }))}
               />
             </Field>

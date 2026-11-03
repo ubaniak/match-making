@@ -164,10 +164,20 @@ body {
   outline-offset: 2px;
 }
 
-/* The signed-in name sits on navy, so it is white (antd Text would make it near-black). */
+/* The signed-in name sits on navy, so it is white (antd Text would make it near-black).
+   A long name is cut short with "…" so it never runs over the nav. */
 .app-header .who-name.ant-typography {
   color: #fff;
   font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The site role next to the name: plain text, so it doesn't look like a button. */
+.app-header .who-role {
+  color: var(--text-on-navy);
+  font-size: 15px;
 }
 
 /* A primary button on the navy header is gold, so it stands out. */
@@ -476,8 +486,27 @@ body {
   }
 }
 
-/* The site Admin's six pages need more room: below this width they move to their own row
-   under the brand (as everyone's do on phones) so they never run into Sign out. */
+/* Below 1024px everyone's pages move to their own row under the brand, so the name, bell and
+   Sign out never sit on top of them. The site Admin's six pages need more room, so they move
+   below 1180px. */
+@media (max-width: 1024px) {
+  .app-header-inner {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .pill-nav {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    padding: 8px 12px;
+  }
+}
+
 @media (max-width: 1180px) {
   .many-pages .app-header-inner {
     flex-wrap: wrap;

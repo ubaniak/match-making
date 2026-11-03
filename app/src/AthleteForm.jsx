@@ -21,6 +21,8 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
   const [form, setForm] = useState(() => ({ ...fromAthlete(athlete), clubId: athlete?.club_id ?? clubId ?? '' }))
   const [message, setMessage] = useState(null)
   const [saving, setSaving] = useState(false)
+  // Bumped after each add, so the boxes start fresh (no dropdown still pointing at the last choice).
+  const [round, setRound] = useState(0)
 
   async function save(event) {
     event.preventDefault()
@@ -49,6 +51,7 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
     if (!editing) {
       setMessage({ text: form.email ? `${form.name} is added. They can sign in with ${form.email} to see their profile.` : `${form.name} is added.` })
       setForm({ ...fromAthlete(null), clubId: clubId ?? '' })
+      setRound((r) => r + 1)
     }
   }
 
@@ -59,6 +62,7 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
   return (
     <>
       <FormCard
+        key={round}
         title={title ?? (editing ? `Edit ${athlete.name}` : 'Add an athlete')}
         onSubmit={save}
         actions={
