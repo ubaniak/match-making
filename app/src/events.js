@@ -2,7 +2,7 @@
 // rules (save_event_times); these let the form explain problems before saving.
 import { todayIso } from './dates'
 
-export const statusLabels = { requested: 'Requested', active: 'Active', done: 'Done', cancelled: 'Cancelled' }
+export const statusLabels = { requested: 'Requested', active: 'Active', done: 'Done', cancelled: 'Cancelled', denied: 'Denied' }
 
 // Events turn Done the day after their end date. The nightly job does it in the database;
 // this covers the hours before it runs (and demo mode).

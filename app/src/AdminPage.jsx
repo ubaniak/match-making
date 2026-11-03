@@ -10,11 +10,13 @@ import { dash } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
 import { accountAs, sendWelcome } from './welcome'
 import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, PageHeading, Pick, Section } from './ui'
+import { officialRoles } from './auth'
 
 const accountTypes = [
   { value: 'admin', label: 'Admin' },
   { value: 'user', label: 'User' },
   { value: 'official', label: 'Official' },
+  { value: 'chief_official', label: 'Chief Official (approves events)' },
   { value: 'public', label: 'Public (no access yet)' },
 ]
 const blankUser = { name: '', email: '', roleId: 'user' }
@@ -33,7 +35,7 @@ async function ensureOfficial({ name, email }) {
 // welcome email didn't go out (the envelope on their row sends it again).
 async function importUser(user) {
   await api.addUser(user)
-  if (user.roleId === 'official') await ensureOfficial(user)
+  if (officialRoles.includes(user.roleId)) await ensureOfficial(user)
   const welcome = await sendWelcome(user)
   return welcome.sent ? null : { note: `the welcome email wasn't sent (${welcome.reason}). Use the envelope on their row to send it again` }
 }
@@ -244,7 +246,7 @@ function Users() {
     let listed = false
     try {
       data = await api.addUser(form)
-      if (form.roleId === 'official') listed = await ensureOfficial(form)
+      if (officialRoles.includes(form.roleId)) listed = await ensureOfficial(form)
     } catch (err) {
       setSaving(false)
       return setMessage({ error: true, text: err.message })
@@ -315,7 +317,7 @@ function Users() {
       <Muted>
         Adding someone emails them how to sign in; the envelope on their row sends it again.
         Account sets what they can do across the site: Admins manage everything, Officials are also added to the Officials list.
-        Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
+        Users can request events (and own them); Chief Officials approve or deny event requests and also work as Officials. Site Admins create clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
       </Muted>
       <CsvImport kind="users" importRow={importUser} onDone={reload}>
         <Muted>Each person gets the same welcome email as adding them above. Officials are added to the Officials list too.</Muted>
@@ -330,7 +332,7 @@ function Users() {
             busy={changes.busy}
             onCancel={() => setEditing(null)}
             onSave={async (fields) => {
-              const becameOfficial = fields.roleId === 'official' && editing.role_id !== 'official'
+              const becameOfficial = officialRoles.includes(fields.roleId) && !officialRoles.includes(editing.role_id)
               const saved = await changes.run(async () => {
                 await api.updateUser(editing, fields)
                 if (becameOfficial) await ensureOfficial({ name: fields.name, email: fields.email })

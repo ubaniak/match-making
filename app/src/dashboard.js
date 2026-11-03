@@ -48,6 +48,8 @@ export async function loadDashboard({ profile, siteAdmin }) {
   const result = { events, liveEvents, clubs, myClubs, invitations }
 
   if (siteAdmin) result.admin = await loadAdmin(events, clubs)
+  // Chief Officials approve or deny requested events.
+  else if (profile?.role_id === 'chief_official') result.approver = { requested: events.filter((e) => effectiveStatus(e) === 'requested') }
   if (ownedEvents.length) result.owner = ownerStats(ownedEvents, byId)
   if (myClubs.length) result.club = await clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId)
   const officialEvents = Object.values(byId).filter((d) => d.bouts.officials.some((o) => o.user_id === me))

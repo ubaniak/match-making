@@ -124,6 +124,7 @@ const allPermissions = [
   'public:read', 'pages:read', 'cards:read', 'cards:create', 'cards:manage', 'cards:submit-official',
   'cards:submit-athlete', 'athletes:read', 'athletes:create', 'athletes:write', 'officials:read',
   'officials:write', 'files:upload', 'users:manage', 'roles:manage', 'audit:read', 'events:create',
+  'events:approve',
 ]
 
 // Matches the Users grants in the migrations; 'own' scopes are checked in the functions below.
@@ -162,7 +163,14 @@ function setSession(session) {
   listeners.forEach((callback) => callback(session))
 }
 
-const roleNames = { admin: 'Admins', user: 'Users', official: 'Officials', public: 'Public' }
+const roleNames = { admin: 'Admins', user: 'Users', official: 'Officials', chief_official: 'Chief Officials', public: 'Public' }
+
+// Users request events; Chief Officials approve or deny them (migration 20261103020000).
+const permissionsFor = (roleId) =>
+  roleId === 'user' ? [...userPermissions, 'events:create']
+    : roleId === 'chief_official' ? [...userPermissions, 'events:approve']
+      : userPermissions
+const currentRole = (current) => (isSiteAdmin() ? 'admin' : current.users.find((u) => u.id && u.id === currentUserId())?.role_id ?? 'user')
 const byName = (a, b) => (a.name || a.email).localeCompare(b.name || b.email)
 
 function currentUserId() {
@@ -225,7 +233,7 @@ function publicBouts(current, eventId, eventDate, days) {
 
 function canSee(current, eventId) {
   const event = current.events.find((e) => e.id === eventId)
-  return Boolean(event) && (isSiteAdmin() || Boolean(roleOn(current, eventId)) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
+  return Boolean(event) && (isSiteAdmin() || currentRole(current) === 'chief_official' || Boolean(roleOn(current, eventId)) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
 }
 const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
 const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
@@ -508,7 +516,7 @@ export const mockApi = {
     if (user) {
       return {
         profile: { id: user.id, email: user.email, name: user.name, role_id: user.role_id ?? 'user', status: 'active', roles: { name: roleNames[user.role_id ?? 'user'] } },
-        permissions: userPermissions,
+        permissions: permissionsFor(user.role_id ?? 'user'),
       }
     }
     return {
@@ -897,8 +905,12 @@ export const mockApi = {
 
   // Mirrors create_event.
   async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
-    requireSiteAdmin('Only a site Admin can create events')
     const current = data()
+    if (!isSiteAdmin()) {
+      if (currentRole(current) !== 'user') throw new Error('Only event owners and site Admins can create events')
+      if (ownerId && ownerId !== currentUserId()) throw new Error('Only a site Admin can create an event for someone else')
+      ownerId = currentUserId()
+    }
     if (!name.trim()) throw new Error('Give the event a name')
     if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
     if (!ownerId || !findUser(current, ownerId)) throw new Error('Pick an Owner who has signed in at least once')
@@ -956,17 +968,17 @@ export const mockApi = {
   },
 
   // Mirrors set_event_status.
-  async setEventStatus(eventId, status) {
-    requireSiteAdmin('Only a site Admin can approve, cancel or close an event')
+  async setEventStatus(eventId, status, note) {
     const current = data()
+    const chief = currentRole(current) === 'chief_official'
+    if (!isSiteAdmin() && !chief) throw new Error('Only a Chief Official or a site Admin can approve or deny an event')
     const event = findEvent(current, eventId)
-    const from = effectiveStatus(event)
-    if (from === status) return
-    if (from === 'done' || from === 'cancelled') throw new Error(`This event is already ${from === 'done' ? 'Done' : 'Cancelled'}`)
-    if (!['active', 'done', 'cancelled'].includes(status) || (status === 'active' && from !== 'requested')) {
-      throw new Error('An event can\'t make that change')
+    if (event.status === status) return
+    if (!isSiteAdmin() && !(event.status === 'requested' && ['active', 'denied'].includes(status))) {
+      throw new Error('A Chief Official can only approve or deny a Requested event. Ask a site Admin to change it.')
     }
     event.status = status
+    event.status_note = note?.trim() || null
     write(DATA_KEY, current)
   },
 

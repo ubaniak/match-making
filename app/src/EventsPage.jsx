@@ -15,7 +15,7 @@ import {
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 import { isOfficial } from './auth'
-import { askConfirm, askTypedConfirm, dash, showError } from './dialogs'
+import { askConfirm, askText, askTypedConfirm, dash, showError } from './dialogs'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
@@ -117,11 +117,15 @@ function ZoneNote({ event }) {
   )
 }
 
-// Events: site Admins create them and pick the Owner. The Owner fills in the poster and
-// day times; a site Admin approves, cancels or closes the event.
+// Events (Bhavek, 2026-11-03): event owners (Users) request events and own them; a site Admin
+// can also create one for any Owner. The Owner fills in the poster and day times. A Chief
+// Official approves or denies Requested events; a site Admin can do that too, cancel or close
+// an event, and override any decision.
 // eventId and tab open one event straight away (links from the Home page and alerts).
 export default function EventsPage({ profile, can, eventId, tab }) {
   const siteAdmin = can('users:manage')
+  const canCreate = siteAdmin || can('events:create')
+  const canApprove = siteAdmin || can('events:approve')
   const [view, setView] = useState(eventId ? { name: 'event', id: eventId, tab } : { name: 'list' })
   const back = () => setView({ name: 'list' })
 
@@ -130,6 +134,8 @@ export default function EventsPage({ profile, can, eventId, tab }) {
       {view.name === 'list' && (
         <EventList
           siteAdmin={siteAdmin}
+          canCreate={canCreate}
+          canApprove={canApprove}
           profile={profile}
           onOpen={(id) => setView({ name: 'event', id })}
           onCreate={() => setView({ name: 'new' })}
@@ -138,24 +144,31 @@ export default function EventsPage({ profile, can, eventId, tab }) {
       {view.name === 'new' && (
         <>
           <BackLink onClick={back}>All events</BackLink>
-          <PageHeading title="New event" />
-          <Muted>
-            The event starts as Requested. Its Owner is asked by email to add the poster and the weigh-in and bout times.
-            If the email can't be sent automatically, you'll get a ready-made one to send yourself. Approve it whenever
-            you're ready.
-          </Muted>
-          <NewEventForm onCancel={back} onCreated={(id, email) => setView({ name: 'event', id, email })} />
-          <EventsImport onDone={back} />
+          <PageHeading title={siteAdmin ? 'New event' : 'Request an event'} />
+          {siteAdmin ? (
+            <Muted>
+              The event starts as Requested. Its Owner is asked by email to add the poster and the weigh-in and bout times.
+              If the email can't be sent automatically, you'll get a ready-made one to send yourself. Approve it whenever
+              you're ready.
+            </Muted>
+          ) : (
+            <Muted>
+              You'll be the event's Owner. It starts as Requested until a Chief Official approves it. Meanwhile you can add
+              the poster and the weigh-in and bout times.
+            </Muted>
+          )}
+          <NewEventForm siteAdmin={siteAdmin} onCancel={back} onCreated={(id, email) => setView({ name: 'event', id, email })} />
+          {siteAdmin && <EventsImport onDone={back} />}
         </>
       )}
       {view.name === 'event' && (
-        <EventDetail id={view.id} email={view.email} initialTab={view.tab} profile={profile} siteAdmin={siteAdmin} onBack={back} />
+        <EventDetail id={view.id} email={view.email} initialTab={view.tab} profile={profile} siteAdmin={siteAdmin} canApprove={canApprove} onBack={back} />
       )}
     </main>
   )
 }
 
-function EventList({ siteAdmin, profile, onOpen, onCreate }) {
+function EventList({ siteAdmin, canCreate, canApprove, profile, onOpen, onCreate }) {
   const [events, setEvents] = useState(null)
   const [error, setError] = useState(null)
 
@@ -175,27 +188,30 @@ function EventList({ siteAdmin, profile, onOpen, onCreate }) {
   const withStatus = events?.map((e) => ({ ...e, shownStatus: effectiveStatus(e) })) ?? []
   const requested = withStatus.filter((e) => e.shownStatus === 'requested')
   const active = withStatus.filter((e) => e.shownStatus === 'active')
-  const finished = withStatus.filter((e) => e.shownStatus === 'done' || e.shownStatus === 'cancelled').reverse()
+  const finished = withStatus.filter((e) => ['done', 'cancelled', 'denied'].includes(e.shownStatus)).reverse()
 
   return (
     <>
       <PageHeading title="Events">
         <Button href="#">Public page</Button>
-        {siteAdmin && <Button type="primary" icon={<PlusOutlined />} onClick={onCreate}>New event</Button>}
+        {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={onCreate}>{siteAdmin ? 'New event' : 'Request an event'}</Button>}
       </PageHeading>
       <ErrorAlert>{error}</ErrorAlert>
       <MyInvitations onOpen={onOpen} />
       {events === null && !error && <Muted>Loading…</Muted>}
       {events?.length === 0 && (
         <Muted>
-          {siteAdmin ? 'No events yet. Create one and pick its Owner.' : 'You haven\'t been added to any events yet.'}
+          {siteAdmin ? 'No events yet. Create one and pick its Owner.'
+            : canCreate ? 'You haven\'t been added to any events yet. Request one to become its Owner.'
+              : canApprove ? 'No events yet. Requests to approve show up here.'
+                : 'You haven\'t been added to any events yet.'}
         </Muted>
       )}
       {requested.length > 0 && (
-        <EventTable title={siteAdmin ? 'Waiting for approval' : 'Requested'} events={requested} {...tableProps} />
+        <EventTable title={canApprove ? 'Waiting for approval' : 'Requested'} events={requested} {...tableProps} />
       )}
       {active.length > 0 && <EventTable title="Active" events={active} {...tableProps} />}
-      {finished.length > 0 && <EventTable title="Done and cancelled" events={finished} {...tableProps} />}
+      {finished.length > 0 && <EventTable title="Done, cancelled and denied" events={finished} {...tableProps} />}
     </>
   )
 }
@@ -226,7 +242,7 @@ function EventTable({ title, events, profile, onOpen, onDelete }) {
 }
 
 function StatusBadge({ status }) {
-  return <Badge strong={status === 'active'} muted={status === 'cancelled'}>{statusLabels[status]}</Badge>
+  return <Badge strong={status === 'active'} muted={status === 'cancelled' || status === 'denied'}>{statusLabels[status]}</Badge>
 }
 
 function RoleBadge({ role }) {
@@ -321,16 +337,17 @@ function FormButtons({ saving, savingText, text, onCancel, disabled }) {
   )
 }
 
-function NewEventForm({ onCancel, onCreated }) {
+// A site Admin picks the Owner; anyone else requesting an event becomes its Owner.
+function NewEventForm({ siteAdmin, onCancel, onCreated }) {
   const [form, setField] = useEventFields({ name: '', venue: '', startDate: '', endDate: '', ownerId: '', timezone: browserTimeZone() })
-  const users = useActiveUsers()
+  const users = useActiveUsers(siteAdmin)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
 
   async function save(e) {
     e.preventDefault()
     setError(null)
-    if (!form.ownerId) return setError('Choose the event\'s Owner.')
+    if (siteAdmin && !form.ownerId) return setError('Choose the event\'s Owner.')
     if (daysBetween(form.startDate, form.endDate).length === 0) return setError('Check the dates: the end date must be on or after the start date.')
     setSaving(true)
     let id
@@ -341,6 +358,8 @@ function NewEventForm({ onCancel, onCreated }) {
       setSaving(false)
       return
     }
+    // Someone requesting their own event doesn't need an email about it.
+    if (!siteAdmin) return onCreated(id, null)
     // The event exists now; a failed email shouldn't undo that.
     let email
     try {
@@ -359,15 +378,19 @@ function NewEventForm({ onCancel, onCreated }) {
       <FormCard title="Details">
         <Field label="Name"><Input required {...field('name')} placeholder="e.g. Winter Box Cup" /></Field>
         <Field label="Location" hint="optional"><Input {...field('venue')} /></Field>
-        <Field label="Owner">
-          <Pick
-            value={form.ownerId}
-            onChange={(v) => setField('ownerId', v)}
-            placeholder="Choose a user…"
-            options={users.map((u) => ({ value: u.id, label: userLabel(u) }))}
-          />
-        </Field>
-        <FullRow><Muted>Only people who have signed in at least once can own an event.</Muted></FullRow>
+        {siteAdmin && (
+          <>
+            <Field label="Owner">
+              <Pick
+                value={form.ownerId}
+                onChange={(v) => setField('ownerId', v)}
+                placeholder="Choose a user…"
+                options={users.map((u) => ({ value: u.id, label: userLabel(u) }))}
+              />
+            </Field>
+            <FullRow><Muted>Only people who have signed in at least once can own an event.</Muted></FullRow>
+          </>
+        )}
         <TimeZoneSelect value={form.timezone} day={form.startDate} onChange={(tz) => setField('timezone', tz)} />
         <FullRow><Muted>Weigh-in and bout times are in this time zone. We picked your browser's; change it if the event is somewhere else.</Muted></FullRow>
       </FormCard>
@@ -375,7 +398,7 @@ function NewEventForm({ onCancel, onCreated }) {
         <DateFields form={form} setField={setField} />
       </FormCard>
       <ErrorAlert>{error}</ErrorAlert>
-      <FormButtons saving={saving} savingText="Creating…" text="Create event" onCancel={onCancel} />
+      <FormButtons saving={saving} savingText={siteAdmin ? 'Creating…' : 'Sending…'} text={siteAdmin ? 'Create event' : 'Request event'} onCancel={onCancel} />
     </form>
   )
 }
@@ -414,7 +437,7 @@ function EmailNotice({ event, email, onDismiss }) {
   )
 }
 
-function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, onBack }) {
+function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, canApprove, onBack }) {
   const [event, setEvent] = useState(undefined)
   const [error, setError] = useState(null)
   const [editing, setEditing] = useState(null) // 'details' | 'times' | null
@@ -475,6 +498,12 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
   async function changeStatus(next, question, options) {
     if (question && !(await askConfirm(question, options))) return
     run(() => api.setEventStatus(event.id, next))
+  }
+
+  async function deny() {
+    const note = await askText(`Deny ${event.name}? Tell the Owner why (optional).`, { okText: 'Deny' })
+    if (note === null) return
+    run(() => api.setEventStatus(event.id, 'denied', note))
   }
 
   async function remove() {
@@ -586,29 +615,44 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
       <EmailNotice event={event} email={email} onDismiss={() => setEmail(null)} />
       <ErrorAlert>{error}</ErrorAlert>
 
-      {siteAdmin && (status === 'requested' || status === 'active') && (
+      {status === 'denied' && (
+        <Alert className="gap" type="warning" showIcon title="This event request was denied." description={event.status_note || undefined} />
+      )}
+      {(canApprove && status === 'requested') || siteAdmin ? (
         <Space wrap className="gap">
-          {status === 'requested' && (
-            <Button type="primary" disabled={busy} onClick={() => changeStatus('active', `Approve ${event.name}? It goes on the public page and can take on people and athletes.`, { okText: 'Approve' })}>
-              Approve
+          {canApprove && status === 'requested' && (
+            <>
+              <Button type="primary" disabled={busy} onClick={() => changeStatus('active', `Approve ${event.name}? It goes on the public page and can take on people and athletes.`, { okText: 'Approve' })}>
+                Approve
+              </Button>
+              <Button danger disabled={busy} onClick={deny}>Deny</Button>
+            </>
+          )}
+          {siteAdmin && status === 'active' && (
+            <Button disabled={busy} onClick={() => changeStatus('requested', `Send ${event.name} back to Requested? It comes off the public page until it's approved again.`, { okText: 'Send back' })}>
+              Send back to Requested
             </Button>
           )}
-          <Button disabled={busy} onClick={() => changeStatus('done', `Mark ${event.name} as Done now? This can't be undone.`, { okText: 'Mark done' })}>
-            Mark done
-          </Button>
-          <Button danger disabled={busy} onClick={() => changeStatus('cancelled', `Cancel ${event.name}? This can't be undone.`, { okText: 'Cancel event', danger: true })}>
-            Cancel event
-          </Button>
-          <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={remove}>Delete event</Button>
+          {siteAdmin && (status === 'denied' || status === 'cancelled' || status === 'done') && (
+            <Button disabled={busy} onClick={() => changeStatus('requested', `Reopen ${event.name} as Requested? A Chief Official can then approve or deny it again.`, { okText: 'Reopen' })}>
+              Reopen as Requested
+            </Button>
+          )}
+          {siteAdmin && (status === 'requested' || status === 'active') && (
+            <>
+              <Button disabled={busy} onClick={() => changeStatus('done', `Mark ${event.name} as Done now?`, { okText: 'Mark done' })}>
+                Mark done
+              </Button>
+              <Button danger disabled={busy} onClick={() => changeStatus('cancelled', `Cancel ${event.name}?`, { okText: 'Cancel event', danger: true })}>
+                Cancel event
+              </Button>
+            </>
+          )}
+          {siteAdmin && <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={remove}>Delete event</Button>}
         </Space>
-      )}
-      {siteAdmin && !(status === 'requested' || status === 'active') && (
-        <Space wrap className="gap">
-          <Button danger icon={<DeleteOutlined />} disabled={busy} onClick={remove}>Delete event</Button>
-        </Space>
-      )}
-      {status === 'requested' && !siteAdmin && (
-        <Muted>A site Admin will approve this event. Meanwhile, add the poster and the day times under Settings.</Muted>
+      ) : null}
+      {status === 'requested' && !canApprove && (
+        <Muted>A Chief Official will approve or deny this event. Meanwhile, add the poster and the day times under Settings.</Muted>
       )}
       {may.role === 'owner' && !siteAdmin && isEditableStatus(event) && (
         <Muted>Need this event cancelled? Ask a site Admin.</Muted>
