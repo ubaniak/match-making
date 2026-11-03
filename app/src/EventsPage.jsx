@@ -118,14 +118,14 @@ function ZoneNote({ event }) {
 }
 
 // Events (Bhavek, 2026-11-03): event owners (Users) request events and own them; a site Admin
-// can also create one for any Owner. The Owner fills in the poster and day times. A Chief
-// Official approves or denies Requested events; a site Admin can do that too, cancel or close
-// an event, and override any decision.
+// can also create one for any Owner. The Owner fills in the poster and day times. A site Admin
+// approves or denies Requested events, cancels or closes them, and can undo any decision.
+// (Bout approvals belong to each event's Chief Official and Deputy, not to this page.)
 // eventId and tab open one event straight away (links from the Home page and alerts).
 export default function EventsPage({ profile, can, eventId, tab }) {
   const siteAdmin = can('users:manage')
   const canCreate = siteAdmin || can('events:create')
-  const canApprove = siteAdmin || can('events:approve')
+  const canApprove = siteAdmin
   const [view, setView] = useState(eventId ? { name: 'event', id: eventId, tab } : { name: 'list' })
   const back = () => setView({ name: 'list' })
 
@@ -153,7 +153,7 @@ export default function EventsPage({ profile, can, eventId, tab }) {
             </Muted>
           ) : (
             <Muted>
-              You'll be the event's Owner. It starts as Requested until a Chief Official approves it. Meanwhile you can add
+              You'll be the event's Owner. It starts as Requested until a site Admin approves it. Meanwhile you can add
               the poster and the weigh-in and bout times.
             </Muted>
           )}
@@ -634,7 +634,7 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
             </Button>
           )}
           {siteAdmin && (status === 'denied' || status === 'cancelled' || status === 'done') && (
-            <Button disabled={busy} onClick={() => changeStatus('requested', `Reopen ${event.name} as Requested? A Chief Official can then approve or deny it again.`, { okText: 'Reopen' })}>
+            <Button disabled={busy} onClick={() => changeStatus('requested', `Reopen ${event.name} as Requested? It can then be approved or denied again.`, { okText: 'Reopen' })}>
               Reopen as Requested
             </Button>
           )}
@@ -652,7 +652,7 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
         </Space>
       ) : null}
       {status === 'requested' && !canApprove && (
-        <Muted>A Chief Official will approve or deny this event. Meanwhile, add the poster and the day times under Settings.</Muted>
+        <Muted>A site Admin will approve or deny this event. Meanwhile, add the poster and the day times under Settings.</Muted>
       )}
       {may.role === 'owner' && !siteAdmin && isEditableStatus(event) && (
         <Muted>Need this event cancelled? Ask a site Admin.</Muted>
