@@ -30,7 +30,7 @@ function seed() {
       { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
     ],
     athletes: [
-      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club_id: 'club-1', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1' },
+      { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club_id: 'club-1', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1', bc_number: 'BC-104233', last_medical: '2026-09-15' },
       { id: 'athlete-2', name: 'Jade Murphy', date_of_birth: '2006-07-30', gender: 'female', weight_kg: 51, bouts: 3, club_id: 'club-1', invite_email: 'jade@example.com', user_id: null, coach_id: 'user-1' },
       { id: 'athlete-3', name: 'Tom Becker', date_of_birth: '2001-11-05', gender: 'male', weight_kg: 74.2, bouts: 27, club_id: 'club-2', invite_email: null, user_id: null, coach_id: 'user-2' },
       { id: 'athlete-4', name: 'Marco Ruiz', date_of_birth: '2003-08-21', gender: 'male', weight_kg: 61.8, bouts: 14, club_id: 'club-2', invite_email: null, user_id: null, coach_id: 'user-2' },
@@ -47,7 +47,7 @@ function seed() {
     ],
     transfers: [],
     officials: [
-      { id: 'official-1', name: 'Grace Adeyemi', qualifications: 'Level 3 referee', invite_email: 'grace@example.com', user_id: 'user-grace' },
+      { id: 'official-1', name: 'Grace Adeyemi', level: 3, qualifications: 'Referee', invite_email: 'grace@example.com', phone: '204-555-0101', bc_number: 'BC-300112', user_id: 'user-grace' },
       { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: 'rob@example.com', user_id: null },
       { id: 'official-3', name: 'Priya Shah', qualifications: 'Level 2 referee', invite_email: 'priya.shah@example.com', user_id: 'user-3' },
       { id: 'official-4', name: 'Kim Lee', qualifications: 'Judge', invite_email: 'kim.lee@example.com', user_id: 'user-4' },

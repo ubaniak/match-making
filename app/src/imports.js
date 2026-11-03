@@ -1,4 +1,4 @@
-import { athleteProblems } from './athletes'
+import { athleteProblems, cleanText } from './athletes'
 import { daysBetween, MAX_EVENT_DAYS } from './dates'
 import { checkMatch } from './matching'
 
@@ -78,12 +78,13 @@ export const importSpecs = {
   athletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
+    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club', 'bc_number', 'last_medical'],
     required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC'],
-      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', 'Eastside BC'],
+      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC', 'BC-123456', '2026-09-15'],
+      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', 'Eastside BC', '', ''],
     ],
+    notes: { bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
     check(values, errors, { usersByEmail, clubsByName }) {
       checkEmail(values.email, errors)
 
@@ -105,6 +106,8 @@ export const importSpecs = {
         weight_kg: values.weight_kg ?? '',
         bouts: values.bouts ?? '',
         club_id: null,
+        bc_number: cleanText(values.bc_number),
+        last_medical: (values.last_medical ?? '').trim() || null,
       }
       // The club must already exist; match its name ignoring case.
       const clubName = (values.club ?? '').trim()
@@ -119,13 +122,13 @@ export const importSpecs = {
   clubAthletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts'],
+    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'bc_number', 'last_medical'],
     required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12'],
-      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0'],
+      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'BC-123456', '2026-09-15'],
+      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', '', ''],
     ],
-    notes: { gender: 'male or female', bouts: 'number of bouts boxed' },
+    notes: { gender: 'male or female', bouts: 'number of bouts boxed', bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
     check(values, errors, context) {
       const club = { id: context.clubId, name: context.clubName }
       return importSpecs.athletes.check({ ...values, club: club.name }, errors, { ...context, clubsByName: new Map([[lower(club.name), club]]) })
@@ -348,15 +351,22 @@ export const importSpecs = {
   officials: {
     label: 'officials',
     singular: 'official',
-    columns: ['name', 'email', 'qualifications'],
+    columns: ['name', 'email', 'phone', 'level', 'bc_number', 'qualifications'],
     required: ['name', 'email'],
-    example: [['Pat Kim', 'pat@example.com', 'Level 2 referee']],
+    example: [['Pat Kim', 'pat@example.com', '204-555-0134', '2', 'BC-654321', 'Referee']],
+    notes: { level: 'a whole number, optional', bc_number: 'Boxing Canada registration number, optional' },
     check(values, errors) {
       if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors, { required: true })
+      const levelText = (values.level ?? '').trim()
+      const level = levelText === '' ? null : Number(levelText)
+      if (level != null && !(Number.isInteger(level) && level >= 0 && level <= 100)) errors.push(`Level "${levelText}" should be a whole number`)
       return {
         name: values.name,
         invite_email: (values.email ?? '').toLowerCase(),
+        phone: cleanText(values.phone),
+        level,
+        bc_number: cleanText(values.bc_number),
         qualifications: values.qualifications || null,
       }
     },

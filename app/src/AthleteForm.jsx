@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Input } from 'antd'
-import { athleteProblems, genders } from './athletes'
+import { athleteProblems, cleanText, genders } from './athletes'
 import { DateInput, Field, FormCard, FormMessage, NumberInput, Pick, WeightInput } from './ui'
 
 const fromAthlete = (a) => ({
@@ -12,6 +12,8 @@ const fromAthlete = (a) => ({
   weightKg: a?.weight_kg ?? '',
   bouts: a?.bouts ?? '',
   clubId: a?.club_id ?? '',
+  bcNumber: a?.bc_number ?? '',
+  lastMedical: a?.last_medical ?? '',
 })
 
 // Add or edit an athlete. Pass `clubs` to choose the club, or `clubId` to fix it (club pages).
@@ -34,6 +36,8 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
       weight_kg: form.weightKg === '' ? '' : Number(form.weightKg),
       bouts: form.bouts === '' ? '' : Number(form.bouts),
       club_id: form.clubId,
+      bc_number: cleanText(form.bcNumber),
+      last_medical: form.lastMedical || null,
     }
     if (!editing) record.invite_email = form.email.trim().toLowerCase() || null
     const problems = athleteProblems(record)
@@ -90,6 +94,8 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
         </Field>
         <Field label="Weight" hint="saved in kg"><WeightInput value={form.weightKg} onChange={set('weightKg')} /></Field>
         <Field label="Experience (bouts)"><NumberInput min={0} max={1000} step={1} precision={0} value={form.bouts} onChange={set('bouts')} /></Field>
+        <Field label="BC number" hint="Boxing Canada, optional"><Input {...text('bcNumber')} /></Field>
+        <Field label="Last medical" hint="optional"><DateInput value={form.lastMedical} onChange={set('lastMedical')} placeholder="YYYY-MM-DD" /></Field>
         {clubs && !editing && (
           <Field label="Club">
             <Pick
