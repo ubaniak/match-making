@@ -27,7 +27,7 @@ alter table public.event_clubs add constraint event_clubs_status_check
 alter table public.notifications drop constraint if exists notifications_kind_check;
 alter table public.notifications add constraint notifications_kind_check check (kind in (
   'availability', 'invitation_answer', 'official_role',
-  'bout_approval', 'bout_decision', 'bout_cancelled', 'bout_comment',
+  'bout_approval', 'bout_decision', 'bout_cancelled', 'bout_comment', 'bout_review',
   'join_request', 'join_answer', 'late_entry', 'late_entry_answer',
   'transfer', 'transfer_answer', 'member_request', 'member_answer',
   'event_role', 'event_status',

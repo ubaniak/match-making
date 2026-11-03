@@ -78,7 +78,7 @@ export function NotificationsProvider({ userId, children }) {
 }
 
 const actionLabels = {
-  availability: 'Answer', bout_approval: 'Review bout', join_request: 'Answer', club_invite: 'Answer', late_entry: 'Answer',
+  availability: 'Answer', bout_approval: 'Review bout', bout_review: 'Review bout', join_request: 'Answer', club_invite: 'Answer', late_entry: 'Answer',
   transfer: 'Answer', member_request: 'Review',
 }
 

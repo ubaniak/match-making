@@ -166,9 +166,13 @@ applies them like this:
 
 - On weigh-in day, any official who accepted that day (and the CO and Deputy on every day)
   records each athlete's actual weight and a medical **pass** or **fail** with a note.
-- Every bout is checked again against the actual weights. A bout that fails is cancelled and
-  pulled off the card. An athlete who fails the medical or doesn't show up comes off their bouts
-  the same way.
+- Every bout is checked again against the actual weights. A bout that no longer fits, or one with
+  an athlete who fails the medical or doesn't show up, is marked **Needs discussion**. Nothing is
+  cancelled automatically (Bhavek, 2026-11-03).
+- Only the Chief Official or Deputy settles a bout that needs discussion: keep it or cancel it.
+  They get a "Discuss bout" to-do. No result can be recorded until it's settled.
+- The opponent of an athlete who fails still weighs in and is processed as normal, even if the
+  bout is later cancelled.
 - After the weigh-in, only an official can make a new bout. It still needs the Chief Official's
   or Deputy's approval.
 - An athlete can box on more than one day of an event, and weighs in on each day they box.

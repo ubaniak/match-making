@@ -11,6 +11,12 @@ const POSTERS = 'event-posters'
 // really their password. Only these addresses ever try a password; nobody is emailed a code.
 const isDemoEmail = (email) => /@demo\.test$/i.test(email.trim())
 
+// Only invited people can sign in (migration 34). Supabase reports a refused new account as
+// "Database error saving new user"; this is what we tell the person instead.
+export const notInvitedMessage = (email) =>
+  `${email ? email : 'That email'} hasn't been invited. Ask a site Admin or the person running your event to add you, then try again.`
+const isNotInvitedError = (error) => /database error saving new user|has not been invited/i.test(error?.message ?? '')
+
 async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args)
   if (error) throw error
@@ -74,11 +80,16 @@ export const supabaseApi = {
 
   async sendMagicLink(email) {
     if (isDemoEmail(email)) return
+    // Ask first so strangers are turned away at once and no email goes out. If the check isn't
+    // installed yet (migration not run), carry on; the database still refuses new accounts.
+    const { data: invited, error: checkError } = await supabase.rpc('email_is_invited', { p_email: email })
+    if (!checkError && invited === false) throw new Error(notInvitedMessage(email.trim().toLowerCase()))
     const { error } = await supabase.auth.signInWithOtp({
       email,
       // Come back to whatever URL the app is served from (local dev or GitHub Pages).
       options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
     })
+    if (isNotInvitedError(error)) throw new Error(notInvitedMessage(email.trim().toLowerCase()))
     if (error) throw error
   },
 
@@ -693,6 +704,16 @@ export const supabaseApi = {
 
   async cancelBout(boutId, reason) {
     await rpc('cancel_bout', { p_bout_id: boutId, p_reason: reason || null })
+  },
+
+  // A bout that no longer fits after the weigh-in needs discussing (migration 34).
+  async flagBoutForReview(boutId, reason) {
+    await rpc('flag_bout_for_review', { p_bout_id: boutId, p_reason: reason })
+  },
+
+  // The Chief Official or Deputy keeps a bout that needed discussing (migration 34).
+  async clearBoutReview(boutId) {
+    await rpc('clear_bout_review', { p_bout_id: boutId })
   },
 
   // order: [{ id, session }] in running order.
