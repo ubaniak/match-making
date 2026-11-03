@@ -7,7 +7,7 @@
 --   * The site Admin can do anything: create, approve, deny, and override any decision
 --     (reopen a denied or cancelled event, send an approved one back to Requested).
 -- New status 'denied' for requests a Chief Official (or the site Admin) turns down.
--- Run after 20261103010000_helper_demo_accounts.sql.
+-- Independent of the migrations in PRs #65, #70 and #71, so it can run before or after them.
 
 -- ---------------------------------------------------------------------------
 -- Roles and permissions
