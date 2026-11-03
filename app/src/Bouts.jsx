@@ -582,7 +582,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
     run(() => api.cancelBout(bout.id, reason))
   }
 
-  // A failed medical, a no-show or a weight that no longer fits flags the bout (migration 34). Only
+  // A failed medical, a no-show or a weight that no longer fits flags the bout (migration 35). Only
   // the Chief Official or Deputy settles it: keep the bout or cancel it.
   const review = !hasResult && bout.status !== 'cancelled' ? bout.review_reason : null
 
@@ -933,7 +933,7 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
       await api.recordWeighIn({ eventId: event.id, day, athleteId: athlete.id, weightKg: form.weight, medical: form.medical, note: form.note })
       if (form.medical !== 'pass') return
       // Re-check this athlete's bouts against the new weight; flag any that no longer fit for the
-      // Chief Official or Deputy to discuss (migration 34). Nothing is cancelled automatically.
+      // Chief Official or Deputy to discuss (migration 35). Nothing is cancelled automatically.
       const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
       weights[athlete.id] = Number(form.weight)
       for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
