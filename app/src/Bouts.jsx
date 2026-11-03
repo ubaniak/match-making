@@ -53,7 +53,7 @@ function boutCsvRows(event, data, athletes, days) {
     'Day', 'Bout', 'Session', 'Type', 'Status',
     'Red boxer', 'Red club', 'Red category', 'Red weigh-in',
     'Blue boxer', 'Blue club', 'Blue category', 'Blue weigh-in',
-    'Winner', 'Method', 'Result note', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason',
+    'Winner', 'Method', 'Result note', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason', 'Needs discussion',
   ]
   const rows = days.flatMap((day) => {
     const dayBouts = data.bouts.filter((b) => b.day === day)
@@ -68,7 +68,7 @@ function boutCsvRows(event, data, athletes, days) {
         b.winner ? (b.winner === 'red' ? 'Red' : 'Blue') : '', b.method ? methodLabels[b.method] ?? b.method : '', b.result_note ?? '',
         decision ? `${decision.decision === 'approved' ? 'Approved' : 'Rejected'}${decision.note ? `: ${decision.note}` : ''}` : '',
         b.approval_requested_at ? sentLabel(b.approval_requested_at) : '',
-        b.override_reason ?? '', b.cancel_reason ?? '',
+        b.override_reason ?? '', b.cancel_reason ?? '', b.status === 'cancelled' ? '' : b.review_reason ?? '',
       ]
     })
   })
@@ -337,7 +337,7 @@ function Card({ event, data, rights, busy, run, publish }) {
       )}
 
       {canWeighIn && (
-        <WeighIn event={event} day={day} bouts={live} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
+        <WeighIn event={event} day={day} bouts={live} allBouts={dayBouts} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
       )}
       {!canWeighIn && weighIns.length > 0 && (
         <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
@@ -582,6 +582,16 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
     run(() => api.cancelBout(bout.id, reason))
   }
 
+  // A failed medical, a no-show or a weight that no longer fits flags the bout (migration 34). Only
+  // the Chief Official or Deputy settles it: keep the bout or cancel it.
+  const review = !hasResult && bout.status !== 'cancelled' ? bout.review_reason : null
+
+  async function keep() {
+    if (await askConfirm(`Keep ${bout.red?.name} vs ${bout.blue?.name} on the card? The "needs discussion" flag is cleared.`, { okText: 'Keep bout' })) {
+      run(() => api.clearBoutReview(bout.id))
+    }
+  }
+
   async function clearResult() {
     if (await askConfirm('Remove this result? Both boxers\' bout counts go back down by one.', { okText: 'Remove result', danger: true })) {
       run(() => api.clearResult(bout.id), { entries: true })
@@ -666,6 +676,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           <span>Bout {index + 1}</span>
           <Badge strong={type !== 'scored'}>{boutTypeLabels[type]}</Badge>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
+          {review && <Badge strong>Needs discussion</Badge>}
           {bout.needs_supervisor && <Badge>U17 v U19: needs the official's approval</Badge>}
           {sendable(bout) && bout.approval_requested_at && <Badge muted title="Last sent for approval">Sent {sentLabel(bout.approval_requested_at)}</Badge>}
         </Space>
@@ -692,7 +703,28 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           }
         />
       )}
-      {newBlocks.length > 0 && !hasResult && (
+      {review && (
+        <Alert
+          type="warning"
+          showIcon={false}
+          className="gap"
+          title="Needs discussion"
+          description={
+            <>
+              <div>{review}</div>
+              {rights.official && open ? (
+                <Space size={6} wrap style={{ marginTop: 8 }}>
+                  <Button size="small" disabled={busy} onClick={keep}>Keep bout</Button>
+                  <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>
+                </Space>
+              ) : (
+                <Muted>The Chief Official or Deputy decides whether to keep or cancel this bout.</Muted>
+              )}
+            </>
+          }
+        />
+      )}
+      {newBlocks.length > 0 && !hasResult && !review && (
         <ErrorAlert>After the weigh-in this bout no longer fits: {newBlocks.join(' ')}</ErrorAlert>
       )}
       {bout.result_note && <Muted>Result note: {bout.result_note}</Muted>}
@@ -731,9 +763,9 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
             Swap corners
           </Button>
         )}
-        {canMatch && !hasResult && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
+        {canMatch && !hasResult && !review && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
         {rights.official && bout.status === 'approved' && !result && (
-          <Button size="small" type="primary" disabled={busy} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>
+          <Button size="small" type="primary" disabled={busy || Boolean(review)} title={review ? 'Keep or cancel this bout first' : undefined} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>
             {hasResult ? 'Change result' : 'Record result'}
           </Button>
         )}
@@ -889,24 +921,26 @@ function SendNotice({ notice, onDismiss }) {
 // Weigh-in (CO and Deputy)
 // ---------------------------------------------------------------------------
 
-function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
+function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run }) {
   const recorded = Object.fromEntries(weighIns.map((w) => [w.athlete_id, w]))
-  // Everyone boxing that day, plus anyone already weighed in.
-  const ids = [...new Set([...bouts.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]), ...weighIns.map((w) => w.athlete_id)])]
+  // Everyone matched that day (even on a bout since cancelled, so both opponents can still weigh
+  // in), plus anyone already weighed in.
+  const ids = [...new Set([...allBouts.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]), ...weighIns.map((w) => w.athlete_id)])]
   const rows = ids.map((id) => athletes[id]).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
 
   async function save(athlete, form) {
     await run(async () => {
       await api.recordWeighIn({ eventId: event.id, day, athleteId: athlete.id, weightKg: form.weight, medical: form.medical, note: form.note })
       if (form.medical !== 'pass') return
-      // Re-check this athlete's bouts against the new weight; take off any that no longer fit.
+      // Re-check this athlete's bouts against the new weight; flag any that no longer fit for the
+      // Chief Official or Deputy to discuss (migration 34). Nothing is cancelled automatically.
       const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
       weights[athlete.id] = Number(form.weight)
       for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
         const check = checkMatch(athletes[b.red_athlete_id], athletes[b.blue_athlete_id], event.start_date, weights)
         // On a Developmental bout, rule breaks an official already overrode don't count again.
         const broken = check.blocks.filter((x) => !(b.override_blocks ?? []).includes(x))
-        if (broken.length) await api.cancelBout(b.id, `Doesn't fit after the weigh-in: ${broken.join(' ')}`)
+        if (broken.length) await api.flagBoutForReview(b.id, `${athlete.name} weighed ${formatWeight(form.weight)}, so the bout no longer fits: ${broken.join(' ')}`)
       }
     })
   }
@@ -936,7 +970,7 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
       ) : (
         <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} weigh-in ${day}`} />
       )}
-      <Muted>A failed medical or a no-show takes the athlete's bouts off the card. A bout that no longer fits the weight allowance after the weigh-in is cancelled too.</Muted>
+      <Muted>A failed medical, a no-show or a weight that no longer fits marks the athlete's bouts "Needs discussion". Nothing is cancelled automatically: the Chief Official or Deputy keeps or cancels each one, and the opponent can still weigh in.</Muted>
     </div>
   )
 }

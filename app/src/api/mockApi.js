@@ -339,6 +339,27 @@ function refreshBoutStatus(bout) {
   bout.status = official?.decision === 'approved' ? 'approved' : official?.decision === 'rejected' ? 'rejected' : 'pending'
 }
 
+// Adds a reason to a bout's "needs discussion" flag, once (migration 34).
+function flagBout(current, bout, reason) {
+  if (bout.status === 'cancelled' || bout.winner) return
+  const before = bout.review_reason ?? null
+  if (!before) bout.review_reason = reason
+  else if (!before.includes(reason)) bout.review_reason = `${before} ${reason}`.slice(0, 600)
+  if (bout.review_reason === before) return
+  bout.review_at = now()
+  const key = `review:${bout.id}`
+  current.notifications = (current.notifications ?? []).filter((n) => !(n.action_key === key && !n.done_at))
+  notify(current, eventOfficialIds(current, bout.event_id), 'bout_review', `Discuss bout: ${boutLabel(current, bout)}`, {
+    body: `${boutWhere(current, bout)} · ${bout.review_reason}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts', key,
+  })
+}
+
+function flagAthleteBouts(current, eventId, athleteId, day, reason) {
+  for (const b of current.bouts ?? []) {
+    if (b.event_id === eventId && b.day === day && [b.red_athlete_id, b.blue_athlete_id].includes(athleteId)) flagBout(current, b, reason)
+  }
+}
+
 function cancelAthleteBouts(current, eventId, athleteId, day, reason) {
   for (const b of current.bouts ?? []) {
     if (b.event_id === eventId && b.status !== 'cancelled' && !b.winner && (day == null || b.day === day) &&
@@ -1602,6 +1623,11 @@ export const mockApi = {
     }
     let bout = old
     if (bout) resolveNotes(current, `bout:${bout.id}:%`)
+    // Re-matched to a different boxer: the "needs discussion" flag goes (migration 34).
+    if (bout && ![[redId, blueId], [blueId, redId]].some(([r, b]) => r === bout.red_athlete_id && b === bout.blue_athlete_id)) {
+      Object.assign(bout, { review_reason: null, review_at: null })
+      resolveNotes(current, `review:${bout.id}`)
+    }
     if (bout) {
       if (bout.day !== day) Object.assign(bout, { day, position: nextPosition, session_starts_at: null })
       Object.assign(bout, fields)
@@ -1702,9 +1728,11 @@ export const mockApi = {
     const current = data()
     const bout = findBout(current, boutId)
     if (!canMatch(current, bout.event_id, bout.day)) throw new Error('Only the event\'s Owner (before the weigh-in) or officials can cancel bouts')
+    if (bout.review_reason && !isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy cancels a bout that needs discussing')
     if (bout.winner) throw new Error('This bout has a result, so it can\'t be cancelled')
     Object.assign(bout, { status: 'cancelled', cancel_reason: reason?.trim() || null, cancelled_at: now() })
     resolveNotes(current, `bout:${bout.id}:%`)
+    resolveNotes(current, `review:${bout.id}`)
     notify(current, boutPeople(current, bout), 'bout_cancelled', `Bout cancelled: ${boutLabel(current, bout)}`, {
       body: `${boutWhere(current, bout)}${bout.cancel_reason ? ` · ${bout.cancel_reason}` : ''}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
     })
@@ -1741,6 +1769,24 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
+  async flagBoutForReview(boutId, reason) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!isOfficial(current, bout.event_id) && !myDays(current, bout.event_id).includes(bout.day)) throw new Error('Only the event\'s officials flag bouts at the weigh-in')
+    if (!reason?.trim()) throw new Error('Say why this bout needs discussing')
+    flagBout(current, bout, reason.trim().slice(0, 300))
+    write(DATA_KEY, current)
+  },
+
+  async clearBoutReview(boutId) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy decides on a bout that needs discussing')
+    Object.assign(bout, { review_reason: null, review_at: null })
+    resolveNotes(current, `review:${bout.id}`)
+    write(DATA_KEY, current)
+  },
+
   async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
     const current = data()
     const event = findEvent(current, eventId)
@@ -1751,8 +1797,10 @@ export const mockApi = {
     if (medical === 'pass' && kg == null) throw new Error('Enter the athlete\'s weight')
     current.weighIns = current.weighIns.filter((w) => !(w.event_id === eventId && w.day === day && w.athlete_id === athleteId))
     current.weighIns.push({ event_id: eventId, day, athlete_id: athleteId, weight_kg: kg, medical, note: note?.trim() || null, recorded_at: now() })
-    if (medical === 'fail') cancelAthleteBouts(current, eventId, athleteId, day, 'Failed the medical')
-    if (medical === 'absent') cancelAthleteBouts(current, eventId, athleteId, day, 'Didn\'t come to the weigh-in')
+    // A failed medical or a no-show flags the bouts for the officials to discuss; it doesn't cancel them (migration 34).
+    const name = athleteName(current, athleteId) ?? 'A boxer'
+    if (medical === 'fail') flagAthleteBouts(current, eventId, athleteId, day, `${name} failed the medical.`)
+    if (medical === 'absent') flagAthleteBouts(current, eventId, athleteId, day, `${name} didn't come to the weigh-in.`)
     write(DATA_KEY, current)
   },
 
@@ -1761,6 +1809,7 @@ export const mockApi = {
     const bout = findBout(current, boutId)
     if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy records results')
     if (bout.status !== 'approved') throw new Error('Only approved bouts get a result')
+    if (bout.review_reason) throw new Error('This bout needs discussing first: keep it or cancel it')
     if (!['red', 'blue'].includes(winner) || !method) throw new Error('Pick the winner and how they won')
     if (!bout.winner) {
       for (const a of current.athletes) if ([bout.red_athlete_id, bout.blue_athlete_id].includes(a.id)) a.bouts = (a.bouts ?? 0) + 1
