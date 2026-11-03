@@ -139,6 +139,8 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
       event: e,
       joined: inEvent.some((ec) => ec.status === 'accepted'),
       asked: inEvent.some((ec) => ec.status === 'requested'),
+      // Invited by the Owner; one of the club's Owners must accept before entering athletes.
+      invited: inEvent.some((ec) => ec.status === 'invited'),
       entriesOpen: entriesOpen(event),
       entered: entered.length,
       bouts: myBouts.length,
@@ -151,7 +153,7 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
     clubs: myClubs.map((c) => ({ ...c, owner: ownedClubIds.has(c.id) })),
     athletes: myClubs.reduce((total, c) => total + c.athlete_count, 0),
     transfersIn,
-    events: events.filter((r) => r.joined || r.asked || r.entriesOpen),
+    events: events.filter((r) => r.joined || r.asked || r.invited || r.entriesOpen),
     joined: events.filter((r) => r.joined).length,
     entered: events.reduce((total, r) => total + r.entered, 0),
     waiting: events.flatMap((r) => r.waiting.map((b) => ({ ...b, event: r.event }))),

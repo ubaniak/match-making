@@ -143,11 +143,11 @@ function ClubBlock({ club, onOpen, eventLink }) {
   const owns = club.clubs.some((c) => c.owner)
   const clubsLink = club.clubs.length === 1 ? () => onOpen({ page: 'clubs', clubId: club.clubs[0].id }) : () => onOpen({ page: 'clubs' })
   const columns = [
-    { title: 'Event', key: 'name', value: (r) => r.event.name, render: (_, r) => eventLink(r.event, r.joined ? 'clubs' : undefined) },
+    { title: 'Event', key: 'name', value: (r) => r.event.name, render: (_, r) => eventLink(r.event, r.joined || r.invited ? 'clubs' : undefined) },
     { title: 'Dates', key: 'dates', value: (r) => r.event.start_date, render: (_, r) => formatDateRange(r.event.start_date, r.event.end_date) },
     {
       title: 'Your club', key: 'club', value: (r) => clubState(r),
-      render: (_, r) => <Badge strong={r.joined} muted={!r.joined && !r.asked}>{clubState(r)}</Badge>,
+      render: (_, r) => <Badge strong={r.joined} muted={!r.joined && !r.asked && !r.invited}>{clubState(r)}</Badge>,
     },
     { title: 'Entries', key: 'entries', value: (r) => (r.entriesOpen ? 'Open' : 'Closed'), render: (_, r) => (r.entriesOpen ? 'Open' : 'Closed') },
     { title: 'Athletes in', key: 'entered', value: (r) => r.entered, render: (_, r) => r.entered },
@@ -176,7 +176,7 @@ function ClubBlock({ club, onOpen, eventLink }) {
   )
 }
 
-const clubState = (r) => (r.joined ? 'In' : r.asked ? 'Asked to join' : 'Not in')
+const clubState = (r) => (r.joined ? 'In' : r.invited ? 'Invited: accept on the Clubs tab' : r.asked ? 'Asked to join' : 'Not in')
 
 function OfficialBlock({ official, onOpen, eventLink }) {
   const { next } = official
