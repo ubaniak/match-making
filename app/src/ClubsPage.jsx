@@ -259,7 +259,12 @@ function ClubDetail({ id, siteAdmin, profile, onBack }) {
   }
 
   async function remove() {
-    if (!(await askConfirm(`Delete ${club.name}? This only works once it has no athletes.`, { okText: 'Delete', danger: true }))) return
+    const n = club.athletes.length
+    if (n > 0) {
+      setError(`${club.name} still has ${n} athlete${n === 1 ? '' : 's'}. Move ${n === 1 ? 'them' : 'them all'} to another club or delete them first, then delete the club.`)
+      return
+    }
+    if (!(await askConfirm(`Delete ${club.name}?`, { okText: 'Delete', danger: true }))) return
     try {
       await api.deleteClub(club.id)
       onBack()

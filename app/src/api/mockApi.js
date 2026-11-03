@@ -1116,10 +1116,14 @@ export const mockApi = {
     const current = data()
     const isTest = (x) => x.name.startsWith('TEST ')
     const eventIds = new Set(current.events.filter(isTest).map((e) => e.id))
-    const athleteIds = new Set(current.athletes.filter(isTest).map((a) => a.id))
-    const clubIds = new Set(current.clubs.filter(isTest).map((c) => c.id))
+    const testClubIds = new Set(current.clubs.filter(isTest).map((c) => c.id))
+    // Athletes added to a TEST club go too, unless they are in a real (non-TEST) event.
+    const inRealEvent = (a) => current.eventAthletes.some((x) => x.athlete_id === a.id && !eventIds.has(x.event_id))
+      || current.bouts.some((b) => !eventIds.has(b.event_id) && (b.red_athlete_id === a.id || b.blue_athlete_id === a.id))
+    const athleteIds = new Set(current.athletes.filter((a) => isTest(a) || (testClubIds.has(a.club_id) && !inRealEvent(a))).map((a) => a.id))
+    const clubIds = new Set([...testClubIds].filter((id) => !current.athletes.some((a) => a.club_id === id && !athleteIds.has(a.id))))
     const demoIds = new Set(current.users.filter((u) => u.email.endsWith('@demo.test')).map((u) => u.id))
-    const counts = { events: eventIds.size, clubs: clubIds.size, athletes: athleteIds.size, accounts: demoIds.size }
+    const counts = { events: eventIds.size, clubs: clubIds.size, athletes: athleteIds.size, accounts: demoIds.size, kept_clubs: testClubIds.size - clubIds.size }
     const keep = (list, test) => (list ?? []).filter((x) => !test(x))
     current.events = keep(current.events, (e) => eventIds.has(e.id))
     for (const key of ['eventMembers', 'eventClubs', 'lateEntries', 'officialInvitations', 'eventOfficials', 'weighIns']) {
