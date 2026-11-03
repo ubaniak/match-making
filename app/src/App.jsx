@@ -128,12 +128,12 @@ function pageFor(hash) {
   return appPages.includes(key) ? key : null
 }
 
-const siteRoleLabels = { admin: 'Admin', official: 'Official', chief_official: 'Chief Official' }
+const siteRoleLabels = { admin: 'Admin', official: 'Official' }
 function siteRoleLabel(profile) {
   const key = profile?.role_id
   if (siteRoleLabels[key]) return siteRoleLabels[key]
   const name = profile?.roles?.name
-  return name === 'Admins' ? 'Admin' : name === 'Officials' ? 'Official' : name === 'Chief Officials' ? 'Chief Official' : null
+  return name === 'Admins' ? 'Admin' : name === 'Officials' ? 'Official' : null
 }
 
 function goTo(hash) {

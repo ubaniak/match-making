@@ -124,7 +124,6 @@ const allPermissions = [
   'public:read', 'pages:read', 'cards:read', 'cards:create', 'cards:manage', 'cards:submit-official',
   'cards:submit-athlete', 'athletes:read', 'athletes:create', 'athletes:write', 'officials:read',
   'officials:write', 'files:upload', 'users:manage', 'roles:manage', 'audit:read', 'events:create',
-  'events:approve',
 ]
 
 // Matches the Users grants in the migrations; 'own' scopes are checked in the functions below.
@@ -163,13 +162,10 @@ function setSession(session) {
   listeners.forEach((callback) => callback(session))
 }
 
-const roleNames = { admin: 'Admins', user: 'Users', official: 'Officials', chief_official: 'Chief Officials', public: 'Public' }
+const roleNames = { admin: 'Admins', user: 'Users', official: 'Officials', public: 'Public' }
 
-// Users request events; Chief Officials approve or deny them (migration 20261103020000).
-const permissionsFor = (roleId) =>
-  roleId === 'user' ? [...userPermissions, 'events:create']
-    : roleId === 'chief_official' ? [...userPermissions, 'events:approve']
-      : userPermissions
+// Users request events; a site Admin approves or denies them (migration 20261103050000).
+const permissionsFor = (roleId) => (roleId === 'user' ? [...userPermissions, 'events:create'] : userPermissions)
 const currentRole = (current) => (isSiteAdmin() ? 'admin' : current.users.find((u) => u.id && u.id === currentUserId())?.role_id ?? 'user')
 const byName = (a, b) => (a.name || a.email).localeCompare(b.name || b.email)
 
@@ -233,7 +229,7 @@ function publicBouts(current, eventId, eventDate, days) {
 
 function canSee(current, eventId) {
   const event = current.events.find((e) => e.id === eventId)
-  return Boolean(event) && (isSiteAdmin() || currentRole(current) === 'chief_official' || Boolean(roleOn(current, eventId)) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
+  return Boolean(event) && (isSiteAdmin() || Boolean(roleOn(current, eventId)) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId) || inEventClub(current, eventId) || ['active', 'done'].includes(event.status))
 }
 const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner' || inEventClub(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
 const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
@@ -347,7 +343,7 @@ function refreshBoutStatus(bout) {
   bout.status = official?.decision === 'approved' ? 'approved' : official?.decision === 'rejected' ? 'rejected' : 'pending'
 }
 
-// Adds a reason to a bout's "needs discussion" flag, once (migration 35).
+// Adds a reason to a bout's "needs discussion" flag, once (migration 34).
 function flagBout(current, bout, reason) {
   if (bout.status === 'cancelled' || bout.winner) return
   const before = bout.review_reason ?? null
@@ -969,14 +965,10 @@ export const mockApi = {
 
   // Mirrors set_event_status.
   async setEventStatus(eventId, status, note) {
+    requireSiteAdmin('Only a site Admin can approve, deny, cancel or close an event')
     const current = data()
-    const chief = currentRole(current) === 'chief_official'
-    if (!isSiteAdmin() && !chief) throw new Error('Only a Chief Official or a site Admin can approve or deny an event')
     const event = findEvent(current, eventId)
     if (event.status === status) return
-    if (!isSiteAdmin() && !(event.status === 'requested' && ['active', 'denied'].includes(status))) {
-      throw new Error('A Chief Official can only approve or deny a Requested event. Ask a site Admin to change it.')
-    }
     event.status = status
     event.status_note = note?.trim() || null
     write(DATA_KEY, current)
@@ -1670,7 +1662,7 @@ export const mockApi = {
     }
     let bout = old
     if (bout) resolveNotes(current, `bout:${bout.id}:%`)
-    // Re-matched to a different boxer: the "needs discussion" flag goes (migration 35).
+    // Re-matched to a different boxer: the "needs discussion" flag goes (migration 34).
     if (bout && ![[redId, blueId], [blueId, redId]].some(([r, b]) => r === bout.red_athlete_id && b === bout.blue_athlete_id)) {
       Object.assign(bout, { review_reason: null, review_at: null })
       resolveNotes(current, `review:${bout.id}`)
@@ -1844,7 +1836,7 @@ export const mockApi = {
     if (medical === 'pass' && kg == null) throw new Error('Enter the athlete\'s weight')
     current.weighIns = current.weighIns.filter((w) => !(w.event_id === eventId && w.day === day && w.athlete_id === athleteId))
     current.weighIns.push({ event_id: eventId, day, athlete_id: athleteId, weight_kg: kg, medical, note: note?.trim() || null, recorded_at: now() })
-    // A failed medical or a no-show flags the bouts for the officials to discuss; it doesn't cancel them (migration 35).
+    // A failed medical or a no-show flags the bouts for the officials to discuss; it doesn't cancel them (migration 34).
     const name = athleteName(current, athleteId) ?? 'A boxer'
     if (medical === 'fail') flagAthleteBouts(current, eventId, athleteId, day, `${name} failed the medical.`)
     if (medical === 'absent') flagAthleteBouts(current, eventId, athleteId, day, `${name} didn't come to the weigh-in.`)
