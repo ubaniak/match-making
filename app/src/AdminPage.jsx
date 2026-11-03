@@ -129,7 +129,10 @@ function TestData() {
         return
       }
       const c = kind === 'seed' ? await api.seedTestData() : await api.clearTestData()
-      setMessage({ text: kind === 'seed' ? `Loaded ${counts(c)}.` : `Removed ${counts(c)}.` })
+      const kept = c.kept_clubs
+        ? ` Kept ${c.kept_clubs} TEST club${c.kept_clubs === 1 ? '' : 's'} because ${c.kept_clubs === 1 ? 'it has' : 'they have'} athletes entered in real events. Move those athletes to another club, then clear again.`
+        : ''
+      setMessage({ text: kind === 'seed' ? `Loaded ${counts(c)}.` : `Removed ${counts(c)}.${kept}` })
     } catch (err) {
       setMessage({ error: true, text: err.message })
     } finally {
@@ -144,7 +147,7 @@ function TestData() {
         TEST Multi-Day Open from 8 to 10 January 3000 with 100. Both have the same 5 TEST clubs. Birth dates
         are in the 2950s to 2990s so the athletes fall into every age group in year 3000. Clearing removes
         every event, athlete, club and official whose name starts with &ldquo;TEST &rdquo;, with their bouts and results,
-        and the demo accounts.
+        and the demo accounts. Athletes added to a TEST club are removed with it, unless they are entered in a real event.
       </Muted>
       <Muted>
         It also makes seven demo accounts. Each signs in with the code <strong>123456</strong>, and no email is sent:

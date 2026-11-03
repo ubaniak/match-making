@@ -287,8 +287,9 @@ export const supabaseApi = {
   },
 
   async deleteClub(clubId) {
+    const isClubInUse = (e) => e.code === '23503' || /athletes_club_id_fkey/.test(e.message ?? '')
     const { error } = await supabase.from('clubs').delete().eq('id', clubId)
-    if (error) throw error.code === '23503' ? new Error('Move or remove the club\'s athletes first') : error
+    if (error) throw isClubInUse(error) ? new Error('This club still has athletes. Move them to another club or delete them, then delete the club.') : error
   },
 
   // A site Admin adds someone straight away; a club owner's invite waits for a site Admin.
