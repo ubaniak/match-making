@@ -5,11 +5,11 @@ import DataTable from './DataTable'
 import { api } from './api'
 import CsvImport from './CsvImport'
 import AthleteForm from './AthleteForm'
-import { formatBouts, formatWeight, genderLabel } from './athletes'
+import { cleanText, formatBouts, formatLevel, formatWeight, genderLabel } from './athletes'
 import { dash } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
 import { accountAs, sendWelcome } from './welcome'
-import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, PageHeading, Pick, Section } from './ui'
+import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, NumberInput, PageHeading, Pick, Section } from './ui'
 
 const accountTypes = [
   { value: 'admin', label: 'Admin' },
@@ -381,6 +381,8 @@ function Athletes() {
     { title: 'Gender', key: 'gender', render: (_, a) => genderLabel(a.gender) },
     { title: 'Weight', key: 'weight', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
     { title: 'Experience', key: 'bouts', value: (a) => a.bouts, render: (_, a) => formatBouts(a.bouts) },
+    { title: 'BC number', key: 'bc', value: (a) => a.bc_number, render: (_, a) => dash(a.bc_number) },
+    { title: 'Last medical', key: 'medical', value: (a) => a.last_medical, render: (_, a) => dash(a.last_medical) },
     { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
     { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
     { title: 'Login', key: 'login', value: (a) => a.invite_email, render: (_, a) => <LoginBadge record={a} /> },
@@ -459,7 +461,34 @@ function LoginBadge({ record }) {
   return '—'
 }
 
-const emptyOfficial = { name: '', email: '', qualifications: '' }
+const emptyOfficial = { name: '', email: '', phone: '', level: '', bcNumber: '', qualifications: '' }
+
+// The form's values as an officials row (level, phone and BC number are migration 40).
+const officialRecord = (form) => ({
+  name: form.name.trim(),
+  invite_email: form.email.trim().toLowerCase(),
+  phone: cleanText(form.phone),
+  level: form.level === '' || form.level == null ? null : Number(form.level),
+  bc_number: cleanText(form.bcNumber),
+  qualifications: cleanText(form.qualifications),
+})
+
+// The fields shared by the add and edit official forms.
+function OfficialFields({ form, setForm }) {
+  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  return (
+    <>
+      <Field label="Name"><Input required {...field('name')} /></Field>
+      <Field label="Email"><Input type="email" required {...field('email')} /></Field>
+      <Field label="Phone" hint="optional"><Input type="tel" {...field('phone')} /></Field>
+      <Field label="Level" hint="optional">
+        <NumberInput min={0} max={100} step={1} precision={0} value={form.level} onChange={(v) => setForm({ ...form, level: v })} />
+      </Field>
+      <Field label="BC number" hint="Boxing Canada, optional"><Input {...field('bcNumber')} /></Field>
+      <Field label="Qualifications" hint="optional"><Input {...field('qualifications')} /></Field>
+    </>
+  )
+}
 
 function Officials() {
   const [officials, setOfficials] = useState([])
@@ -488,11 +517,7 @@ function Officials() {
     setSaving(true)
     setMessage(null)
     try {
-      await api.addOfficial({
-        name: form.name.trim(),
-        invite_email: form.email.trim().toLowerCase(),
-        qualifications: form.qualifications.trim() || null,
-      })
+      await api.addOfficial(officialRecord(form))
     } catch (err) {
       return setMessage({ error: true, text: err.message })
     } finally {
@@ -503,12 +528,13 @@ function Officials() {
     reload()
   }
 
-  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
-
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name' },
-    { title: 'Qualifications', key: 'q', render: (_, o) => dash(o.qualifications) },
-    { title: 'Login', key: 'login', value: (o) => o.invite_email, render: (_, o) => <LoginBadge record={o} /> },
+    { title: 'Level', key: 'level', value: (o) => o.level, render: (_, o) => formatLevel(o.level) },
+    { title: 'Email', key: 'login', value: (o) => o.invite_email, render: (_, o) => <LoginBadge record={o} /> },
+    { title: 'Phone', key: 'phone', value: (o) => o.phone, render: (_, o) => dash(o.phone) },
+    { title: 'BC number', key: 'bc', value: (o) => o.bc_number, render: (_, o) => dash(o.bc_number) },
+    { title: 'Qualifications', key: 'q', value: (o) => o.qualifications, render: (_, o) => dash(o.qualifications) },
     {
       key: 'actions',
       className: 'actions',
@@ -531,9 +557,7 @@ function Officials() {
         onSubmit={addOfficial}
         actions={<Button type="primary" htmlType="submit" loading={saving}>{saving ? 'Adding…' : 'Add official'}</Button>}
       >
-        <Field label="Name"><Input required {...field('name')} /></Field>
-        <Field label="Email"><Input type="email" required {...field('email')} /></Field>
-        <Field label="Qualifications"><Input {...field('qualifications')} /></Field>
+        <OfficialFields form={form} setForm={setForm} />
       </FormCard>
       <FormMessage message={message} />
       <CsvImport
@@ -603,11 +627,17 @@ function UserForm({ user, busy, onSave, onCancel }) {
 }
 
 function OfficialForm({ official, busy, onSave, onCancel }) {
-  const [form, setForm] = useState({ name: official.name, email: official.invite_email ?? '', qualifications: official.qualifications ?? '' })
-  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  const [form, setForm] = useState({
+    name: official.name,
+    email: official.invite_email ?? '',
+    phone: official.phone ?? '',
+    level: official.level ?? '',
+    bcNumber: official.bc_number ?? '',
+    qualifications: official.qualifications ?? '',
+  })
   function save(e) {
     e.preventDefault()
-    onSave({ name: form.name.trim(), invite_email: form.email.trim().toLowerCase(), qualifications: form.qualifications.trim() || null })
+    onSave(officialRecord(form))
   }
   return (
     <FormCard
@@ -620,9 +650,7 @@ function OfficialForm({ official, busy, onSave, onCancel }) {
         </>
       }
     >
-      <Field label="Name"><Input required {...field('name')} /></Field>
-      <Field label="Email"><Input type="email" required {...field('email')} /></Field>
-      <Field label="Qualifications"><Input {...field('qualifications')} /></Field>
+      <OfficialFields form={form} setForm={setForm} />
       <FullRow><Muted>Changing the email links the official to the account with the new address, or invites it.</Muted></FullRow>
     </FormCard>
   )

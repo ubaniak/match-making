@@ -8,7 +8,7 @@ export const formatWeight = (kg) => (kg == null || kg === '' ? '—' : `${Number
 export const formatBouts = (bouts) => (bouts == null || bouts === '' ? '—' : `${bouts} ${Number(bouts) === 1 ? 'bout' : 'bouts'}`)
 
 // Problems with an athlete's details, as messages. Empty when all is well.
-export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts, club_id }) {
+export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts, club_id, last_medical }) {
   const problems = []
   if (!name?.trim()) problems.push('Name is missing')
   if (!date_of_birth) problems.push('Date of birth is missing')
@@ -22,5 +22,13 @@ export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts,
   if (bouts === '' || bouts == null) problems.push('Experience (number of bouts) is missing')
   else if (!Number.isInteger(Number(bouts)) || Number(bouts) < 0 || Number(bouts) > 1000) problems.push(`Bouts "${bouts}" should be a whole number, 0 or more`)
   if (!club_id) problems.push('Club is missing')
+  // Optional (migration 40): the date of the athlete's last medical.
+  if (last_medical && (!/^\d{4}-\d{2}-\d{2}$/.test(last_medical) || Number.isNaN(Date.parse(last_medical)))) {
+    problems.push(`Last medical "${last_medical}" should look like 2026-09-15`)
+  }
   return problems
 }
+
+// Optional details (migration 40). Blank text is saved as null.
+export const cleanText = (text) => (text ?? '').toString().trim() || null
+export const formatLevel = (level) => (level == null || level === '' ? '—' : `Level ${level}`)

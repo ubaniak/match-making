@@ -38,7 +38,7 @@ async function invokeEmail(body) {
 }
 
 // Athletes carry their club's name as `club` so pages can show it directly.
-const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id,
+const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id, bc_number, last_medical,
   club_ref:clubs(name), coach:profiles!athletes_coach_id_fkey(name, email)`
 const tidyAthlete = ({ club_ref, ...athlete }) => ({ ...athlete, club: club_ref?.name ?? null })
 
@@ -358,7 +358,7 @@ export const supabaseApi = {
   async listOfficials() {
     const { data, error } = await supabase
       .from('officials')
-      .select('id, name, qualifications, invite_email, user_id')
+      .select('id, name, level, qualifications, invite_email, phone, bc_number, user_id')
       .order('name')
     if (error) throw error
     return data
