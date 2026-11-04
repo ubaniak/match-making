@@ -1602,7 +1602,8 @@ export const mockApi = {
     if (!official?.user_id || official.user_id !== currentUserId()) throw new Error('Only the invited official can answer this invitation')
     const event = findEvent(current, invite.event_id)
     const today = todayIso(event.timezone)
-    if (event.status !== 'active' || today >= event.start_date) throw new Error('Answers are locked once the event starts. Contact the event\'s Owner.')
+    // Like migration 20261104150000: answers stay open until the event's last day.
+    if (event.status !== 'active' || today > event.end_date) throw new Error('This event is over or cancelled, so the invitation can no longer be answered.')
     if (invite.status === 'pending' && invite.respond_by && today > invite.respond_by) {
       throw new Error('The respond-by date has passed. Ask a site Admin or one of the event\'s officials to invite you again.')
     }
