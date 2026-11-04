@@ -80,29 +80,19 @@ export const importSpecs = {
   athletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club', 'bc_number', 'last_medical'],
+    columns: ['name', 'email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club', 'bc_number', 'last_medical'],
     required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC', 'BC-123456', '2026-09-15'],
-      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', 'Eastside BC', '', ''],
+      ['Ali Hassan', 'ali@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC', 'BC-123456', '2026-09-15'],
+      ['Jade Murphy', '', '2006-07-30', 'female', '51', '0', 'Eastside BC', '', ''],
     ],
     notes: { bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
-    check(values, errors, { usersByEmail, clubsByName }) {
+    check(values, errors, { clubsByName }) {
       checkEmail(values.email, errors)
-
-      let coachId = null
-      const coachEmail = (values.coach_email ?? '').toLowerCase()
-      if (coachEmail) {
-        const coach = usersByEmail.get(coachEmail)
-        if (!coach) errors.push(`No user with email ${coachEmail}`)
-        else if (!coach.id) errors.push(`${coachEmail} hasn't signed in yet, so athletes can't be assigned to them`)
-        else coachId = coach.id
-      }
 
       const athlete = {
         name: values.name ?? '',
         invite_email: (values.email ?? '').toLowerCase() || null,
-        coach_id: coachId,
         date_of_birth: values.date_of_birth ?? '',
         gender: { m: 'male', f: 'female' }[(values.gender ?? '').toLowerCase()] ?? (values.gender ?? '').toLowerCase(),
         weight_kg: values.weight_kg ?? '',
@@ -124,11 +114,11 @@ export const importSpecs = {
   clubAthletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'bc_number', 'last_medical'],
+    columns: ['name', 'email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'bc_number', 'last_medical'],
     required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'BC-123456', '2026-09-15'],
-      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', '', ''],
+      ['Ali Hassan', 'ali@example.com', '2004-03-12', 'male', '60.5', '12', 'BC-123456', '2026-09-15'],
+      ['Jade Murphy', '', '2006-07-30', 'female', '51', '0', '', ''],
     ],
     notes: { gender: 'male or female', bouts: 'number of bouts boxed', bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
     check(values, errors, context) {

@@ -6,7 +6,6 @@ import { DateInput, Field, FormCard, FormMessage, NumberInput, Pick, WeightInput
 const fromAthlete = (a) => ({
   name: a?.name ?? '',
   email: a?.invite_email ?? '',
-  coachId: a?.coach_id ?? '',
   dateOfBirth: a?.date_of_birth ?? '',
   gender: a?.gender ?? '',
   weightKg: a?.weight_kg ?? '',
@@ -18,7 +17,7 @@ const fromAthlete = (a) => ({
 
 // Add or edit an athlete. Pass `clubs` to choose the club, or `clubId` to fix it (club pages).
 // When editing, the club can't be changed here: athletes move through transfers.
-export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onCancel, title }) {
+export default function AthleteForm({ athlete, clubs, clubId, onSave, onCancel, title }) {
   const editing = Boolean(athlete)
   const [form, setForm] = useState(() => ({ ...fromAthlete(athlete), clubId: athlete?.club_id ?? clubId ?? '' }))
   const [message, setMessage] = useState(null)
@@ -30,7 +29,6 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
     event.preventDefault()
     const record = {
       name: form.name.trim(),
-      coach_id: form.coachId || null,
       date_of_birth: form.dateOfBirth,
       gender: form.gender,
       weight_kg: form.weightKg === '' ? '' : Number(form.weightKg),
@@ -61,7 +59,6 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
 
   const set = (key) => (value) => setForm({ ...form, [key]: value })
   const text = (key) => ({ value: form[key], onChange: (e) => set(key)(e.target.value) })
-  const activeUsers = (users ?? []).filter((u) => u.id && u.state === 'Active')
 
   return (
     <>
@@ -81,14 +78,6 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
         {!editing && (
           <Field label="Email" hint="optional, lets them sign in" className="wide"><Input type="email" {...text('email')} /></Field>
         )}
-        <Field label="Coach" hint="optional" className="wide">
-          <Pick
-            allowEmpty
-            value={form.coachId}
-            onChange={set('coachId')}
-            options={[{ value: '', label: 'No coach' }, ...activeUsers.map((u) => ({ value: u.id, label: u.name || u.email }))]}
-          />
-        </Field>
         {clubs && !editing && (
           <Field label="Club" className="wide">
             <Pick
