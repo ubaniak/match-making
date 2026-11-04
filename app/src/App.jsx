@@ -9,6 +9,7 @@ import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
+import { TestingBar } from './TestRun'
 import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
 const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
@@ -66,6 +67,7 @@ export default function App() {
     <NotificationsProvider userId={profile?.id}>
       <Layout className="page">
         {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
+        <TestingBar email={session.user.email} />
         <Layout.Header className={pages.length > 4 ? 'app-header many-pages' : 'app-header'}>
           <div className="app-header-inner">
             <span className="brand">Match Making</span>

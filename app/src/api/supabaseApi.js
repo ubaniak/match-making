@@ -10,6 +10,27 @@ const POSTERS = 'event-posters'
 // Demo accounts from "Load test data" (migration 20) sign in with the fixed code 123456, which is
 // really their password. Only these addresses ever try a password; nobody is emailed a code.
 const isDemoEmail = (email) => /@demo\.test$/i.test(email.trim())
+const DEMO_CODE = '123456'
+
+// "Test as" (site Admin test runs): while the Admin acts as a demo account, their own session is
+// kept here so "Back to my account" returns without a new sign-in email. Supabase already keeps
+// the live session in this browser's storage, so this stores nothing new.
+const TESTING_KEY = 'mm-testing-from'
+function readTestingFrom() {
+  try {
+    return JSON.parse(window.localStorage.getItem(TESTING_KEY)) || null
+  } catch {
+    return null
+  }
+}
+function writeTestingFrom(value) {
+  try {
+    if (value) window.localStorage.setItem(TESTING_KEY, JSON.stringify(value))
+    else window.localStorage.removeItem(TESTING_KEY)
+  } catch {
+    // Storage blocked: "Back to my account" then means signing in again.
+  }
+}
 
 // Only invited people can sign in (migration 34). Supabase reports a refused new account as
 // "Database error saving new user"; this is what we tell the person instead.
@@ -75,7 +96,57 @@ export const supabaseApi = {
   },
 
   signOut() {
-    return supabase.auth.signOut()
+    // Signing out while testing ends the test run too; the Admin signs in again as usual.
+    const testing = readTestingFrom()
+    writeTestingFrom(null)
+    return supabase.auth.signOut(testing ? { scope: 'local' } : undefined)
+  },
+
+  // Who started the test run ({ email, name }), or null when nobody is acting as a demo account.
+  testingFrom() {
+    const from = readTestingFrom()
+    return from ? { email: from.email, name: from.name } : null
+  },
+
+  // Site Admins only: sign in as a demo account (@demo.test, from "Load test data") to test a role.
+  // The first switch keeps the Admin's own session; later switches hop between demo accounts.
+  async actAsDemo(email) {
+    const target = email.trim().toLowerCase()
+    if (!isDemoEmail(target)) throw new Error('Only demo accounts (ending @demo.test) can be used for a test run.')
+    const { data } = await supabase.auth.getSession()
+    const current = data.session
+    if (!current) throw new Error('Sign in first.')
+    const started = readTestingFrom()
+    if (!started) {
+      if (isDemoEmail(current.user.email)) throw new Error('Start a test run from your own site Admin account.')
+      const { data: isAdmin } = await supabase.rpc('is_site_admin')
+      if (isAdmin !== true) throw new Error('Only a site Admin can start a test run.')
+      const { data: me } = await supabase.from('profiles').select('name').eq('id', current.user.id).maybeSingle()
+      writeTestingFrom({
+        email: current.user.email,
+        name: me?.name || current.user.email,
+        access_token: current.access_token,
+        refresh_token: current.refresh_token,
+      })
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email: target, password: DEMO_CODE })
+    if (error) {
+      // Couldn't switch: stay where we were (and on a first switch, stay the Admin).
+      if (!started) writeTestingFrom(null)
+      throw new Error(`Couldn't sign in as ${target}. Load the test data first (Admin > Test data), and for owner1, owner2, official1 or official2 also click "Add helper logins".`)
+    }
+  },
+
+  // Ends the test run: back to the Admin's own account, no email needed.
+  async backToMyAccount() {
+    const from = readTestingFrom()
+    writeTestingFrom(null)
+    if (!from) return
+    const { error } = await supabase.auth.setSession({ access_token: from.access_token, refresh_token: from.refresh_token })
+    if (error) {
+      await supabase.auth.signOut({ scope: 'local' })
+      throw new Error('Your own sign-in had run out, so you\'ve been signed out. Sign in again with your email.')
+    }
   },
 
   async sendMagicLink(email) {

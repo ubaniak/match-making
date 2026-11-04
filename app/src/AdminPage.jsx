@@ -8,8 +8,9 @@ import AthleteForm from './AthleteForm'
 import { cleanText, formatBouts, formatLevel, formatWeight, genderLabel } from './athletes'
 import { dash } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
+import { TestAsPicker } from './TestRun'
 import { accountAs, sendWelcome } from './welcome'
-import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, NumberInput, PageHeading, Pick, Section } from './ui'
+import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, NumberInput, PageHeading, Pick, Section, Title } from './ui'
 
 const accountTypes = [
   { value: 'admin', label: 'Admin' },
@@ -203,6 +204,18 @@ function TestData() {
         </Popconfirm>
       </Space>
       <FormMessage message={message} />
+      {api.mode === 'supabase' && (
+        <div className="test-as">
+          <Title level={4}>Test as another role</Title>
+          <Muted>
+            Signs this browser in as one of the demo accounts above, so you can try the app as an event owner,
+            club owner or official without another email. A yellow bar stays at the top while you test: use it to
+            switch roles, or click <strong>Back to</strong> your name to return to this Admin account. Load the test
+            data (and the helper logins) first.
+          </Muted>
+          <TestAsPicker />
+        </div>
+      )}
     </Section>
   )
 }
