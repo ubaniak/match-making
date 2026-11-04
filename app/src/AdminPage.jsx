@@ -71,11 +71,11 @@ function useRunner(reload) {
 }
 
 // Athletes and Officials have their own top-nav pages (Bhavek, 2026-11-02). Test data was
-// removed (Bhavek, 2026-11-04), so Admin is just Users.
+// removed (Bhavek, 2026-11-04), so this page is just Users. Its nav tab is "Members" (Bhavek, 2026-11-04).
 export default function AdminPage() {
   return (
     <main className="panel">
-      <PageHeading title="Admin" />
+      <PageHeading title="Members" />
       <Users />
     </main>
   )

@@ -95,7 +95,7 @@ export function ViewingBar({ viewing }) {
     setError(null)
     try {
       await api.stopViewAs()
-      window.location.hash = 'admin'
+      window.location.hash = 'members'
     } catch (err) {
       setError(err.message)
     } finally {
