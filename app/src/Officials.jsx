@@ -6,6 +6,7 @@ import { Alert, Button, Card as AntCard, Checkbox, Input, InputNumber, Modal, Se
 import CsvImport from './CsvImport'
 import DataTable from './DataTable'
 import { api } from './api'
+import RoleChoices from './RoleChoices'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
 import { minOfficials, shortOnOfficials } from './dashboard'
@@ -116,11 +117,7 @@ function useAcceptDays() {
         <>
           <fieldset className="role-picker">
             <legend><Text strong>Which roles will you work?</Text> <Text type="secondary">Pick one or more.</Text></legend>
-            <Checkbox.Group
-              value={asking.roles}
-              onChange={(roles) => setAsking({ ...asking, roles })}
-              options={eventRoles.map((r) => ({ value: r.key, label: r.label }))}
-            />
+            <RoleChoices roles={eventRoles} value={asking.roles} onChange={(roles) => setAsking({ ...asking, roles })} />
           </fieldset>
           {asking.roles.length === 0 && <Muted>Pick at least one role to accept.</Muted>}
           {asking.pickDays && (
