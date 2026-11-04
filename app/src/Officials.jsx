@@ -6,6 +6,7 @@ import { Alert, Button, Card as AntCard, Checkbox, Input, InputNumber, Modal, Se
 import CsvImport from './CsvImport'
 import DataTable from './DataTable'
 import { api } from './api'
+import RoleChoices from './RoleChoices'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
 import { minOfficials, shortOnOfficials } from './dashboard'
@@ -116,11 +117,7 @@ function useAcceptDays() {
         <>
           <fieldset className="role-picker">
             <legend><Text strong>Which roles will you work?</Text> <Text type="secondary">Pick one or more.</Text></legend>
-            <Checkbox.Group
-              value={asking.roles}
-              onChange={(roles) => setAsking({ ...asking, roles })}
-              options={eventRoles.map((r) => ({ value: r.key, label: r.label }))}
-            />
+            <RoleChoices roles={eventRoles} value={asking.roles} onChange={(roles) => setAsking({ ...asking, roles })} />
           </fieldset>
           {asking.roles.length === 0 && <Muted>Pick at least one role to accept.</Muted>}
           {asking.pickDays && (
@@ -183,12 +180,13 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
-  // Any official who accepted can invite more officials and resend invitations (Bhavek: "an
-  // official is allowed to add other officials"), and sees the lists. Removing stays with managers.
-  const onEvent = officials.some((o) => o.user_id === profile?.id) || mine?.status === 'accepted'
-  const canAdd = manager || onEvent
+  // Only the Chief Official and Deputy (and site Admins) invite, add and resend (Bhavek: "only the
+  // CO and deputy can invite other officials. Ordinary ones can only change their role in an
+  // event"). Officials who accepted still see the lists, read-only, and change their own roles.
+  const onEvent = chief || mine?.status === 'accepted'
+  const canAdd = manager
   // The event's Owner sees the lists too, but can't change them.
-  const seesLists = canAdd || may.role === 'owner'
+  const seesLists = canAdd || onEvent || may.role === 'owner'
   // Bhavek: "the site CO picks the min number of officials". Only the event's Chief Officials (both
   // seats); the Owner and site Admins see it read-only.
   const setsMin = chief
@@ -228,22 +226,14 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
       <ErrorAlert>{error}</ErrorAlert>
       {mine && <MyAnswer invitation={mine} event={event} busy={busy} act={act} />}
       {seesLists && <MinOfficials event={event} accepted={counts.accepted} canEdit={setsMin} busy={busy} run={run} onSaved={onEventChange} />}
-      {missing.length > 0 && (
+      {seesLists && missing.length > 0 && (
         <Muted>Every event needs two Chief Officials. They approve bouts, run the weigh-in and record results.</Muted>
       )}
       {seesLists ? (
         <Manage event={event} may={may} manager={manager} canAdd={canAdd} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
       ) : (
-        <AntCard size="small" className="form-card">
-          <Space size="large" wrap>
-            {['chief', 'deputy'].map((role) => (
-              <span key={role}>
-                <Text type="secondary">{officialLabels[role]}: </Text>
-                <Text strong>{byRole[role] ? personName(byRole[role].user) : 'Not chosen'}</Text>
-              </span>
-            ))}
-          </Space>
-        </AntCard>
+        // Bhavek: only the event's Owner, its officials and site Admins see who is officiating (migration 51).
+        <Muted>Only the event's Owner, its officials and site Admins can see who is officiating.</Muted>
       )}
     </Section>
   )
@@ -497,7 +487,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
   return (
     <>
       {canAdd && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
-      {!manager && may.role === 'owner' && <Muted>A site Admin or the event's officials invite more officials. A site Admin picks the first Chief Official.</Muted>}
+      {!manager && <Muted>Only the event's Chief Official, Deputy or a site Admin invite officials. A site Admin picks the first Chief Official.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}

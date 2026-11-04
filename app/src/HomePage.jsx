@@ -98,7 +98,7 @@ function AdminBlock({ admin, counts, onOpen, eventLink }) {
         stats={[
           { key: 'requested', title: 'To approve', value: admin.requested.length, note: 'Events requested', onClick: events },
           { key: 'active', title: 'Active events', value: admin.active.length, note: `${admin.running.length} running today · ${admin.soon.length} in the next 30 days`, onClick: events },
-          { key: 'users', title: 'Users', value: admin.users.active, note: `${admin.users.invited} invited · ${admin.users.disabled} disabled`, onClick: () => onOpen({ page: 'admin' }) },
+          { key: 'users', title: 'Users', value: admin.users.active, note: `${admin.users.invited} invited · ${admin.users.disabled} disabled`, onClick: () => onOpen({ page: 'members' }) },
           { key: 'clubs', title: 'Clubs', value: admin.clubs, note: admin.clubInvites.length ? `${plural(admin.clubInvites.length, 'invite')} to approve` : 'No invites waiting', onClick: () => onOpen({ page: 'clubs' }) },
           { key: 'athletes', title: 'Athletes', value: admin.athletes, note: 'On the site', onClick: () => onOpen({ page: 'athletes' }) },
           { key: 'officials', title: 'Officials', value: admin.officials.total, note: `${admin.officials.signedIn} signed in`, onClick: () => onOpen({ page: 'officials' }) },
@@ -166,7 +166,11 @@ function ClubBlock({ club, onOpen, eventLink }) {
     { title: 'Athletes in', key: 'entered', value: (r) => r.entered, render: (_, r) => r.entered },
     { title: 'Bouts', key: 'bouts', value: (r) => r.bouts, render: (_, r) => (r.bouts ? `${r.approved} of ${r.bouts} approved` : '0') },
     { title: 'Waiting', key: 'waiting', value: (r) => r.waiting.length, render: (_, r) => r.waiting.length },
-  ]
+    owns && {
+      title: 'To approve', key: 'approve', value: (r) => r.toApprove.length,
+      render: (_, r) => (r.toApprove.length ? <Button size="small" type="primary" onClick={() => onOpen({ page: 'events', eventId: r.event.id, tab: 'bouts' })}>{r.toApprove.length} to approve</Button> : '0'),
+    },
+  ].filter(Boolean)
   const title = club.clubs.length === 1 ? club.clubs[0].name : 'Your clubs'
   return (
     <Section title={title}>
@@ -176,7 +180,8 @@ function ClubBlock({ club, onOpen, eventLink }) {
           { key: 'athletes', title: 'Athletes', value: club.athletes, note: 'In your club' + (club.clubs.length > 1 ? 's' : ''), onClick: clubsLink },
           { key: 'events', title: 'Events', value: club.joined, note: 'Your club is in', onClick: () => onOpen({ page: 'events' }) },
           { key: 'entered', title: 'Entered', value: club.entered, note: 'Athletes in events' },
-          { key: 'waiting', title: 'Waiting', value: club.waiting.length, note: 'Bouts for the officials to approve' },
+          owns && { key: 'approve', title: 'To approve', value: club.toApprove.length, note: 'Bouts for your corner' },
+          { key: 'waiting', title: 'Waiting', value: club.waiting.length, note: 'Bouts not approved yet' },
           owns && { key: 'transfers', title: 'Transfers', value: club.transfersIn.length, note: 'Asking to join your club', onClick: clubsLink },
         ]}
       />

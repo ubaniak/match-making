@@ -4,6 +4,7 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant
 import DataTable from './DataTable'
 import CsvImport from './CsvImport'
 import { api } from './api'
+import OfficialsAssignment from './OfficialsAssignment'
 import { EventBouts, EventOfficialsTab } from './Bouts'
 import { useEventBouts } from './useEventBouts'
 import { MyInvitations } from './Officials'
@@ -574,6 +575,13 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
         label: 'Officials',
         children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} onEventChange={reload} />,
       },
+      // Officials assignment (migration 47): the Chief Officials plan each night; officials working the
+      // event see the plan once it is approved.
+      bouts.seesBouts && (bouts.rights.siteAdmin || bouts.rights.officialRole || bouts.rights.weighInDays.length > 0) && {
+        key: 'assignment',
+        label: 'Officials assignment',
+        children: <OfficialsAssignment event={event} bouts={bouts} />,
+      },
       (may.edit || siteAdmin) && {
         key: 'settings',
         label: 'Settings',
@@ -692,14 +700,15 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
 
   // Same rule as Home: an Active event with fewer accepted than its minimum (events.min_officials) shows red, with the
   // shortfall in words. Only people who can see the official lists get the count, so only they see it.
-  const seesLists = siteAdmin || may.role === 'owner' || invitations.length > 0
+  // Everyone else doesn't see the event's officials at all (migration 51), so gets no Officials card.
+  const seesLists = siteAdmin || may.role === 'owner' || invitations.length > 0 || bouts.rights?.officialRole != null
   const short = seesLists && shortOnOfficials(event, accepted)
   const officialsNote = invitations.length
     ? `${waiting} waiting · ${declined} declined`
     : `Chief Officials: ${roleName('chief')} · ${roleName('deputy')}`
 
   const stats = [
-    {
+    seesLists && {
       key: 'officials', tab: 'officials', title: 'Officials',
       value: invitations.length ? accepted : officials.length,
       note: short ? `Short: ${accepted} of ${minOfficials(event)} officials accepted · ${officialsNote}` : officialsNote,

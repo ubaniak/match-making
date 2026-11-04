@@ -19,7 +19,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v12' // v12: Admin + Member accounts, no event Viewers (migration 45)
+const DATA_KEY = 'mock-data-v13' // v13: more officials for the officials assignment plan (migration 47)
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -33,6 +33,11 @@ function seed() {
       { id: 'user-3', email: 'priya.shah@example.com', name: 'Priya Shah', state: 'Active' },
       { id: 'user-4', email: 'kim.lee@example.com', name: 'Kim Lee', state: 'Active' },
       { id: null, email: 'sam.reid@example.com', name: 'Sam Reid', state: 'Invited' },
+      { id: 'user-5', email: 'lena.novak@example.com', name: 'Lena Novak', state: 'Active' },
+      { id: 'user-6', email: 'omar.diallo@example.com', name: 'Omar Diallo', state: 'Active' },
+      { id: 'user-7', email: 'chris.wong@example.com', name: 'Chris Wong', state: 'Active' },
+      { id: 'user-8', email: 'ana.silva@example.com', name: 'Ana Silva', state: 'Active' },
+      { id: 'user-9', email: 'joe.martin@example.com', name: 'Joe Martin', state: 'Active' },
     ],
     athletes: [
       { id: 'athlete-1', name: 'Ali Hassan', date_of_birth: '2004-03-12', gender: 'male', weight_kg: 60.5, bouts: 12, club_id: 'club-1', invite_email: 'ali@example.com', user_id: 'user-ali', coach_id: 'user-1', bc_number: 'BC-104233', last_medical: '2026-09-15' },
@@ -56,6 +61,11 @@ function seed() {
       { id: 'official-2', name: 'Rob Turner', qualifications: 'Judge', invite_email: 'rob@example.com', user_id: null },
       { id: 'official-3', name: 'Priya Shah', qualifications: 'Level 2 referee', invite_email: 'priya.shah@example.com', user_id: 'user-3' },
       { id: 'official-4', name: 'Kim Lee', qualifications: 'Judge', invite_email: 'kim.lee@example.com', user_id: 'user-4' },
+      { id: 'official-5', name: 'Lena Novak', level: 4, invite_email: 'lena.novak@example.com', user_id: 'user-5' },
+      { id: 'official-6', name: 'Omar Diallo', level: 3, invite_email: 'omar.diallo@example.com', user_id: 'user-6' },
+      { id: 'official-7', name: 'Chris Wong', level: 2, invite_email: 'chris.wong@example.com', user_id: 'user-7' },
+      { id: 'official-8', name: 'Ana Silva', level: 1, invite_email: 'ana.silva@example.com', user_id: 'user-8' },
+      { id: 'official-9', name: 'Joe Martin', level: 3, invite_email: 'joe.martin@example.com', user_id: 'user-9' },
     ],
     events: [
       {
@@ -93,6 +103,16 @@ function seed() {
       { id: 'invite-2', event_id: 'event-1', official_id: 'official-4', status: 'accepted', days: [start], judge: true, timekeeper: true, respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
       { id: 'invite-3', event_id: 'event-1', official_id: 'official-1', status: 'declined', respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
       { id: 'invite-4', event_id: 'event-1', official_id: 'official-2', status: 'pending', respond_by: addDays(today, 7), invited_at: new Date().toISOString(), responded_at: null },
+      ...[
+        ['official-5', { judge: true, referee: true, supervisor: true }],
+        ['official-6', { judge: true, referee: true }],
+        ['official-7', { judge: true, timekeeper: true }],
+        ['official-8', { judge: true, timekeeper: true }],
+        ['official-9', { judge: true, referee: true }],
+      ].map(([officialId, roles], i) => ({
+        id: `invite-${5 + i}`, event_id: 'event-1', official_id: officialId, status: 'accepted', days: [start, addDays(start, 1)], ...roles,
+        respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString(),
+      })),
     ],
     eventOfficials: [
       { event_id: 'event-1', role: 'chief', user_id: 'user-3' },
@@ -104,11 +124,20 @@ function seed() {
         red_athlete_id: 'athlete-1', blue_athlete_id: 'athlete-4', red_club_id: 'club-1', blue_club_id: 'club-2',
         status: 'pending', bout_type: 'scored', needs_supervisor: false, warnings: ['Different weight classes, 1.3 kg apart', 'Open vs Open, 2 bouts apart'],
         after_weigh_in: false, made_by: 'user-1', made_at: new Date().toISOString(),
-        approvals: [],
+        approvals: [{ side: 'red', decision: 'approved', note: null, override: false, decided_by: 'user-1', decided_at: new Date().toISOString() }],
         comments: [],
         approval_requested_at: new Date().toISOString(), approval_requested_by: 'user-1',
       },
+      {
+        id: 'bout-2', event_id: 'event-1', day: start, session_starts_at: null, position: 2,
+        red_athlete_id: 'athlete-5', blue_athlete_id: 'athlete-3', red_club_id: 'club-1', blue_club_id: 'club-2',
+        status: 'approved', bout_type: 'scored', needs_supervisor: false, warnings: [],
+        after_weigh_in: false, made_by: 'user-1', made_at: new Date().toISOString(),
+        approvals: [], comments: [],
+      },
     ],
+    officialPlans: [],
+    officialPlanSlots: [],
     weighIns: [],
     notifications: [
       {
@@ -117,8 +146,13 @@ function seed() {
         action_key: 'member:club-1:user-3', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
       },
       {
+        id: 'note-2', user_id: 'user-2', kind: 'bout_approval', title: 'Approve bout: Ali Hassan vs Marco Ruiz',
+        body: `Eastside Winter Box Cup · ${label(start)} · for Riverside Boxing`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
+        action_key: 'bout:bout-1:blue', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
+      },
+      {
         id: 'note-3', user_id: 'user-3', kind: 'bout_approval', title: 'Approve bout: Ali Hassan vs Marco Ruiz',
-        body: `Eastside Winter Box Cup · ${label(start)}`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
+        body: `Eastside Winter Box Cup · ${label(start)} · official approval`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
         action_key: 'bout:bout-1:official', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
       },
     ],
@@ -211,6 +245,23 @@ const myEventRoles = (current, eventId) => {
 }
 const userAccepted = (current, eventId, userId) => (current.officialInvitations ?? []).some((i) => i.event_id === eventId && i.status === 'accepted'
   && current.officials.find((o) => o.id === i.official_id)?.user_id === userId)
+// Officials assignment plan (migration 47): the Chief Officials and site Admins plan; officials who
+// accepted the event see a plan once it is approved.
+const canPlan = (current, eventId) => isSiteAdmin() || Boolean(officialRole(current, eventId))
+const canSeePlan = (current, eventId, day) => canPlan(current, eventId)
+  || (acceptedOfficial(current, eventId) && (current.officialPlans ?? []).some((p) => p.event_id === eventId && p.day === day && p.status === 'approved'))
+function requirePlanner(current, eventId) {
+  if (!canPlan(current, eventId)) throw new Error('Only the event\'s Chief Officials can plan the officials')
+}
+// Mirrors list_day_officials: officials who accepted the event and this day.
+const dayOfficials = (current, eventId, day) => (current.officialInvitations ?? [])
+  .filter((i) => i.event_id === eventId && i.status === 'accepted' && (i.days ?? []).includes(day))
+  .map((i) => {
+    const o = current.officials.find((x) => x.id === i.official_id)
+    return o?.user_id ? { user_id: o.user_id, official_id: o.id, name: o.name, level: o.level ?? null, ...rolesFlags(rolesOf(i)) } : null
+  })
+  .filter(Boolean)
+  .sort((a, b) => a.name.localeCompare(b.name))
 // Approved bouts for the public page, as migration 19's list_public_events: card numbers count every
 // live bout that day; corners show name, club and categories only (never weight or birthdate).
 function publicBouts(current, eventId, eventDate, days) {
@@ -249,8 +300,8 @@ const eventOpen = (event) => effectiveStatus(event) === 'active'
 // Mirrors can_invite_officials: site Admins and the event's Chief Official.
 // Both Chief Official seats count (migration 45).
 const canInviteOfficials = (current, eventId) => isSiteAdmin() || Boolean(officialRole(current, eventId))
-// Mirrors can_add_officials (migration 24): also the Deputy and any official who accepted.
-const canAddOfficials = (current, eventId) => canInviteOfficials(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
+// Mirrors can_add_officials (migration 49): site Admins and the event's Chief Official and Deputy.
+const canAddOfficials = (current, eventId) => canInviteOfficials(current, eventId)
 
 // Mirrors can_manage_event_clubs: the event's Owner or a site Admin, while the event is Active.
 function requireClubManager(current, eventId, what) {
@@ -345,15 +396,32 @@ function findBout(current, boutId) {
   return bout
 }
 
-function refreshBoutStatus(bout) {
+// Mirrors club_has_owner (migration 52): an active owner who can approve for the club.
+const clubHasOwner = (current, clubId) => current.clubMembers.some((m) => m.club_id === clubId && m.role === 'owner' && m.status === 'active')
+
+// Mirrors bout_waiting_approvers (migration 52): { side, ids } for each side still to approve.
+// Approved sides and corners with no club owner are left out; one club in both corners is asked once.
+function waitingApprovers(current, bout) {
+  const approved = new Set(bout.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
+  const owners = (clubId) => current.clubMembers.filter((m) => m.club_id === clubId && m.role === 'owner' && m.status === 'active').map((m) => m.user_id)
+  return [
+    { side: 'red', ids: owners(bout.red_club_id) },
+    { side: 'blue', ids: bout.red_club_id === bout.blue_club_id ? [] : owners(bout.blue_club_id) },
+    { side: 'official', ids: current.eventOfficials.filter((o) => o.event_id === bout.event_id).map((o) => o.user_id) },
+  ].filter((s) => !approved.has(s.side) && s.ids.length)
+}
+
+// Mirrors refresh_bout_status (migration 52): every corner with a club owner and a Chief Official
+// approve; any rejection rejects.
+function refreshBoutStatus(current, bout) {
   if (bout.status === 'cancelled') return
   if (bout.bout_type === 'sparring') {
     bout.status = 'approved'
     return
   }
-  // Only the Chief Official's or Deputy's decision counts (migration 26).
-  const official = bout.approvals.find((a) => a.side === 'official')
-  bout.status = official?.decision === 'approved' ? 'approved' : official?.decision === 'rejected' ? 'rejected' : 'pending'
+  const approved = (side) => bout.approvals.some((a) => a.side === side && a.decision === 'approved')
+  const needed = ['official', ...['red', 'blue'].filter((side) => clubHasOwner(current, side === 'red' ? bout.red_club_id : bout.blue_club_id))]
+  bout.status = bout.approvals.some((a) => a.decision === 'rejected') ? 'rejected' : needed.every(approved) ? 'approved' : 'pending'
 }
 
 // Adds a reason to a bout's "needs discussion" flag, once (migration 34).
@@ -1301,8 +1369,11 @@ export const mockApi = {
   async getBouts(eventId) {
     const current = data()
     if (!canSee(current, eventId)) return { officials: [], bouts: [], weighIns: [], acceptedDays: [] }
+    // Like migration 51: only the site Admin, the Owner and the event's officials see who officiates.
+    const me = currentUserId()
+    const seesOfficials = isOwnerOf(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
     const officials = current.eventOfficials
-      .filter((o) => o.event_id === eventId)
+      .filter((o) => o.event_id === eventId && (seesOfficials || o.user_id === me))
       .map((o) => ({ ...o, user: findUser(current, o.user_id) }))
     if (!canSeeEntries(current, eventId)) return { officials, bouts: [], weighIns: [], acceptedDays: [] }
     const athlete = (id) => {
@@ -1317,13 +1388,89 @@ export const mockApi = {
         red: athlete(b.red_athlete_id), blue: athlete(b.blue_athlete_id),
         red_club: { id: b.red_club_id, name: clubName(current, b.red_club_id) },
         blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
+        red_club_has_owner: clubHasOwner(current, b.red_club_id), blue_club_has_owner: clubHasOwner(current, b.blue_club_id),
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
-        bout_officials: (b.bout_officials ?? []).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
+        bout_officials: (b.bout_officials ?? []).filter((o) => seesOfficials || o.user_id === me).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
       }))
     return {
       officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId),
       myRoles: myEventRoles(current, eventId),
     }
+  },
+
+  // ---------------------------------------------------------------------------
+  // Officials assignment plan (migration 47)
+  // ---------------------------------------------------------------------------
+
+  async getOfficialPlan(eventId, day) {
+    const current = data()
+    if (!canSeePlan(current, eventId, day)) return { plan: null, slots: [], pool: [] }
+    const plan = (current.officialPlans ?? []).find((p) => p.event_id === eventId && p.day === day) ?? null
+    const slots = (current.officialPlanSlots ?? []).filter((s) => s.event_id === eventId && s.day === day)
+      .map(({ bout_id, user_id, role }) => ({ bout_id, user_id, role }))
+    return { plan, slots, pool: dayOfficials(current, eventId, day) }
+  },
+
+  async saveOfficialPlan(eventId, day, slots) {
+    const current = data()
+    requirePlanner(current, eventId)
+    if (!cardOpen(findEvent(current, eventId))) throw new Error('Officials can be planned only while the event is Active')
+    const bouts = new Set(current.bouts.filter((b) => b.event_id === eventId && b.day === day).map((b) => b.id))
+    const people = new Set(dayOfficials(current, eventId, day).map((o) => o.user_id))
+    if (slots.some((s) => !bouts.has(s.bout_id))) throw new Error('The plan has a bout that isn\'t on this day\'s card. Reload and try again.')
+    if (slots.some((s) => !people.has(s.user_id))) throw new Error('The plan has someone who isn\'t working this day. Reload and try again.')
+    current.officialPlans = (current.officialPlans ?? []).filter((p) => !(p.event_id === eventId && p.day === day))
+    current.officialPlans.push({ event_id: eventId, day, status: 'draft', updated_by: currentUserId(), updated_at: now(), approved_by: null, approved_at: null })
+    current.officialPlanSlots = [
+      ...(current.officialPlanSlots ?? []).filter((s) => !(s.event_id === eventId && s.day === day)),
+      ...slots.map((s) => ({ event_id: eventId, day, bout_id: s.bout_id, user_id: s.user_id, role: s.role })),
+    ]
+    write(DATA_KEY, current)
+  },
+
+  async approveOfficialPlan(eventId, day) {
+    const current = data()
+    requirePlanner(current, eventId)
+    if (!cardOpen(findEvent(current, eventId))) throw new Error('The plan can be approved only while the event is Active')
+    const plan = (current.officialPlans ?? []).find((p) => p.event_id === eventId && p.day === day)
+    if (!plan) throw new Error('Save the plan first')
+    const bouts = current.bouts.filter((b) => b.event_id === eventId && b.day === day && !['cancelled', 'rejected'].includes(b.status))
+      .sort((a, b) => a.position - b.position)
+    const slots = (current.officialPlanSlots ?? []).filter((s) => s.event_id === eventId && s.day === day)
+    const bad = bouts.map((b, i) => {
+      const roles = slots.filter((s) => s.bout_id === b.id).map((s) => s.role)
+      const n = (role) => roles.filter((r) => r === role).length
+      return n('referee') !== 1 || n('supervisor') !== 1 || n('judge') < 3 ? `bout ${i + 1}` : null
+    }).filter(Boolean)
+    if (bad.length) throw new Error(`Every bout needs 1 referee, 1 supervisor and at least 3 judges. Check ${bad.join(', ')}.`)
+    Object.assign(plan, { status: 'approved', approved_by: currentUserId(), approved_at: now() })
+    for (const b of bouts.filter((x) => !x.winner)) {
+      b.bout_officials = slots.filter((s) => s.bout_id === b.id && s.role !== 'rest')
+        .map((s) => ({ user_id: s.user_id, ...rolesFlags([s.role]), accepted_at: now() }))
+    }
+    const event = findEvent(current, eventId)
+    notify(current, dayOfficials(current, eventId, day).map((o) => o.user_id), 'official_plan', `Officials plan approved: ${event.name}`,
+      { body: `${label(day)}. See what you do on each bout.`, eventId, tab: 'assignment' })
+    write(DATA_KEY, current)
+  },
+
+  async reopenOfficialPlan(eventId, day) {
+    const current = data()
+    requirePlanner(current, eventId)
+    const plan = (current.officialPlans ?? []).find((p) => p.event_id === eventId && p.day === day)
+    if (plan) Object.assign(plan, { status: 'draft', approved_by: null, approved_at: null, updated_by: currentUserId(), updated_at: now() })
+    write(DATA_KEY, current)
+  },
+
+  async setOfficialEventRoles(eventId, userId, roles) {
+    const current = data()
+    requirePlanner(current, eventId)
+    if (!eventRoles.some((r) => roles[r.key])) throw new Error('Leave at least one role ticked')
+    const invite = current.officialInvitations.find((i) => i.event_id === eventId && i.status === 'accepted'
+      && current.officials.find((o) => o.id === i.official_id)?.user_id === userId)
+    if (!invite) throw new Error('That official hasn\'t accepted this event')
+    Object.assign(invite, rolesFlags(eventRoles.filter((r) => roles[r.key]).map((r) => r.key)))
+    write(DATA_KEY, current)
   },
 
   async setEventOfficial(eventId, role, userId) {
@@ -1348,7 +1495,7 @@ export const mockApi = {
   // Official invitations: the same rules as the database functions in migrations 14 and 21.
   async listInvitableOfficials(eventId) {
     const current = data()
-    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or an official on this event can invite officials')
+    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official or Deputy can invite officials')
     return current.officials
       .filter((o) => o.invite_email)
       .map((o) => ({ id: o.id, name: o.name, email: o.invite_email, signed_in: Boolean(o.user_id) }))
@@ -1396,7 +1543,7 @@ export const mockApi = {
   // Official, or linking their account) and invites them to the event.
   async addEventOfficial(eventId, name, email, respondBy) {
     const current = data()
-    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or an official on this event can invite officials')
+    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official or Deputy can invite officials')
     const clean = (email ?? '').trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
     if (!name?.trim()) throw new Error('Give the official\'s name')
@@ -1417,7 +1564,7 @@ export const mockApi = {
   async inviteOfficials(eventId, officialIds, respondBy) {
     const current = data()
     const event = findEvent(current, eventId)
-    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or an official on this event can invite officials')
+    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official or Deputy can invite officials')
     if (!eventOpen(event)) throw new Error('Officials can be invited once the event is Active, and until it is over')
     if (respondBy && respondBy < todayIso(event.timezone)) throw new Error('The respond-by date has already passed')
     if (respondBy && respondBy > event.end_date) throw new Error('The respond-by date must be on or before the event\'s last day')
@@ -1557,11 +1704,20 @@ export const mockApi = {
       bout = { id: crypto.randomUUID(), event_id: eventId, day, session_starts_at: null, position: nextPosition, comments: [], ...fields }
       current.bouts.push(bout)
     }
+    // The maker approves their own corner when they own that club (migration 52).
+    if (boutType !== 'sparring') {
+      for (const side of ['red', 'blue']) {
+        if (clubRole(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) === 'owner') {
+          bout.approvals.push({ side, decision: 'approved', note: null, override: false, decided_by: currentUserId(), decided_at: now() })
+        }
+      }
+      refreshBoutStatus(current, bout)
+    }
     write(DATA_KEY, current)
     return bout.id
   },
 
-  // Mirrors request_bout_approvals (migration 26): only the Chief Official and Deputy are told.
+  // Mirrors request_bout_approvals (migration 52): each corner's club owners and the Chief Officials.
   async requestBoutApprovals(boutIds) {
     const current = data()
     const bouts = boutIds.map((id) => findBout(current, id))
@@ -1584,14 +1740,20 @@ export const mockApi = {
         red_name: name(b.red_athlete_id), red_club: clubName(current, b.red_club_id),
         blue_name: name(b.blue_athlete_id), blue_club: clubName(current, b.blue_club_id),
       }
-      const key = `bout:${b.id}:official`
-      const people = current.eventOfficials.filter((o) => o.event_id === b.event_id).map((o) => findUser(current, o.user_id))
-      for (const u of people.filter((x) => x?.email)) rows.push({ ...base, side: 'official', recipient_name: u.name, recipient_email: u.email })
-      // Sending again replaces the open to-do rather than adding a second one.
-      current.notifications = (current.notifications ?? []).filter((n) => !(n.action_key === key && !n.done_at))
-      notify(current, people.map((u) => u?.id), 'bout_approval', `Approve bout: ${boutLabel(current, b)}`, {
-        body: boutWhere(current, b), eventId: b.event_id, boutId: b.id, tab: 'bouts', key,
-      })
+      const waiting = waitingApprovers(current, b)
+      for (const side of ['red', 'blue', 'official']) {
+        const key = `bout:${b.id}:${side}`
+        // Sending again replaces the open to-do rather than adding a second one.
+        current.notifications = (current.notifications ?? []).filter((n) => !(n.action_key === key && !n.done_at))
+        const ids = waiting.find((w) => w.side === side)?.ids ?? []
+        if (!ids.length) continue
+        const people = ids.map((id) => findUser(current, id))
+        for (const u of people.filter((x) => x?.email)) rows.push({ ...base, side, recipient_name: u.name, recipient_email: u.email })
+        const forWho = side === 'official' ? 'official approval' : `for ${clubName(current, side === 'red' ? b.red_club_id : b.blue_club_id) ?? `the ${side} corner`}`
+        notify(current, ids, 'bout_approval', `Approve bout: ${boutLabel(current, b)}`, {
+          body: `${boutWhere(current, b)} · ${forWho}`, eventId: b.event_id, boutId: b.id, tab: 'bouts', key,
+        })
+      }
     }
     write(DATA_KEY, current)
     return rows
@@ -1607,27 +1769,37 @@ export const mockApi = {
     if (bout.bout_type === 'sparring') throw new Error('Sparring bouts don\'t need approval')
     if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
-    // Only a Chief Official (or a site Admin) decides (migration 26).
-    if ((side ?? 'official') !== 'official' || !isOfficial(current, bout.event_id)) {
-      throw new Error('Only a Chief Official can approve or reject bouts')
+    // Mirrors decide_bout (migration 52): each corner's club owners, and a Chief Official. After the
+    // weigh-in starts a Chief Official can decide for a corner; a site Admin can decide any side.
+    let override = false
+    let sides = [side]
+    if (side === 'official') {
+      if (!isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official gives the official approval')
+    } else if (side === 'red' || side === 'blue') {
+      const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
+      if (clubRole(current, club) !== 'owner' && !isSiteAdmin()) {
+        if ((bout.after_weigh_in || weighInStarted(current, bout.event_id, bout.day)) && officialRole(current, bout.event_id)) override = true
+        else throw new Error('Only that corner\'s club owners can approve for it')
+      }
+      if (bout.red_club_id === bout.blue_club_id) sides = ['red', 'blue']
+    } else {
+      throw new Error('Unknown side')
     }
-    side = 'official'
-    const override = false
-    bout.approvals = bout.approvals.filter((a) => a.side !== side)
     const before = bout.status
-    bout.approvals.push({ side, decision: approve ? 'approved' : 'rejected', note: note?.trim() || null, override, decided_by: currentUserId(), decided_at: now() })
-    refreshBoutStatus(bout)
-    resolveNotes(current, `bout:${bout.id}:${side}`)
+    bout.approvals = bout.approvals.filter((a) => !sides.includes(a.side))
+    for (const s of sides) bout.approvals.push({ side: s, decision: approve ? 'approved' : 'rejected', note: note?.trim() || null, override, decided_by: currentUserId(), decided_at: now() })
+    refreshBoutStatus(current, bout)
+    for (const s of sides) resolveNotes(current, `bout:${bout.id}:${s}`)
     if (bout.status !== 'pending') resolveNotes(current, `bout:${bout.id}:%`)
     if (!approve) {
-      const who = 'The officials'
+      const who = side === 'official' ? 'The officials' : clubName(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) ?? `The ${side} corner`
       notify(current, [...eventOwnerIds(current, bout.event_id), ...eventOfficialIds(current, bout.event_id),
         ...clubPeopleIds(current, bout.red_club_id), ...clubPeopleIds(current, bout.blue_club_id)],
       'bout_decision', `${who} rejected ${boutLabel(current, bout)}`, {
         body: `${boutWhere(current, bout)}${note?.trim() ? `: "${note.trim()}"` : ''}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
       })
     } else if (bout.status === 'approved' && before !== 'approved') {
-      notify(current, [...clubPeopleIds(current, bout.red_club_id, true), ...clubPeopleIds(current, bout.blue_club_id, true), ...eventOwnerIds(current, bout.event_id)],
+      notify(current, [...clubPeopleIds(current, bout.red_club_id, true), ...clubPeopleIds(current, bout.blue_club_id, true), ...eventOwnerIds(current, bout.event_id), ...eventOfficialIds(current, bout.event_id)],
         'bout_decision', `Bout approved: ${boutLabel(current, bout)}`, { body: boutWhere(current, bout), eventId: bout.event_id, boutId: bout.id, tab: 'bouts' })
     }
     write(DATA_KEY, current)
@@ -1672,6 +1844,36 @@ export const mockApi = {
     Object.assign(bout, {
       red_athlete_id: bout.blue_athlete_id, blue_athlete_id: bout.red_athlete_id,
       red_club_id: bout.blue_club_id, blue_club_id: bout.red_club_id,
+    })
+    // Each corner's approval and open to-do move with its club (migration 52).
+    if (bout.red_club_id !== bout.blue_club_id) {
+      const flip = { red: 'blue', blue: 'red' }
+      bout.approvals = bout.approvals.map((a) => (flip[a.side] ? { ...a, side: flip[a.side] } : a))
+      for (const n of current.notifications ?? []) {
+        const m = !n.done_at && n.action_key?.match(new RegExp(`^bout:${bout.id}:(red|blue)$`))
+        if (m) n.action_key = `bout:${bout.id}:${flip[m[1]]}`
+      }
+    }
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors withdraw_corner (migration 52): that corner's club owners (or a site Admin) take their
+  // athlete out of the bout at any time until it has a result. The bout is cancelled.
+  async withdrawCorner(boutId, side, reason) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (side !== 'red' && side !== 'blue') throw new Error('Pick the red or blue corner')
+    const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
+    if (clubRole(current, club) !== 'owner' && !isSiteAdmin()) throw new Error('Only that corner\'s club owners can withdraw its athlete')
+    if (bout.status === 'cancelled') throw new Error('This bout is already cancelled')
+    if (bout.winner) throw new Error('This bout has a result, so it can\'t be withdrawn from')
+    if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
+    const why = reason?.trim()
+    Object.assign(bout, { status: 'cancelled', cancel_reason: `Withdrawn by ${clubName(current, club) ?? `the ${side} corner`}${why ? `: ${why}` : ''}`, cancelled_at: now() })
+    resolveNotes(current, `bout:${bout.id}:%`)
+    resolveNotes(current, `review:${bout.id}`)
+    notify(current, boutPeople(current, bout), 'bout_cancelled', `Bout cancelled: ${boutLabel(current, bout)}`, {
+      body: `${boutWhere(current, bout)} · ${bout.cancel_reason}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
     })
     write(DATA_KEY, current)
   },
