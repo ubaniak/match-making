@@ -918,8 +918,8 @@ export const mockApi = {
     const current = data()
     const event = current.events.find((e) => e.id === eventId)
     if (!event) throw new Error('That event no longer exists')
-    if (!isOwnerOf(current, eventId) && !['chief', 'deputy'].includes(officialRole(current, eventId))) {
-      throw new Error('Only a Chief Official, the event\'s Owner or a site Admin can set the minimum number of officials')
+    if (!['chief', 'deputy'].includes(officialRole(current, eventId))) {
+      throw new Error('Only the event\'s Chief Official can set the minimum number of officials')
     }
     const n = Number(min)
     if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error('The minimum number of officials must be between 1 and 100')

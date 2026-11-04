@@ -7,7 +7,7 @@ import { effectiveStatus, isOpen } from './events'
 // Upcoming or running events we load in detail (entries, bouts). Keeps Home quick on big sites.
 const MAX_DETAILED = 12
 
-// How many accepted officials an event needs unless its CO, Deputy, Owner or a site Admin changes
+// How many accepted officials an event needs unless its Chief Official changes
 // it (events.min_officials). An Active event with fewer shows red on Home and its Dashboard tab.
 export const MIN_OFFICIALS = 5
 export const minOfficials = (event) => event?.min_officials ?? MIN_OFFICIALS
