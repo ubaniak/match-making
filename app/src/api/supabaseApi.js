@@ -10,26 +10,12 @@ const POSTERS = 'event-posters'
 // Demo accounts from "Load test data" (migration 20) sign in with the fixed code 123456, which is
 // really their password. Only these addresses ever try a password; nobody is emailed a code.
 const isDemoEmail = (email) => /@demo\.test$/i.test(email.trim())
-const DEMO_CODE = '123456'
 
-// "Test as" (site Admin test runs): while the Admin acts as a demo account, their own session is
-// kept here so "Back to my account" returns without a new sign-in email. Supabase already keeps
-// the live session in this browser's storage, so this stores nothing new.
-const TESTING_KEY = 'mm-testing-from'
-function readTestingFrom() {
-  try {
-    return JSON.parse(window.localStorage.getItem(TESTING_KEY)) || null
-  } catch {
-    return null
-  }
-}
-function writeTestingFrom(value) {
-  try {
-    if (value) window.localStorage.setItem(TESTING_KEY, JSON.stringify(value))
-    else window.localStorage.removeItem(TESTING_KEY)
-  } catch {
-    // Storage blocked: "Back to my account" then means signing in again.
-  }
+// "Test as" was removed (Option B, 2026-11-04). Forget any Admin session a test run left behind.
+try {
+  window.localStorage.removeItem('mm-testing-from')
+} catch {
+  // Storage blocked: nothing was kept there either.
 }
 
 // "View as" (migration 44): the person a site Admin is viewing as, { id, name, email }, kept here so
@@ -122,11 +108,9 @@ export const supabaseApi = {
   },
 
   async signOut() {
-    // Signing out ends View as and the test run too; the Admin signs in again as usual.
+    // Signing out ends View as too; the Admin signs in again as usual.
     if (readViewAs()) await this.stopViewAs().catch(() => {})
-    const testing = readTestingFrom()
-    writeTestingFrom(null)
-    return supabase.auth.signOut(testing ? { scope: 'local' } : undefined)
+    return supabase.auth.signOut()
   },
 
   // Who the site Admin is viewing as ({ id, name, email }), or null.
@@ -157,53 +141,6 @@ export const supabaseApi = {
     const next = row ? { id: row.id, name: row.name || row.email, email: row.email } : null
     if (next?.id !== current?.id) writeViewAs(next)
     return next
-  },
-
-  // Who started the test run ({ email, name }), or null when nobody is acting as a demo account.
-  testingFrom() {
-    const from = readTestingFrom()
-    return from ? { email: from.email, name: from.name } : null
-  },
-
-  // Site Admins only: sign in as a demo account (@demo.test, from "Load test data") to test a role.
-  // The first switch keeps the Admin's own session; later switches hop between demo accounts.
-  async actAsDemo(email) {
-    const target = email.trim().toLowerCase()
-    if (!isDemoEmail(target)) throw new Error('Only demo accounts (ending @demo.test) can be used for a test run.')
-    const { data } = await supabase.auth.getSession()
-    const current = data.session
-    if (!current) throw new Error('Sign in first.')
-    const started = readTestingFrom()
-    if (!started) {
-      if (isDemoEmail(current.user.email)) throw new Error('Start a test run from your own site Admin account.')
-      const { data: isAdmin } = await supabase.rpc('is_site_admin')
-      if (isAdmin !== true) throw new Error('Only a site Admin can start a test run.')
-      const { data: me } = await supabase.from('profiles').select('name').eq('id', current.user.id).maybeSingle()
-      writeTestingFrom({
-        email: current.user.email,
-        name: me?.name || current.user.email,
-        access_token: current.access_token,
-        refresh_token: current.refresh_token,
-      })
-    }
-    const { error } = await supabase.auth.signInWithPassword({ email: target, password: DEMO_CODE })
-    if (error) {
-      // Couldn't switch: stay where we were (and on a first switch, stay the Admin).
-      if (!started) writeTestingFrom(null)
-      throw new Error(`Couldn't sign in as ${target}. Load the test data first (Admin > Test data), and for owner1, owner2, official1 or official2 also click "Add helper logins".`)
-    }
-  },
-
-  // Ends the test run: back to the Admin's own account, no email needed.
-  async backToMyAccount() {
-    const from = readTestingFrom()
-    writeTestingFrom(null)
-    if (!from) return
-    const { error } = await supabase.auth.setSession({ access_token: from.access_token, refresh_token: from.refresh_token })
-    if (error) {
-      await supabase.auth.signOut({ scope: 'local' })
-      throw new Error('Your own sign-in had run out, so you\'ve been signed out. Sign in again with your email.')
-    }
   },
 
   async sendMagicLink(email) {
@@ -245,12 +182,20 @@ export const supabaseApi = {
   },
 
   async loadMe(userId) {
-    const [profileResult, permissionsResult] = await Promise.all([
+    const [profileResult, permissionsResult, clubsResult, ownsResult] = await Promise.all([
       supabase.from('profiles').select('id, email, name, role_id, status, roles(name)').eq('id', userId).maybeSingle(),
       supabase.rpc('my_permissions'),
+      // Whether they're in (or invited to) any club, and whether they own any event: these decide
+      // whether the Clubs page shows.
+      supabase.from('club_members').select('club_id').eq('user_id', userId).limit(1),
+      supabase.from('event_members').select('event_id').eq('user_id', userId).eq('role', 'owner').limit(1),
     ])
     return {
-      profile: profileResult.data,
+      profile: profileResult.data && {
+        ...profileResult.data,
+        in_club: (clubsResult.data ?? []).length > 0,
+        owns_event: (ownsResult.data ?? []).length > 0,
+      },
       permissions: (permissionsResult.data ?? []).map((row) => row.permission),
     }
   },
@@ -376,7 +321,7 @@ export const supabaseApi = {
   },
 
   async getClub(clubId) {
-    const [club, transfers] = await Promise.all([
+    const [club, transfers, emailInvites] = await Promise.all([
       supabase.from('clubs').select(`id, name, ${clubMemberColumns}, athletes(${athleteColumns})`).eq('id', clubId).maybeSingle(),
       supabase
         .from('athlete_transfers')
@@ -387,6 +332,9 @@ export const supabaseApi = {
           requester:profiles!athlete_transfers_requested_by_fkey(name, email)`)
         .or(`from_club_id.eq.${clubId},to_club_id.eq.${clubId}`)
         .order('requested_at', { ascending: false }),
+      // Invites to emails that haven't signed in yet (migration 45). Only the club's Owners and site
+      // Admins see them; before the migration runs the table doesn't exist, so an error means none.
+      supabase.from('club_member_invites').select('email, role, status, invited_at').eq('club_id', clubId).order('email'),
     ])
     const failed = club.error || transfers.error
     if (failed) throw failed
@@ -395,6 +343,7 @@ export const supabaseApi = {
       ...club.data,
       athletes: club.data.athletes.map(tidyAthlete).sort((a, b) => a.name.localeCompare(b.name)),
       transfers: transfers.data,
+      email_invites: emailInvites.error ? [] : emailInvites.data,
     }
   },
 
@@ -430,8 +379,15 @@ export const supabaseApi = {
 
   // Club owners only see their own club's people (migration 30), so they invite by email. A site
   // Admin's invite joins straight away; an owner's waits for a site Admin. Returns the person's name.
+  // Returns { name, new_account }. Someone new can sign in straight away; they join the club (once a
+  // site Admin approves) when they first do.
   async inviteClubMember(clubId, email, role) {
     return rpc('invite_club_member', { p_club_id: clubId, p_email: email, p_role: role || 'coach' })
+  },
+
+  async cancelClubEmailInvite(clubId, email) {
+    const { error } = await supabase.from('club_member_invites').delete().eq('club_id', clubId).eq('email', email)
+    if (error) throw error
   },
 
   async approveClubMember(clubId, userId) {
@@ -649,19 +605,7 @@ export const supabaseApi = {
   },
 
   // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.
-  async setEventMember(eventId, userId, role) {
-    const { error } = await supabase
-      .from('event_members')
-      .upsert({ event_id: eventId, user_id: userId, role }, { onConflict: 'event_id,user_id' })
-    if (error) throw error
-  },
-
-  async removeEventMember(eventId, userId) {
-    const { error } = await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_id', userId)
-    if (error) throw error
-  },
-
-  // Site Admins only. The old Owner stays on as a Viewer.
+  // Site Admins only. The old Owner comes off the event.
   async transferEventOwnership(eventId, userId) {
     const { error } = await supabase.rpc('transfer_event_ownership', { p_event_id: eventId, p_user_id: userId })
     if (error) throw error

@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
 import { CalendarOutlined, SafetyCertificateOutlined, UserOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
-import { isOfficial, useAuth } from './auth'
+import { seesClubs, useAuth } from './auth'
 import AdminPage, { AthletesPage, OfficialsPage } from './AdminPage'
 import ClubsPage from './ClubsPage'
 import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
-import { TestingBar, ViewAsMenu, ViewingBar } from './TestRun'
+import { ViewAsMenu, ViewingBar } from './TestRun'
 import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
 const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
@@ -43,8 +43,8 @@ export default function App() {
   const pages = [
     ['home', 'Home'],
     can('pages:read') && ['events', 'Events'],
-    // Officials don't see clubs (Bhavek, 2026-11-02).
-    can('pages:read') && !isOfficial(profile) && ['clubs', 'Clubs'],
+    // Only people in a club, event Owners and the site Admin see clubs (officials don't, Bhavek 2026-11-02).
+    can('pages:read') && seesClubs(profile) && ['clubs', 'Clubs'],
     // The site Admin gets Athletes and Officials in the top nav, not tucked under Admin (Bhavek, 2026-11-02).
     can('users:manage') && ['athletes', 'Athletes'],
     can('users:manage') && ['officials', 'Officials'],
@@ -67,7 +67,6 @@ export default function App() {
     <NotificationsProvider userId={profile?.id}>
       <Layout className="page">
         {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
-        <TestingBar email={session.user.email} />
         <ViewingBar viewing={viewing} />
         <Layout.Header className={pages.length > 4 ? 'app-header many-pages' : 'app-header'}>
           <div className="app-header-inner">
@@ -90,10 +89,10 @@ export default function App() {
               </nav>
             ) : <span style={{ flex: 1 }} />}
             <span className="who">
-              {api.mode === 'supabase' && can('users:manage') && !viewing && !api.testingFrom() && <ViewAsMenu myId={session.user.id} />}
+              {api.mode === 'supabase' && can('users:manage') && !viewing && <ViewAsMenu myId={session.user.id} />}
               <NotificationBell onOpen={open} />
               <Text className="who-name" title={profile?.name || session.user.email}>{profile?.name || session.user.email}</Text>
-              {/* The site role is a label, not a button. Everyone is a User, so only Admin and Official show. */}
+              {/* The site role is a label, not a button. Everyone else is a Member, so only Admin shows. */}
               {siteRoleLabel(profile) && <span className="who-role">{siteRoleLabel(profile)}</span>}
               <Button icon={<LogoutOutlined />} aria-label="Sign out" onClick={() => api.signOut().then(() => goTo(''))}>Sign out</Button>
             </span>
@@ -132,13 +131,7 @@ function pageFor(hash) {
   return appPages.includes(key) ? key : null
 }
 
-const siteRoleLabels = { admin: 'Admin', official: 'Official' }
-function siteRoleLabel(profile) {
-  const key = profile?.role_id
-  if (siteRoleLabels[key]) return siteRoleLabels[key]
-  const name = profile?.roles?.name
-  return name === 'Admins' ? 'Admin' : name === 'Officials' ? 'Official' : null
-}
+const siteRoleLabel = (profile) => (profile?.role_id === 'admin' ? 'Admin' : null)
 
 function goTo(hash) {
   const url = window.location.pathname + window.location.search + (hash ? hash : '')

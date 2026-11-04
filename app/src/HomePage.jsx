@@ -12,7 +12,8 @@ import { Badge, ErrorAlert, Muted, PageHeading, Section, StatGrid, Text } from '
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-const officialRoles = { chief: 'Chief Official', deputy: 'Deputy' }
+// Both seats are Chief Officials with the same powers (the second is stored as 'deputy').
+const officialRoles = { chief: 'Chief Official', deputy: 'Chief Official' }
 
 // Officials who accepted an event. Active events with fewer than their minimum get a red tag that
 // says so in words, and their table row turns red (rowClassName below), so colour is never the only cue.
@@ -69,14 +70,10 @@ export default function HomePage({ profile, can, onOpen }) {
 
       {data && roles.length === 0 && (
         <Section title="Getting started">
-          {profile?.role_id === 'public' ? (
-            <Muted>You don't have a role yet. Ask an Admin to add you as a user.</Muted>
-          ) : (
-            <Muted>
-              You're not running an event, in a club or officiating yet. A club Owner can add you to their club, an Admin can
-              invite you to officiate, and events you're added to show up here.
-            </Muted>
-          )}
+          <Muted>
+            You're not running an event, in a club or officiating yet. You can request an event, a club Owner can add you to
+            their club, an official can invite you to officiate, and events you're part of show up here.
+          </Muted>
           <Button onClick={() => onOpen({ page: 'events' })}>See events</Button>
         </Section>
       )}

@@ -6,6 +6,8 @@ import { api } from './api'
 import AthleteForm from './AthleteForm'
 import CsvImport from './CsvImport'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
+import { sendWelcome } from './welcome'
+import WelcomeNotice from './WelcomeNotice'
 import { askConfirm, dash } from './dialogs'
 import { BackLink, Badge, PageHeading, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, SuccessAlert, Text, Title } from './ui'
 
@@ -604,10 +606,13 @@ function ClubPeople({ club, users, may, onChange }) {
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
 
+  const [welcome, setWelcome] = useState(null)
   const memberIds = new Set(club.members.map((m) => m.user_id))
   const addable = users.filter((u) => u.id && u.state === 'Active' && !memberIds.has(u.id))
   const order = { owner: 0, coach: 1 }
-  const members = [...club.members].sort(
+  // Invites to emails that haven't signed in yet show as rows too (migration 45).
+  const emailRows = (club.email_invites ?? []).map((i) => ({ ...i, user_id: `email:${i.email}`, user: { name: null, email: i.email }, notSignedIn: true }))
+  const members = [...club.members, ...emailRows].sort(
     (a, b) => (a.status === b.status ? 0 : a.status === 'pending' ? 1 : -1) || order[a.role] - order[b.role] || personName(a.user).localeCompare(personName(b.user)),
   )
 
@@ -637,12 +642,20 @@ function ClubPeople({ club, users, may, onChange }) {
       return
     }
     if (!form.email.trim()) return
-    let name = form.email.trim()
+    const email = form.email.trim().toLowerCase()
+    let result = null
+    setWelcome(null)
     run(async () => {
-      name = (await api.inviteClubMember(club.id, form.email.trim(), form.role)) || name
+      result = await api.inviteClubMember(club.id, email, form.role)
       setForm({ ...form, email: '' })
-    }, () => `${name} is invited. A site Admin has to approve it before they join.`)
+      // Someone new gets the same "how to sign in" email as Admin > Users.
+      if (result?.new_account) setWelcome(await sendWelcome({ name: null, email, roleId: 'member' }))
+    }, () => (result?.new_account
+      ? `${email} is invited and can sign in now. They join the club once they've signed in and a site Admin approves it.`
+      : `${result?.name || email} is invited. A site Admin has to approve it before they join.`))
   }
+
+  const statusLabel = (m) => (m.notSignedIn ? 'Hasn\'t signed in yet' : m.status === 'pending' ? 'Waiting for Admin' : 'Member')
 
   const roleOptions = [{ value: 'owner', label: 'Owner' }, { value: 'coach', label: 'Coach' }]
   const columns = [
@@ -652,7 +665,7 @@ function ClubPeople({ club, users, may, onChange }) {
       title: 'Role',
       key: 'role',
       value: (m) => roleLabels[m.role],
-      render: (_, m) => (may.siteAdmin ? (
+      render: (_, m) => (may.siteAdmin && !m.notSignedIn ? (
         <Pick
           size="small"
           style={{ width: 110 }}
@@ -666,11 +679,13 @@ function ClubPeople({ club, users, may, onChange }) {
         <RoleBadge role={m.role} />
       )),
     },
-    { title: 'Status', key: 'status', value: (m) => (m.status === 'pending' ? 'Waiting for Admin' : 'Member'), render: (_, m) => (m.status === 'pending' ? <Badge muted>Waiting for Admin</Badge> : <Badge>Member</Badge>) },
+    { title: 'Status', key: 'status', value: statusLabel, render: (_, m) => <Badge muted={m.notSignedIn || m.status === 'pending'}>{statusLabel(m)}</Badge> },
     may.manage && {
       key: 'actions',
       className: 'actions',
-      render: (_, m) => (
+      render: (_, m) => (m.notSignedIn ? (
+        <Button size="small" disabled={busy} onClick={() => run(() => api.cancelClubEmailInvite(club.id, m.email))}>Withdraw</Button>
+      ) : (
         <Space>
           {may.siteAdmin && m.status === 'pending' && (
             <Button size="small" type="primary" disabled={busy} onClick={() => run(() => api.approveClubMember(club.id, m.user_id))}>Approve</Button>
@@ -679,7 +694,7 @@ function ClubPeople({ club, users, may, onChange }) {
             {m.status === 'pending' ? (may.siteAdmin ? 'Decline' : 'Withdraw') : 'Remove'}
           </Button>
         </Space>
-      ),
+      )),
     },
   ].filter(Boolean)
 
@@ -724,6 +739,7 @@ function ClubPeople({ club, users, may, onChange }) {
         </CsvImport>
       )}
       <SuccessAlert>{message}</SuccessAlert>
+      <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
       <ErrorAlert>{error}</ErrorAlert>
       {members.length === 0 ? (
         <Muted>Nobody yet.{may.siteAdmin && ' Add an Owner above.'}</Muted>

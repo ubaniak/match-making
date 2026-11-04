@@ -4,7 +4,7 @@
 //   blocks:          reasons the bout can't be made (male v female, outside an allowance,
 //                    missing details)
 //   warnings:        gaps inside the allowances, shown to coaches and officials
-//   needsSupervisor: U17 v U19, which only the Chief Official or Deputy can approve
+//   needsSupervisor: U17 v U19, which only a Chief Official can approve
 //   hard:            the blocks no official can override, even on a Developmental bout (male v
 //                    female, too young, missing details). Every entry is also in blocks.
 import { ageCategory, experienceCategory, weightCategory } from './categories'
