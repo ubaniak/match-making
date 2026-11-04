@@ -118,7 +118,7 @@ function seed() {
         red_athlete_id: 'athlete-1', blue_athlete_id: 'athlete-4', red_club_id: 'club-1', blue_club_id: 'club-2',
         status: 'pending', bout_type: 'scored', needs_supervisor: false, warnings: ['Different weight classes, 1.3 kg apart', 'Open vs Open, 2 bouts apart'],
         after_weigh_in: false, made_by: 'user-1', made_at: new Date().toISOString(),
-        approvals: [],
+        approvals: [{ side: 'red', decision: 'approved', note: null, override: false, decided_by: 'user-1', decided_at: new Date().toISOString() }],
         comments: [],
         approval_requested_at: new Date().toISOString(), approval_requested_by: 'user-1',
       },
@@ -140,8 +140,13 @@ function seed() {
         action_key: 'member:club-1:user-3', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
       },
       {
+        id: 'note-2', user_id: 'user-2', kind: 'bout_approval', title: 'Approve bout: Ali Hassan vs Marco Ruiz',
+        body: `Eastside Winter Box Cup · ${label(start)} · for Riverside Boxing`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
+        action_key: 'bout:bout-1:blue', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
+      },
+      {
         id: 'note-3', user_id: 'user-3', kind: 'bout_approval', title: 'Approve bout: Ali Hassan vs Marco Ruiz',
-        body: `Eastside Winter Box Cup · ${label(start)}`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
+        body: `Eastside Winter Box Cup · ${label(start)} · official approval`, event_id: 'event-1', club_id: null, bout_id: 'bout-1', tab: 'bouts',
         action_key: 'bout:bout-1:official', needs_action: true, actor_id: 'user-1', created_at: new Date().toISOString(), read_at: null, done_at: null,
       },
     ],
@@ -385,15 +390,32 @@ function findBout(current, boutId) {
   return bout
 }
 
-function refreshBoutStatus(bout) {
+// Mirrors club_has_owner (migration 52): an active owner who can approve for the club.
+const clubHasOwner = (current, clubId) => current.clubMembers.some((m) => m.club_id === clubId && m.role === 'owner' && m.status === 'active')
+
+// Mirrors bout_waiting_approvers (migration 52): { side, ids } for each side still to approve.
+// Approved sides and corners with no club owner are left out; one club in both corners is asked once.
+function waitingApprovers(current, bout) {
+  const approved = new Set(bout.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
+  const owners = (clubId) => current.clubMembers.filter((m) => m.club_id === clubId && m.role === 'owner' && m.status === 'active').map((m) => m.user_id)
+  return [
+    { side: 'red', ids: owners(bout.red_club_id) },
+    { side: 'blue', ids: bout.red_club_id === bout.blue_club_id ? [] : owners(bout.blue_club_id) },
+    { side: 'official', ids: current.eventOfficials.filter((o) => o.event_id === bout.event_id).map((o) => o.user_id) },
+  ].filter((s) => !approved.has(s.side) && s.ids.length)
+}
+
+// Mirrors refresh_bout_status (migration 52): every corner with a club owner and a Chief Official
+// approve; any rejection rejects.
+function refreshBoutStatus(current, bout) {
   if (bout.status === 'cancelled') return
   if (bout.bout_type === 'sparring') {
     bout.status = 'approved'
     return
   }
-  // Only the Chief Official's or Deputy's decision counts (migration 26).
-  const official = bout.approvals.find((a) => a.side === 'official')
-  bout.status = official?.decision === 'approved' ? 'approved' : official?.decision === 'rejected' ? 'rejected' : 'pending'
+  const approved = (side) => bout.approvals.some((a) => a.side === side && a.decision === 'approved')
+  const needed = ['official', ...['red', 'blue'].filter((side) => clubHasOwner(current, side === 'red' ? bout.red_club_id : bout.blue_club_id))]
+  bout.status = bout.approvals.some((a) => a.decision === 'rejected') ? 'rejected' : needed.every(approved) ? 'approved' : 'pending'
 }
 
 // Adds a reason to a bout's "needs discussion" flag, once (migration 34).
@@ -1349,6 +1371,7 @@ export const mockApi = {
         red: athlete(b.red_athlete_id), blue: athlete(b.blue_athlete_id),
         red_club: { id: b.red_club_id, name: clubName(current, b.red_club_id) },
         blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
+        red_club_has_owner: clubHasOwner(current, b.red_club_id), blue_club_has_owner: clubHasOwner(current, b.blue_club_id),
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
         bout_officials: (b.bout_officials ?? []).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
       }))
@@ -1664,11 +1687,20 @@ export const mockApi = {
       bout = { id: crypto.randomUUID(), event_id: eventId, day, session_starts_at: null, position: nextPosition, comments: [], ...fields }
       current.bouts.push(bout)
     }
+    // The maker approves their own corner when they own that club (migration 52).
+    if (boutType !== 'sparring') {
+      for (const side of ['red', 'blue']) {
+        if (clubRole(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) === 'owner') {
+          bout.approvals.push({ side, decision: 'approved', note: null, override: false, decided_by: currentUserId(), decided_at: now() })
+        }
+      }
+      refreshBoutStatus(current, bout)
+    }
     write(DATA_KEY, current)
     return bout.id
   },
 
-  // Mirrors request_bout_approvals (migration 26): only the Chief Official and Deputy are told.
+  // Mirrors request_bout_approvals (migration 52): each corner's club owners and the Chief Officials.
   async requestBoutApprovals(boutIds) {
     const current = data()
     const bouts = boutIds.map((id) => findBout(current, id))
@@ -1691,14 +1723,20 @@ export const mockApi = {
         red_name: name(b.red_athlete_id), red_club: clubName(current, b.red_club_id),
         blue_name: name(b.blue_athlete_id), blue_club: clubName(current, b.blue_club_id),
       }
-      const key = `bout:${b.id}:official`
-      const people = current.eventOfficials.filter((o) => o.event_id === b.event_id).map((o) => findUser(current, o.user_id))
-      for (const u of people.filter((x) => x?.email)) rows.push({ ...base, side: 'official', recipient_name: u.name, recipient_email: u.email })
-      // Sending again replaces the open to-do rather than adding a second one.
-      current.notifications = (current.notifications ?? []).filter((n) => !(n.action_key === key && !n.done_at))
-      notify(current, people.map((u) => u?.id), 'bout_approval', `Approve bout: ${boutLabel(current, b)}`, {
-        body: boutWhere(current, b), eventId: b.event_id, boutId: b.id, tab: 'bouts', key,
-      })
+      const waiting = waitingApprovers(current, b)
+      for (const side of ['red', 'blue', 'official']) {
+        const key = `bout:${b.id}:${side}`
+        // Sending again replaces the open to-do rather than adding a second one.
+        current.notifications = (current.notifications ?? []).filter((n) => !(n.action_key === key && !n.done_at))
+        const ids = waiting.find((w) => w.side === side)?.ids ?? []
+        if (!ids.length) continue
+        const people = ids.map((id) => findUser(current, id))
+        for (const u of people.filter((x) => x?.email)) rows.push({ ...base, side, recipient_name: u.name, recipient_email: u.email })
+        const forWho = side === 'official' ? 'official approval' : `for ${clubName(current, side === 'red' ? b.red_club_id : b.blue_club_id) ?? `the ${side} corner`}`
+        notify(current, ids, 'bout_approval', `Approve bout: ${boutLabel(current, b)}`, {
+          body: `${boutWhere(current, b)} · ${forWho}`, eventId: b.event_id, boutId: b.id, tab: 'bouts', key,
+        })
+      }
     }
     write(DATA_KEY, current)
     return rows
@@ -1714,27 +1752,37 @@ export const mockApi = {
     if (bout.bout_type === 'sparring') throw new Error('Sparring bouts don\'t need approval')
     if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
-    // Only a Chief Official (or a site Admin) decides (migration 26).
-    if ((side ?? 'official') !== 'official' || !isOfficial(current, bout.event_id)) {
-      throw new Error('Only a Chief Official can approve or reject bouts')
+    // Mirrors decide_bout (migration 52): each corner's club owners, and a Chief Official. After the
+    // weigh-in starts a Chief Official can decide for a corner; a site Admin can decide any side.
+    let override = false
+    let sides = [side]
+    if (side === 'official') {
+      if (!isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official gives the official approval')
+    } else if (side === 'red' || side === 'blue') {
+      const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
+      if (clubRole(current, club) !== 'owner' && !isSiteAdmin()) {
+        if ((bout.after_weigh_in || weighInStarted(current, bout.event_id, bout.day)) && officialRole(current, bout.event_id)) override = true
+        else throw new Error('Only that corner\'s club owners can approve for it')
+      }
+      if (bout.red_club_id === bout.blue_club_id) sides = ['red', 'blue']
+    } else {
+      throw new Error('Unknown side')
     }
-    side = 'official'
-    const override = false
-    bout.approvals = bout.approvals.filter((a) => a.side !== side)
     const before = bout.status
-    bout.approvals.push({ side, decision: approve ? 'approved' : 'rejected', note: note?.trim() || null, override, decided_by: currentUserId(), decided_at: now() })
-    refreshBoutStatus(bout)
-    resolveNotes(current, `bout:${bout.id}:${side}`)
+    bout.approvals = bout.approvals.filter((a) => !sides.includes(a.side))
+    for (const s of sides) bout.approvals.push({ side: s, decision: approve ? 'approved' : 'rejected', note: note?.trim() || null, override, decided_by: currentUserId(), decided_at: now() })
+    refreshBoutStatus(current, bout)
+    for (const s of sides) resolveNotes(current, `bout:${bout.id}:${s}`)
     if (bout.status !== 'pending') resolveNotes(current, `bout:${bout.id}:%`)
     if (!approve) {
-      const who = 'The officials'
+      const who = side === 'official' ? 'The officials' : clubName(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) ?? `The ${side} corner`
       notify(current, [...eventOwnerIds(current, bout.event_id), ...eventOfficialIds(current, bout.event_id),
         ...clubPeopleIds(current, bout.red_club_id), ...clubPeopleIds(current, bout.blue_club_id)],
       'bout_decision', `${who} rejected ${boutLabel(current, bout)}`, {
         body: `${boutWhere(current, bout)}${note?.trim() ? `: "${note.trim()}"` : ''}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
       })
     } else if (bout.status === 'approved' && before !== 'approved') {
-      notify(current, [...clubPeopleIds(current, bout.red_club_id, true), ...clubPeopleIds(current, bout.blue_club_id, true), ...eventOwnerIds(current, bout.event_id)],
+      notify(current, [...clubPeopleIds(current, bout.red_club_id, true), ...clubPeopleIds(current, bout.blue_club_id, true), ...eventOwnerIds(current, bout.event_id), ...eventOfficialIds(current, bout.event_id)],
         'bout_decision', `Bout approved: ${boutLabel(current, bout)}`, { body: boutWhere(current, bout), eventId: bout.event_id, boutId: bout.id, tab: 'bouts' })
     }
     write(DATA_KEY, current)
@@ -1779,6 +1827,36 @@ export const mockApi = {
     Object.assign(bout, {
       red_athlete_id: bout.blue_athlete_id, blue_athlete_id: bout.red_athlete_id,
       red_club_id: bout.blue_club_id, blue_club_id: bout.red_club_id,
+    })
+    // Each corner's approval and open to-do move with its club (migration 52).
+    if (bout.red_club_id !== bout.blue_club_id) {
+      const flip = { red: 'blue', blue: 'red' }
+      bout.approvals = bout.approvals.map((a) => (flip[a.side] ? { ...a, side: flip[a.side] } : a))
+      for (const n of current.notifications ?? []) {
+        const m = !n.done_at && n.action_key?.match(new RegExp(`^bout:${bout.id}:(red|blue)$`))
+        if (m) n.action_key = `bout:${bout.id}:${flip[m[1]]}`
+      }
+    }
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors withdraw_corner (migration 52): that corner's club owners (or a site Admin) take their
+  // athlete out of the bout at any time until it has a result. The bout is cancelled.
+  async withdrawCorner(boutId, side, reason) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (side !== 'red' && side !== 'blue') throw new Error('Pick the red or blue corner')
+    const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
+    if (clubRole(current, club) !== 'owner' && !isSiteAdmin()) throw new Error('Only that corner\'s club owners can withdraw its athlete')
+    if (bout.status === 'cancelled') throw new Error('This bout is already cancelled')
+    if (bout.winner) throw new Error('This bout has a result, so it can\'t be withdrawn from')
+    if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
+    const why = reason?.trim()
+    Object.assign(bout, { status: 'cancelled', cancel_reason: `Withdrawn by ${clubName(current, club) ?? `the ${side} corner`}${why ? `: ${why}` : ''}`, cancelled_at: now() })
+    resolveNotes(current, `bout:${bout.id}:%`)
+    resolveNotes(current, `review:${bout.id}`)
+    notify(current, boutPeople(current, bout), 'bout_cancelled', `Bout cancelled: ${boutLabel(current, bout)}`, {
+      body: `${boutWhere(current, bout)} · ${bout.cancel_reason}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
     })
     write(DATA_KEY, current)
   },
