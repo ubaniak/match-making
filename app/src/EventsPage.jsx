@@ -16,6 +16,7 @@ import {
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 import { isOfficial } from './auth'
 import { askConfirm, askText, askTypedConfirm, dash, showError } from './dialogs'
+import { MIN_OFFICIALS, shortOnOfficials } from './dashboard'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
@@ -689,13 +690,20 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
   const days = daysBetween(event.start_date, event.end_date).length
   const weighIns = (data?.weighIns ?? []).length
 
+  // Same rule as Home: an Active event with fewer than MIN_OFFICIALS accepted shows red, with the
+  // shortfall in words. Only people who can see the official lists get the count, so only they see it.
+  const seesLists = siteAdmin || may.role === 'owner' || invitations.length > 0
+  const short = seesLists && shortOnOfficials(event, accepted)
+  const officialsNote = invitations.length
+    ? `${waiting} waiting · ${declined} declined`
+    : `Chief Official: ${roleName('chief')} · Deputy: ${roleName('deputy')}`
+
   const stats = [
     {
       key: 'officials', tab: 'officials', title: 'Officials',
       value: invitations.length ? accepted : officials.length,
-      note: invitations.length
-        ? `${waiting} waiting · ${declined} declined`
-        : `Chief Official: ${roleName('chief')} · Deputy: ${roleName('deputy')}`,
+      note: short ? `Short: ${accepted} of ${MIN_OFFICIALS} officials accepted · ${officialsNote}` : officialsNote,
+      danger: short,
     },
     may.seesClubs && { key: 'clubs', tab: 'clubs', title: 'Clubs', value: clubsIn, note: asking ? `${asking} asking to join` : 'Clubs in the event' },
     may.seesClubs && { key: 'athletes', tab: 'clubs', title: 'Athletes', value: event.athletes.length, note: 'Entered' },
