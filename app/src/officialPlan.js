@@ -13,6 +13,8 @@
 //   * Referee bouts are spread evenly: 9 bouts and 3 referees is 3 each; with 10 bouts one referee,
 //     picked at random, does an extra one.
 //   * The Chief Officials approve the plan and can change any of it by hand.
+//   * An official who declared a conflict of interest on a bout (migration 53) rests on that bout.
+//     If a Chief Official assigns them by hand, the bout is flagged (a warning, not a block).
 
 export const MIN_OFFICIALS_TO_RUN = 5
 
@@ -30,6 +32,9 @@ export const planRoleLabel = Object.fromEntries(planRoles.map((r) => [r.key, r.l
 export const HIGH_LEVEL = 3
 export const isHighLevel = (official) => (official.level ?? 0) >= HIGH_LEVEL
 
+// The officials who declared a conflict of interest on a bout (migration 53).
+export const conflictedOn = (bout) => new Set((bout?.bout_conflicts ?? []).map((c) => c.user_id))
+
 // Bouts that need officials: everything on the night's card that isn't cancelled or rejected.
 export const plannedBouts = (bouts, day) =>
   bouts.filter((b) => b.day === day && !['cancelled', 'rejected'].includes(b.status))
@@ -38,7 +43,7 @@ export const plannedBouts = (bouts, day) =>
 const byName = (a, b) => (a.name || '').localeCompare(b.name || '')
 
 // pool: [{ user_id, name, level, judge, referee, supervisor, timekeeper }], the officials working
-// the night. bouts: the night's bouts in card order. random: () => [0, 1), for tests.
+// the night. bouts: the night's bouts in card order, with their bout_conflicts. random: () => [0, 1), for tests.
 // Returns { [boutId]: { [userId]: role } } with every official on every bout (rest when not working).
 export function generatePlan(pool, bouts, random = Math.random) {
   const plan = {}
@@ -49,6 +54,8 @@ export function generatePlan(pool, bouts, random = Math.random) {
   const shuffleKey = () => Object.fromEntries(pool.map((o) => [o.user_id, random()]))
   let prevReferee = null
   let prevSupervisor = null
+  // The night's Supervisor: kept on after a bout someone else covered because of a conflict.
+  let nightSupervisor = null
   // How many bouts each referee should do, worked out once the night's Supervisor is known.
   let refQuota = null
   const quotaFor = (supervisorId) => {
@@ -59,10 +66,11 @@ export function generatePlan(pool, bouts, random = Math.random) {
     return Object.fromEntries(order.map((id, i) => [id, base + (i < extra ? 1 : 0)]))
   }
 
-  for (const bout of bouts) {
+  for (const [index, bout] of bouts.entries()) {
     const row = {}
     const tie = shuffleKey()
-    const free = new Set(pool.filter((o) => !(restAfterRef && o.user_id === prevReferee)).map((o) => o.user_id))
+    const conflicted = conflictedOn(bout)
+    const free = new Set(pool.filter((o) => !conflicted.has(o.user_id) && !(restAfterRef && o.user_id === prevReferee)).map((o) => o.user_id))
     const freeWith = (role) => pool.filter((o) => free.has(o.user_id) && o[role])
     const take = (official, role) => {
       row[official.user_id] = role
@@ -70,13 +78,16 @@ export function generatePlan(pool, bouts, random = Math.random) {
       free.delete(official.user_id)
     }
 
-    // Supervisor: strict. Last bout's Supervisor stays on; otherwise the highest level, then by name.
-    // Skip someone who is the only possible Referee when another Supervisor can step in.
+    // Supervisor: strict. The night's Supervisor stays on (then last bout's, if they covered a
+    // conflict); otherwise the highest level, then by name. Skip someone who is the only possible
+    // Referee when another Supervisor can step in.
+    const stay = (o) => (o.user_id === nightSupervisor ? 2 : o.user_id === prevSupervisor ? 1 : 0)
     const supervisors = freeWith('supervisor').sort((a, b) =>
-      (b.user_id === prevSupervisor) - (a.user_id === prevSupervisor) || (b.level ?? 0) - (a.level ?? 0) || byName(a, b))
+      stay(b) - stay(a) || (b.level ?? 0) - (a.level ?? 0) || byName(a, b))
     const leavesReferee = (s) => freeWith('referee').some((o) => o.user_id !== s.user_id)
     const supervisor = supervisors.find(leavesReferee) ?? supervisors[0]
     if (supervisor) take(supervisor, 'supervisor')
+    nightSupervisor ??= supervisor?.user_id ?? null
 
     // Referee: someone still under their even share first, then whoever has refereed least,
     // avoiding back-to-back, then random. If the only referee left refereed the last bout, they
@@ -85,14 +96,20 @@ export function generatePlan(pool, bouts, random = Math.random) {
     const under = (o) => counts[o.user_id].referee < (refQuota[o.user_id] ?? 0)
     let refCandidates = freeWith('referee')
     if (!refCandidates.length && restAfterRef && prevReferee) {
-      const again = pool.find((o) => o.user_id === prevReferee && o.referee && !row[o.user_id])
+      const again = pool.find((o) => o.user_id === prevReferee && o.referee && !row[o.user_id] && !conflicted.has(o.user_id))
       if (again) {
         free.add(again.user_id)
         refCandidates = [again]
       }
     }
+    // If the night's Supervisor has a conflict on the next bout, keep someone who can cover them
+    // off refereeing this one (a Referee rests the next bout when there are more than 5 officials).
+    const next = bouts[index + 1]
+    const coverNext = restAfterRef && next && nightSupervisor && conflictedOn(next).has(nightSupervisor)
+    const covers = (o) => Boolean(coverNext && o.supervisor && o.user_id !== nightSupervisor && !conflictedOn(next).has(o.user_id))
     const referee = refCandidates.sort((a, b) =>
-      under(b) - under(a)
+      covers(a) - covers(b)
+      || under(b) - under(a)
       || counts[a.user_id].referee - counts[b.user_id].referee
       || (a.user_id === prevReferee) - (b.user_id === prevReferee)
       || tie[a.user_id] - tie[b.user_id])[0]
@@ -130,8 +147,16 @@ export function generatePlan(pool, bouts, random = Math.random) {
 
 // What's wrong with one bout's assignments. Each problem is { text, blocking }: blocking problems
 // stop the plan being approved; the rest are warnings the Chief Officials can accept.
-export function boutProblems(row, pool, prevRow) {
+// bout (optional) brings its conflicts of interest.
+export function boutProblems(row, pool, prevRow, bout) {
   const problems = []
+  const conflicted = conflictedOn(bout)
+  for (const o of pool) {
+    const role = row?.[o.user_id]
+    if (conflicted.has(o.user_id) && role && role !== 'rest') {
+      problems.push({ text: `${o.name} declared a conflict of interest but is ${planRoleLabel[role]}`, blocking: false, conflict: true })
+    }
+  }
   const holders = (role) => pool.filter((o) => row?.[o.user_id] === role)
   const refs = holders('referee')
   const sups = holders('supervisor')

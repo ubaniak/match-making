@@ -1391,6 +1391,8 @@ export const mockApi = {
         red_club_has_owner: clubHasOwner(current, b.red_club_id), blue_club_has_owner: clubHasOwner(current, b.blue_club_id),
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
         bout_officials: (b.bout_officials ?? []).filter((o) => seesOfficials || o.user_id === me).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
+        // Like migration 53: the Chief Officials and site Admins see every conflict, officials their own.
+        bout_conflicts: (b.bout_conflicts ?? []).filter((c) => canPlan(current, eventId) || c.user_id === me).map((c) => ({ ...c, user: findUser(current, c.user_id) })),
       }))
     return {
       officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId),
@@ -1694,7 +1696,8 @@ export const mockApi = {
     if (bout) resolveNotes(current, `bout:${bout.id}:%`)
     // Re-matched to a different boxer: the "needs discussion" flag goes (migration 34).
     if (bout && ![[redId, blueId], [blueId, redId]].some(([r, b]) => r === bout.red_athlete_id && b === bout.blue_athlete_id)) {
-      Object.assign(bout, { review_reason: null, review_at: null })
+      // Conflicts of interest were about the old boxers (migration 53).
+      Object.assign(bout, { review_reason: null, review_at: null, bout_conflicts: [] })
       resolveNotes(current, `review:${bout.id}`)
     }
     if (bout) {
@@ -1826,6 +1829,32 @@ export const mockApi = {
         if (m) n.action_key = `bout:${bout.id}:${flip[m[1]]}`
       }
     }
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors declare_bout_conflict (migration 53): officials working the event (either Chief Official
+  // seat, or accepted) declare a conflict of interest on a bout until it has a result.
+  async declareBoutConflict(boutId, reason) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!officialRole(current, bout.event_id) && !acceptedOfficial(current, bout.event_id)) throw new Error('Only officials working this event can declare a conflict of interest')
+    if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('Conflicts can be declared only while the event is Active')
+    if (bout.winner) throw new Error('This bout already has a result')
+    const me = currentUserId()
+    const why = reason?.trim().slice(0, 500) || null
+    bout.bout_conflicts = [...(bout.bout_conflicts ?? []).filter((c) => c.user_id !== me), { user_id: me, reason: why, created_at: now() }]
+    const chiefs = current.eventOfficials.filter((o) => o.event_id === bout.event_id).map((o) => o.user_id)
+    const who = findUser(current, me)
+    notify(current, chiefs, 'bout_conflict', `${who?.name || who?.email || 'An official'} has a conflict of interest: ${boutLabel(current, bout)}`, {
+      body: `${boutWhere(current, bout)}${why ? ` · ${why}` : ''}`, eventId: bout.event_id, boutId: bout.id, tab: 'bouts',
+    })
+    write(DATA_KEY, current)
+  },
+
+  async withdrawBoutConflict(boutId) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    bout.bout_conflicts = (bout.bout_conflicts ?? []).filter((c) => c.user_id !== currentUserId())
     write(DATA_KEY, current)
   },
 
