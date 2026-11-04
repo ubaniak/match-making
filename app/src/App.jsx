@@ -9,13 +9,13 @@ import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
-import { TestingBar } from './TestRun'
+import { TestAsMenu, TestingBar, ViewingBar } from './TestRun'
 import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
 const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
 
 export default function App() {
-  const { session, profile, can, loading } = useAuth()
+  const { session, profile, can, loading, viewing } = useAuth()
   // Bumped on every tab click so clicking the current tab again goes back to its list.
   const [visit, setVisit] = useState(0)
   // Where a link from Home (or an alert) asked to go: { eventId, tab } or { clubId }.
@@ -68,6 +68,7 @@ export default function App() {
       <Layout className="page">
         {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
         <TestingBar email={session.user.email} />
+        <ViewingBar viewing={viewing} />
         <Layout.Header className={pages.length > 4 ? 'app-header many-pages' : 'app-header'}>
           <div className="app-header-inner">
             <span className="brand">Match Making</span>
@@ -89,6 +90,7 @@ export default function App() {
               </nav>
             ) : <span style={{ flex: 1 }} />}
             <span className="who">
+              {api.mode === 'supabase' && can('users:manage') && !viewing && !api.testingFrom() && <TestAsMenu />}
               <NotificationBell onOpen={open} />
               <Text className="who-name" title={profile?.name || session.user.email}>{profile?.name || session.user.email}</Text>
               {/* The site role is a label, not a button. Everyone is a User, so only Admin and Official show. */}

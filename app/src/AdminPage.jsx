@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Input, Popconfirm, Space, Tabs } from 'antd'
-import { DeleteOutlined, EditOutlined, MailOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, EyeOutlined, MailOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
 import CsvImport from './CsvImport'
@@ -250,6 +250,21 @@ function Users() {
   const [welcome, setWelcome] = useState(null) // the last welcome email: who, and whether it went
   const [emailing, setEmailing] = useState(null) // email of the row whose welcome is sending
   const changes = useRunner(reload)
+  const [viewingBusy, setViewingBusy] = useState(null) // id of the row whose View as is starting
+
+  // View as: the whole app as this person sees it, read-only, until "Back to my account".
+  async function viewAs(user) {
+    setViewingBusy(user.id)
+    changes.setError(null)
+    try {
+      await api.startViewAs(user)
+      window.location.hash = 'home'
+      window.scrollTo(0, 0)
+    } catch (err) {
+      changes.setError(err.message)
+      setViewingBusy(null)
+    }
+  }
 
   async function addUser(event) {
     event.preventDefault()
@@ -303,6 +318,18 @@ function Users() {
               setEmailing(null)
             }}
           />
+          {api.mode === 'supabase' && u.id && (
+            <Button
+              size="small"
+              shape="circle"
+              icon={<EyeOutlined />}
+              aria-label={`View as ${u.name || u.email}`}
+              title="View as (see exactly what they see, read-only)"
+              disabled={Boolean(viewingBusy)}
+              loading={viewingBusy === u.id}
+              onClick={() => viewAs(u)}
+            />
+          )}
           <RowActions
             name={u.name || u.email}
             busy={changes.busy}
