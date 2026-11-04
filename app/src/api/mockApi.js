@@ -1502,6 +1502,16 @@ export const mockApi = {
       .sort((a, b) => a.name.localeCompare(b.name))
   },
 
+  async acceptedOfficialCounts(eventIds) {
+    const current = data()
+    return Object.fromEntries(eventIds.map((id) => [
+      id,
+      isOwnerOf(current, id) || officialRole(current, id) || acceptedOfficial(current, id)
+        ? (current.officialInvitations ?? []).filter((i) => i.event_id === id && i.status === 'accepted').length
+        : 0,
+    ]))
+  },
+
   async listMyInvitations() {
     const current = data()
     const mine = new Set(current.officials.filter((o) => o.user_id && o.user_id === currentUserId()).map((o) => o.id))

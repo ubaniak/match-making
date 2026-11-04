@@ -7,6 +7,9 @@ import { effectiveStatus, isOpen } from './events'
 // Upcoming or running events we load in detail (entries, bouts). Keeps Home quick on big sites.
 const MAX_DETAILED = 12
 
+// An Active event with fewer officials than this who accepted is shown in red on Home.
+export const MIN_OFFICIALS = 5
+
 const quietly = (promise, fallback) => promise.catch(() => fallback)
 
 // 'accepted', 'declined', 'pending' or 'expired' (pending past its respond-by date).
@@ -16,6 +19,8 @@ export function answerOf(invitation) {
 }
 
 const isLive = (event) => ['requested', 'active'].includes(effectiveStatus(event))
+// Only Active events can invite officials, so a Requested event isn't flagged yet.
+export const shortOnOfficials = (event, count) => effectiveStatus(event) === 'active' && count < MIN_OFFICIALS
 const entriesOpen = (event) => isOpen(event) && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline))
 
 export async function loadDashboard({ profile, siteAdmin }) {
@@ -44,18 +49,21 @@ export async function loadDashboard({ profile, siteAdmin }) {
     }),
   )
   const byId = Object.fromEntries(details.filter(Boolean).map((d) => [d.event.id, d]))
+  // Officials who accepted each live event. Only the site Admin, the event's Owner and its officials
+  // can see these, so other events come back as 0 and are never flagged for them.
+  const officialCounts = await quietly(api.acceptedOfficialCounts(liveEvents.map((e) => e.id)), {})
 
-  const result = { events, liveEvents, clubs, myClubs, invitations }
+  const result = { events, liveEvents, clubs, myClubs, invitations, officialCounts }
 
-  if (siteAdmin) result.admin = await loadAdmin(events, clubs)
-  if (ownedEvents.length) result.owner = ownerStats(ownedEvents, byId)
+  if (siteAdmin) result.admin = await loadAdmin(events, clubs, officialCounts)
+  if (ownedEvents.length) result.owner = ownerStats(ownedEvents, byId, officialCounts)
   if (myClubs.length) result.club = await clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId)
   const officialEvents = Object.values(byId).filter((d) => d.bouts.officials.some((o) => o.user_id === me))
   if (invitations.length || officialEvents.length) result.official = officialStats(invitations, officialEvents, me)
   return result
 }
 
-async function loadAdmin(events, clubs) {
+async function loadAdmin(events, clubs, officialCounts) {
   const [users, athletes, officials, clubInvites] = await Promise.all([
     quietly(api.listUsers(), []),
     quietly(api.listAthletes(), []),
@@ -65,7 +73,11 @@ async function loadAdmin(events, clubs) {
   const status = (s) => events.filter((e) => effectiveStatus(e) === s)
   const today = todayIso()
   const in30 = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
+  const short = status('active')
+    .filter((e) => shortOnOfficials(e, officialCounts[e.id] ?? 0))
+    .sort((a, b) => a.start_date.localeCompare(b.start_date))
   return {
+    short,
     requested: status('requested'),
     active: status('active'),
     soon: status('active').filter((e) => e.start_date >= today && e.start_date <= in30),
@@ -86,7 +98,7 @@ async function loadAdmin(events, clubs) {
 }
 
 // One row per live event I own, with what still needs doing.
-function ownerStats(ownedEvents, byId) {
+function ownerStats(ownedEvents, byId, officialCounts) {
   const rows = ownedEvents.filter(isLive).map((e) => {
     const d = byId[e.id]
     const event = d?.event ?? e
@@ -99,7 +111,8 @@ function ownerStats(ownedEvents, byId) {
       clubsIn: clubs.filter((c) => c.status === 'accepted').length,
       joinRequests: clubs.filter((c) => c.status === 'requested').length,
       lateEntries: (event.late_entries ?? []).filter((l) => l.status === 'pending').length,
-      officials: (d?.bouts.officials ?? []).length,
+      // Officials who accepted (event_officials only holds the Chief Official and Deputy).
+      officials: officialCounts[e.id] ?? 0,
       missingTimes: event.days.length === 0,
       bouts: bouts.length,
       approved: bouts.filter((b) => b.status === 'approved').length,
@@ -113,6 +126,7 @@ function ownerStats(ownedEvents, byId) {
     rows,
     totals: {
       events: rows.length,
+      short: rows.filter((r) => shortOnOfficials(r.event, r.officials)).length,
       athletes: sum('athletes'),
       requests: sum('joinRequests') + sum('lateEntries'),
       bouts: sum('bouts'),
