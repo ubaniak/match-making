@@ -19,7 +19,7 @@ import { seesClubs } from './auth'
 import { askConfirm, askText, askTypedConfirm, dash, showError } from './dialogs'
 import { minOfficials, shortOnOfficials } from './dashboard'
 import { LocationInput, LocationView } from './LocationField'
-import { boutLocation, weighInLocation, weighInSameAsBouts } from './locations'
+import { boutLocation, hasPin, mapsEnabled, weighInLocation, weighInSameAsBouts } from './locations'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner' }
@@ -350,6 +350,9 @@ function NewEventForm({ siteAdmin, onCancel, onCreated }) {
     e.preventDefault()
     setError(null)
     if (siteAdmin && !form.ownerId) return setError('Choose the event\'s Owner.')
+    // Every new event needs its bout location, pinned on Google Maps (plain text only while the site has no Maps key).
+    if (!form.location?.name?.trim()) return setError('Add the bout location.')
+    if (mapsEnabled && !hasPin(form.location)) return setError('Pick the bout location from the Google Maps search, or click the map to drop its pin.')
     if (daysBetween(form.startDate, form.endDate).length === 0) return setError('Check the dates: the end date must be on or after the start date.')
     setSaving(true)
     let id
@@ -379,8 +382,13 @@ function NewEventForm({ siteAdmin, onCancel, onCreated }) {
     <form onSubmit={save}>
       <FormCard title="Details">
         <Field label="Name"><Input required {...field('name')} placeholder="e.g. Winter Box Cup" /></Field>
-        <Field full label="Bout location" hint="optional"><LocationInput value={form.location} onChange={(v) => setField('location', v)} /></Field>
-        <FullRow><Muted>Weigh-ins are at the same place unless you change it with the day times.</Muted></FullRow>
+        <Field full label="Bout location"><LocationInput value={form.location} onChange={(v) => setField('location', v)} /></Field>
+        <FullRow>
+          <Muted>
+            {mapsEnabled ? 'Required: search for the venue and pick it, or click the map, so the pin shows where to go. ' : 'Required. '}
+            Weigh-ins are at the same place unless you change it with the day times.
+          </Muted>
+        </FullRow>
         {siteAdmin && (
           <>
             <Field label="Owner">

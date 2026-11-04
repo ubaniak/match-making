@@ -960,6 +960,7 @@ export const mockApi = {
       ownerId = currentUserId()
     }
     if (!name.trim()) throw new Error('Give the event a name')
+    if (!(location?.name ?? venue ?? '').trim()) throw new Error('Add the bout location') // Migration 54.
     if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
     if (!ownerId || !findUser(current, ownerId)) throw new Error('Pick an Owner who has signed in at least once')
     const event = {
