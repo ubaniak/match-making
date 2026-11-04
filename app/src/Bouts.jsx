@@ -4,13 +4,14 @@ import { useMemo, useState } from 'react'
 import CsvImport from './CsvImport'
 import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
+import RoleChoices from './RoleChoices'
 import { formatWeight } from './athletes'
 import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
 import { eventRoles, rolesFlags, rolesOf, rolesText } from './officialRoles'
-import { Alert, Button, Card as AntCard, Checkbox, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -902,11 +903,7 @@ function BoutOfficials({ bout, rights, open, busy, run }) {
       {picking && (
         <div className="bout-role-picker" role="group" aria-labelledby={pickerId}>
           <Text strong id={pickerId}>Which roles will you do on this bout?</Text>
-          <Checkbox.Group
-            value={roles}
-            onChange={setRoles}
-            options={myRoles.map((r) => ({ value: r.key, label: r.label }))}
-          />
+          <RoleChoices roles={myRoles} value={roles} onChange={setRoles} />
           <Space size={6} wrap>
             <Button size="small" type="primary" disabled={busy || roles.length === 0} onClick={accept}>{mine ? 'Save' : 'Accept bout'}</Button>
             <Button size="small" onClick={() => setPicking(false)}>Cancel</Button>

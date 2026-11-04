@@ -509,7 +509,8 @@ body {
   margin-bottom: 8px;
 }
 
-.role-picker .ant-checkbox-group {
+.role-choices,
+.role-choices .ant-checkbox-group {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
