@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Checkbox, Input, Popconfirm, Space, Tabs } from 'antd'
+import { Alert, Button, Checkbox, Input, Popconfirm, Space } from 'antd'
 import { DeleteOutlined, EditOutlined, EyeOutlined, MailOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
@@ -70,21 +70,13 @@ function useRunner(reload) {
   return { busy, error, setError, run }
 }
 
-// Athletes and Officials have their own top-nav pages (Bhavek, 2026-11-02).
-const tabs = [
-  ['users', 'Users'],
-  ['test-data', 'Test data'],
-]
-
+// Athletes and Officials have their own top-nav pages (Bhavek, 2026-11-02). Test data was
+// removed (Bhavek, 2026-11-04), so Admin is just Users.
 export default function AdminPage() {
-  const [tab, setTab] = useState('users')
-
   return (
     <main className="panel">
       <PageHeading title="Admin" />
-      <Tabs activeKey={tab} onChange={setTab} items={tabs.map(([key, label]) => ({ key, label }))} />
-      {tab === 'users' && <Users />}
-      {tab === 'test-data' && <TestData />}
+      <Users />
     </main>
   )
 }
@@ -106,104 +98,6 @@ export function OfficialsPage() {
       <PageHeading title="Officials" />
       <Officials />
     </main>
-  )
-}
-
-// One click to load or remove the TEST events, clubs and athletes (migration 17).
-function TestData() {
-  const [busy, setBusy] = useState(null) // 'seed', 'clear', 'seed-helpers' or 'clear-helpers' while running
-  const [message, setMessage] = useState(null)
-  const counts = (c) => `${c.events} events, ${c.clubs} clubs, ${c.athletes} athletes and ${c.accounts ?? 0} demo accounts`
-
-  async function run(kind) {
-    setBusy(kind)
-    setMessage(null)
-    try {
-      if (kind === 'seed-helpers' || kind === 'clear-helpers') {
-        const c = kind === 'seed-helpers' ? await api.seedHelperAccounts() : await api.clearHelperAccounts()
-        const n = `${c.accounts} helper login${c.accounts === 1 ? '' : 's'}`
-        setMessage({ text: kind === 'seed-helpers' ? `Added ${n}. Owners and Chief Officials are set on both TEST events.` : `Removed ${n}.` })
-        return
-      }
-      const c = kind === 'seed' ? await api.seedTestData() : await api.clearTestData()
-      const kept = c.kept_clubs
-        ? ` Kept ${c.kept_clubs} TEST club${c.kept_clubs === 1 ? '' : 's'} because ${c.kept_clubs === 1 ? 'it has' : 'they have'} athletes entered in real events. Move those athletes to another club, then clear again.`
-        : ''
-      setMessage({ text: kind === 'seed' ? `Loaded ${counts(c)}.` : `Removed ${counts(c)}.${kept}` })
-    } catch (err) {
-      setMessage({ error: true, text: err.message })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <Section title="Test data">
-      <Muted>
-        Loads two Active events: TEST One-Day Card on 1 January 3000 with 20 athletes entered, and
-        TEST Multi-Day Open from 8 to 10 January 3000 with 100. Both have the same 5 TEST clubs. Birth dates
-        are in the 2950s to 2990s so the athletes fall into every age group in year 3000. Clearing removes
-        every event, athlete, club and official whose name starts with &ldquo;TEST &rdquo;, with their bouts and results,
-        and the demo accounts. Athletes added to a TEST club are removed with it, unless they are entered in a real event.
-      </Muted>
-      <Muted>
-        It also makes seven demo accounts. Each signs in with the code <strong>123456</strong>, and no email is sent:
-      </Muted>
-      <ul>
-        <li><strong>owner1@demo.test</strong>: Owner of TEST One-Day Card</li>
-        <li><strong>owner2@demo.test</strong>: Owner of TEST Multi-Day Open</li>
-        <li><strong>official1@demo.test</strong>: a Chief Official of both TEST events</li>
-        <li><strong>official2@demo.test</strong>: a Chief Official of both TEST events</li>
-        <li><strong>event-owner@demo.test</strong>: a plain Member with no roles (Owner of both TEST events when the helper logins are removed)</li>
-        <li><strong>club-owner@demo.test</strong>: Owner of TEST North End Boxing</li>
-        <li><strong>official@demo.test</strong>: an official accepted for every day of both events (their Chief Official when the helper logins are removed)</li>
-      </ul>
-      <Muted>
-        All four officials above are accepted for every day of both events. Use the helper login buttons to add or
-        remove just the first four accounts while test data is loaded.
-      </Muted>
-      <Muted>
-        To try a role, sign in as one of these in a private window (or sign out first). Anyone who knows these
-        can sign in as them while test data is loaded, so clear it when you&rsquo;re done.
-      </Muted>
-      <Space style={{ marginTop: 16 }}>
-        <Popconfirm title="Load test data?" okText="Load" cancelText="Cancel" onConfirm={() => run('seed')}>
-          <Button type="primary" loading={busy === 'seed'} disabled={Boolean(busy)}>Load test data</Button>
-        </Popconfirm>
-        <Popconfirm
-          title="Clear test data?"
-          description="Everything named TEST and the demo accounts are deleted, including bouts and results. This can't be undone."
-          okText="Clear"
-          okButtonProps={{ danger: true }}
-          cancelText="Cancel"
-          onConfirm={() => run('clear')}
-        >
-          <Button danger loading={busy === 'clear'} disabled={Boolean(busy)}>Clear test data</Button>
-        </Popconfirm>
-      </Space>
-      <Space wrap style={{ marginTop: 12 }}>
-        <Popconfirm
-          title="Add helper logins?"
-          description="Adds owner1, owner2, official1 and official2 @demo.test to the TEST events."
-          okText="Add"
-          cancelText="Cancel"
-          onConfirm={() => run('seed-helpers')}
-        >
-          <Button loading={busy === 'seed-helpers'} disabled={Boolean(busy)}>Add helper logins</Button>
-        </Popconfirm>
-        <Popconfirm
-          title="Remove helper logins?"
-          description="Deletes the four helper accounts. The TEST events go back to event-owner@ and official@demo.test."
-          okText="Remove"
-          okButtonProps={{ danger: true }}
-          cancelText="Cancel"
-          onConfirm={() => run('clear-helpers')}
-        >
-          <Button danger loading={busy === 'clear-helpers'} disabled={Boolean(busy)}>Remove helper logins</Button>
-        </Popconfirm>
-      </Space>
-      <FormMessage message={message} />
-    </Section>
   )
 }
 

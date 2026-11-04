@@ -7,7 +7,7 @@ const eventColumns = `id, name, venue, start_date, end_date, status, status_note
 
 const POSTERS = 'event-posters'
 
-// Demo accounts from "Load test data" (migration 20) sign in with the fixed code 123456, which is
+// Demo accounts (any @demo.test email a site Admin adds, migration 46) sign in with the fixed code 123456, which is
 // really their password. Only these addresses ever try a password; nobody is emailed a code.
 const isDemoEmail = (email) => /@demo\.test$/i.test(email.trim())
 
@@ -162,7 +162,7 @@ export const supabaseApi = {
   async verifyEmailCode(email, code) {
     if (isDemoEmail(email)) {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: code })
-      if (error) throw new Error('That code is wrong, or the test data isn\'t loaded. A site Admin can load it from Admin > Test data.')
+      if (error) throw new Error('That code is wrong, or this demo account hasn\'t been added yet. A site Admin adds it on Admin > Users.')
       return
     }
     const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' })
@@ -285,24 +285,6 @@ export const supabaseApi = {
     if (!data.length) throw new Error('You can\'t delete this athlete')
   },
 
-
-  // Site Admin only: load or remove the TEST events, clubs and athletes. Each returns counts.
-  async seedTestData() {
-    return rpc('seed_test_data')
-  },
-
-  async clearTestData() {
-    return rpc('clear_test_data')
-  },
-
-  // Site Admin only: add or remove the four helper logins on the TEST events (migration 33).
-  async seedHelperAccounts() {
-    return rpc('seed_helper_accounts')
-  },
-
-  async clearHelperAccounts() {
-    return rpc('clear_helper_accounts')
-  },
 
   // Clubs, each with its members and athlete count.
   async listClubs() {

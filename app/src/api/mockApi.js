@@ -7,7 +7,6 @@ import { athleteProblems } from '../athletes'
 import { ageCategory, experienceCategory } from '../categories'
 import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
-import { testClubs, testRoster } from './testRoster'
 import { eventRoles, rolesFlags, rolesOf, rolesText } from '../officialRoles'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
@@ -379,53 +378,6 @@ function cancelAthleteBouts(current, eventId, athleteId, day, reason) {
       Object.assign(b, { status: 'cancelled', cancel_reason: reason, cancelled_at: now() })
     }
   }
-}
-
-// The four helper logins from migration 33: [user id, email, name, event they own or lead].
-const HELPER_ACCOUNTS = [
-  ['demo-owner1', 'owner1@demo.test', 'TEST Event Owner 1'],
-  ['demo-owner2', 'owner2@demo.test', 'TEST Event Owner 2'],
-  ['demo-official1', 'official1@demo.test', 'TEST Official 1'],
-  ['demo-official2', 'official2@demo.test', 'TEST Official 2'],
-]
-
-// Adds the helper logins to the TEST events, as migration 33 does. Returns how many were new.
-function addHelperAccounts(current) {
-  const one = current.events.find((e) => e.name === 'TEST One-Day Card')
-  const multi = current.events.find((e) => e.name === 'TEST Multi-Day Open')
-  if (!one || !multi) throw new Error('Load test data first. The helper logins are added to the TEST events.')
-  let made = 0
-  for (const [id, email, name] of HELPER_ACCOUNTS) {
-    if (!current.users.some((u) => u.id === id)) {
-      current.users.push({ id, email, name, state: 'Active' })
-      made += 1
-    }
-  }
-  for (const [event, owner] of [[one, 'demo-owner1'], [multi, 'demo-owner2']]) {
-    current.eventMembers = current.eventMembers.filter((m) => !(m.event_id === event.id && (m.user_id === owner || m.role === 'owner')))
-    current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
-  }
-  current.officialInvitations = current.officialInvitations ?? []
-  current.eventOfficials = current.eventOfficials ?? []
-  for (const [userId, , name] of HELPER_ACCOUNTS.filter(([id]) => id.startsWith('demo-official'))) {
-    const email = HELPER_ACCOUNTS.find(([id]) => id === userId)[1]
-    let official = current.officials.find((o) => o.user_id === userId)
-    if (!official) {
-      official = { id: crypto.randomUUID(), name, qualifications: 'Level 3 referee', invite_email: email, user_id: userId }
-      current.officials.push(official)
-    }
-    for (const event of [one, multi]) {
-      if (!current.officialInvitations.some((i) => i.event_id === event.id && i.official_id === official.id)) {
-        current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), judge: true, referee: true, supervisor: true, timekeeper: true, respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() })
-      }
-    }
-  }
-  current.eventOfficials = current.eventOfficials.filter((o) => o.event_id !== one.id && o.event_id !== multi.id)
-  current.eventOfficials.push(
-    { event_id: one.id, role: 'chief', user_id: 'demo-official1' }, { event_id: one.id, role: 'deputy', user_id: 'demo-official2' },
-    { event_id: multi.id, role: 'chief', user_id: 'demo-official2' }, { event_id: multi.id, role: 'deputy', user_id: 'demo-official1' },
-  )
-  return made
 }
 
 function requireSiteAdmin(message) {
@@ -1058,123 +1010,6 @@ export const mockApi = {
       current[key] = (current[key] ?? []).filter((x) => x.event_id !== eventId)
     }
     write(DATA_KEY, current)
-  },
-
-  // The same TEST events, clubs and athletes as migration 17's seed_test_data and clear_test_data.
-  async seedTestData() {
-    requireSiteAdmin('Only a site Admin can load test data')
-    const current = data()
-    const isTest = (x) => x.name.startsWith('TEST ')
-    if (current.events.some(isTest) || current.clubs.some(isTest) || current.athletes.some(isTest)) {
-      throw new Error('Test data is already loaded. Clear it first.')
-    }
-    const owner = currentUserId()
-    const day = (date, sessions) => ({ day: date, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions })
-    const afternoon = { starts_at: '13:00', label: 'Afternoon' }
-    const evening = { starts_at: '18:00', label: 'Evening' }
-    const base = { status: 'active', poster_path: null, entry_deadline: null, timezone: 'America/Winnipeg' }
-    const events = {
-      one: { ...base, id: crypto.randomUUID(), name: 'TEST One-Day Card', venue: 'TEST Venue, Winnipeg', start_date: '3000-01-01', end_date: '3000-01-01', days: [day('3000-01-01', [afternoon])] },
-      multi: {
-        ...base, id: crypto.randomUUID(), name: 'TEST Multi-Day Open', venue: 'TEST Arena, Winnipeg', start_date: '3000-01-08', end_date: '3000-01-10',
-        days: ['3000-01-08', '3000-01-09', '3000-01-10'].map((d) => day(d, [afternoon, evening])),
-      },
-    }
-    const clubIds = Object.fromEntries(testClubs.map((name) => [name, crypto.randomUUID()]))
-    for (const event of Object.values(events)) {
-      current.events.push(event)
-      current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
-      testClubs.forEach((name) => current.eventClubs.push({ event_id: event.id, club_id: clubIds[name], status: 'accepted', requested_at: now() }))
-    }
-    testClubs.forEach((name) => current.clubs.push({ id: clubIds[name], name }))
-    for (const [name, date_of_birth, gender, weight_kg, bouts, club, ev] of testRoster) {
-      const athlete = { id: crypto.randomUUID(), name, date_of_birth, gender, weight_kg, bouts, club_id: clubIds[club], invite_email: null, user_id: null, coach_id: null }
-      current.athletes.push(athlete)
-      current.eventAthletes.push({ event_id: events[ev].id, athlete_id: athlete.id, club_id: athlete.club_id, added_by: owner })
-    }
-    // Demo accounts, as migration 20 makes them. In demo mode, use "Viewing as" to try them.
-    const demo = [['demo-event-owner', 'event-owner@demo.test', 'TEST Demo Event Owner'], ['demo-club-owner', 'club-owner@demo.test', 'TEST Demo Club Owner'], ['demo-official', 'official@demo.test', 'TEST Demo Official']]
-    demo.forEach(([id, email, name]) => current.users.push({ id, email, name, state: 'Active' }))
-    current.eventMembers = current.eventMembers.filter((m) => !Object.values(events).some((e) => e.id === m.event_id))
-    const official = { id: crypto.randomUUID(), name: 'TEST Demo Official', qualifications: 'Level 3 referee', invite_email: 'official@demo.test', user_id: 'demo-official' }
-    current.officials.push(official)
-    current.officialInvitations = current.officialInvitations ?? []
-    current.eventOfficials = current.eventOfficials ?? []
-    for (const event of Object.values(events)) {
-      current.eventMembers.push({ event_id: event.id, user_id: 'demo-event-owner', role: 'owner' })
-      current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), judge: true, referee: true, supervisor: true, timekeeper: true, respond_by: null, invited_at: now(), responded_at: now() })
-      current.eventOfficials.push({ event_id: event.id, role: 'chief', user_id: 'demo-official' })
-    }
-    current.clubMembers.push({ club_id: clubIds['TEST North End Boxing'], user_id: 'demo-club-owner', role: 'owner', status: 'active' })
-    const helpers = addHelperAccounts(current)
-    write(DATA_KEY, current)
-    return { events: 2, clubs: testClubs.length, athletes: testRoster.length, accounts: demo.length + helpers }
-  },
-
-  async seedHelperAccounts() {
-    requireSiteAdmin('Only a site Admin can add helper logins')
-    const current = data()
-    const accounts = addHelperAccounts(current)
-    write(DATA_KEY, current)
-    return { accounts }
-  },
-
-  async clearHelperAccounts() {
-    requireSiteAdmin('Only a site Admin can remove helper logins')
-    const current = data()
-    const ids = new Set(HELPER_ACCOUNTS.map(([id]) => id))
-    const accounts = current.users.filter((u) => ids.has(u.id)).length
-    const officialIds = new Set(current.officials.filter((o) => ids.has(o.user_id)).map((o) => o.id))
-    current.officials = current.officials.filter((o) => !officialIds.has(o.id))
-    current.officialInvitations = (current.officialInvitations ?? []).filter((i) => !officialIds.has(i.official_id))
-    current.users = current.users.filter((u) => !ids.has(u.id))
-    current.eventMembers = current.eventMembers.filter((m) => !ids.has(m.user_id))
-    current.eventOfficials = (current.eventOfficials ?? []).filter((o) => !ids.has(o.user_id))
-    // Hand the TEST events back to the original demo accounts, as migration 33 does.
-    for (const event of current.events.filter((e) => e.name.startsWith('TEST '))) {
-      const member = current.eventMembers.find((m) => m.event_id === event.id && m.user_id === 'demo-event-owner')
-      if (member && !current.eventMembers.some((m) => m.event_id === event.id && m.role === 'owner')) member.role = 'owner'
-      if (current.users.some((u) => u.id === 'demo-official') && !current.eventOfficials.some((o) => o.event_id === event.id && (o.role === 'chief' || o.user_id === 'demo-official'))) {
-        current.eventOfficials.push({ event_id: event.id, role: 'chief', user_id: 'demo-official' })
-      }
-    }
-    write(DATA_KEY, current)
-    return { accounts }
-  },
-
-  async clearTestData() {
-    requireSiteAdmin('Only a site Admin can clear test data')
-    const current = data()
-    const isTest = (x) => x.name.startsWith('TEST ')
-    const eventIds = new Set(current.events.filter(isTest).map((e) => e.id))
-    const testClubIds = new Set(current.clubs.filter(isTest).map((c) => c.id))
-    // Athletes added to a TEST club go too, unless they are in a real (non-TEST) event.
-    const inRealEvent = (a) => current.eventAthletes.some((x) => x.athlete_id === a.id && !eventIds.has(x.event_id))
-      || current.bouts.some((b) => !eventIds.has(b.event_id) && (b.red_athlete_id === a.id || b.blue_athlete_id === a.id))
-    const athleteIds = new Set(current.athletes.filter((a) => isTest(a) || (testClubIds.has(a.club_id) && !inRealEvent(a))).map((a) => a.id))
-    const clubIds = new Set([...testClubIds].filter((id) => !current.athletes.some((a) => a.club_id === id && !athleteIds.has(a.id))))
-    const demoIds = new Set(current.users.filter((u) => u.email.endsWith('@demo.test')).map((u) => u.id))
-    const counts = { events: eventIds.size, clubs: clubIds.size, athletes: athleteIds.size, accounts: demoIds.size, kept_clubs: testClubIds.size - clubIds.size }
-    const keep = (list, test) => (list ?? []).filter((x) => !test(x))
-    current.events = keep(current.events, (e) => eventIds.has(e.id))
-    for (const key of ['eventMembers', 'eventClubs', 'lateEntries', 'officialInvitations', 'eventOfficials', 'weighIns']) {
-      current[key] = keep(current[key], (x) => eventIds.has(x.event_id) || athleteIds.has(x.athlete_id))
-    }
-    current.eventAthletes = keep(current.eventAthletes, (x) => eventIds.has(x.event_id) || athleteIds.has(x.athlete_id))
-    current.bouts = keep(current.bouts, (b) => eventIds.has(b.event_id) || athleteIds.has(b.red_athlete_id) || athleteIds.has(b.blue_athlete_id))
-    current.transfers = keep(current.transfers, (t) => athleteIds.has(t.athlete_id))
-    current.athletes = keep(current.athletes, (a) => athleteIds.has(a.id))
-    current.clubMembers = keep(current.clubMembers, (m) => clubIds.has(m.club_id))
-    current.clubs = keep(current.clubs, (c) => clubIds.has(c.id))
-    const officialIds = new Set(current.officials.filter(isTest).map((o) => o.id))
-    current.officialInvitations = keep(current.officialInvitations, (i) => officialIds.has(i.official_id))
-    current.officials = keep(current.officials, (o) => officialIds.has(o.id))
-    current.users = keep(current.users, (u) => demoIds.has(u.id))
-    current.eventMembers = keep(current.eventMembers, (m) => demoIds.has(m.user_id))
-    current.clubMembers = keep(current.clubMembers, (m) => demoIds.has(m.user_id))
-    current.eventOfficials = keep(current.eventOfficials, (o) => demoIds.has(o.user_id))
-    write(DATA_KEY, current)
-    return counts
   },
 
   // The old Owner comes off the event (there are no Viewers since migration 45).

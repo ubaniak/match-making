@@ -9,7 +9,7 @@ import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
-import { ViewAsMenu, ViewingBar } from './TestRun'
+import { ViewAsMenu, ViewingBar } from './ViewAs'
 import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
 const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
@@ -256,7 +256,7 @@ function Login() {
       <SignedOutCard title="Check your email">
         <form onSubmit={verifyCode} className="login-form">
           {/@demo\.test$/i.test(sentTo) ? (
-            <Paragraph><strong>{sentTo}</strong> is a demo account from the test data. Type its demo code.</Paragraph>
+            <Paragraph><strong>{sentTo}</strong> is a demo account. Type its demo code.</Paragraph>
           ) : (
             <Paragraph>We sent a sign-in code to <strong>{sentTo}</strong>. Type it below, or click the link in the same email.</Paragraph>
           )}

@@ -6,7 +6,7 @@ import { showError } from './dialogs'
 import { ErrorAlert, Text } from './ui'
 
 // The gold "View as" button in the header for site Admins: search for any real person and see
-// the app exactly as they do (read-only). Demo accounts aren't listed: sign in as them instead.
+// the app exactly as they do (read-only). Demo accounts (@demo.test) aren't listed: sign in as them with code 123456 instead.
 const accountLabels = { admin: 'Admin', member: 'Member' }
 
 export function ViewAsMenu({ myId }) {
@@ -69,7 +69,7 @@ export function ViewAsMenu({ myId }) {
         getPopupContainer={(node) => node.parentElement}
       />
       <Text type="secondary" style={{ fontSize: 15 }}>
-        Read-only: you see exactly what they see. To try the demo accounts, sign in as them (Admin &gt; Test data lists them).
+        Read-only: you see exactly what they see. To try a demo account (@demo.test), sign in as it instead.
       </Text>
     </div>
   )
