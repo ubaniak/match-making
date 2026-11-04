@@ -38,7 +38,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           # Set to true after turning on the Google provider in Supabase (see app/README.md).
           VITE_GOOGLE_SIGN_IN: ${{ vars.VITE_GOOGLE_SIGN_IN }}
-          # Google Maps for event locations (see "Google Maps" in app/README.md). Without the key, locations are plain text.
+          # Optional Google Maps for event locations (see "Maps" in app/README.md). Without it, the free OpenStreetMap map is used.
           VITE_GOOGLE_MAPS_API_KEY: ${{ vars.VITE_GOOGLE_MAPS_API_KEY }}
           VITE_GOOGLE_MAPS_MAP_ID: ${{ vars.VITE_GOOGLE_MAPS_MAP_ID }}
           # Without the Supabase values the site runs in demo mode with one demo admin login.

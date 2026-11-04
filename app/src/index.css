@@ -1292,3 +1292,20 @@ body {
   font-size: 14px;
   padding-left: 14px;
 }
+
+/* The OpenStreetMap pin (OsmLocation.jsx): gold with a navy edge, pointing at the spot. */
+.osm-pin span {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin: 2px;
+  background: var(--gold);
+  border: 3px solid var(--navy-deep);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: var(--shadow-sm);
+}
+
+.location-map .leaflet-container {
+  font: inherit;
+}

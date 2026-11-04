@@ -4,9 +4,10 @@ import { AimOutlined, EnvironmentOutlined } from '@ant-design/icons'
 import { APIProvider, AdvancedMarker, Map, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps'
 import { GOOGLE_MAPS_KEY, GOOGLE_MAPS_MAP_ID, hasPin, locationText, mapsEnabled, mapsLink } from './locations'
 import { Muted, Text } from './ui'
+import { OsmLocationInput, OsmMap } from './OsmLocation'
 
-// Google Maps for event locations, through @vis.gl/react-google-maps (Google's React wrapper). Without
-// VITE_GOOGLE_MAPS_API_KEY everything still works as plain text: no search, no map.
+// Event location maps. With VITE_GOOGLE_MAPS_API_KEY: Google Maps through @vis.gl/react-google-maps. Without it
+// (the default): the free OpenStreetMap map and search in OsmLocation.jsx, with no key, account or card.
 
 // Winnipeg, where most events are, until a place is picked.
 const START = { lat: 49.8951, lng: -97.1384 }
@@ -59,16 +60,7 @@ function FollowPin({ position }) {
 // A searchable Google Maps location with a pin. value and onChange use { name, address, lat, lng, placeId } or null.
 // Pick a place from the list to drop the pin; click the map or drag the pin to move it.
 export function LocationInput({ value, onChange, id, placeholder = 'Search for a venue or address' }) {
-  if (!mapsEnabled) {
-    return (
-      <Input
-        id={id}
-        value={value?.name ?? ''}
-        placeholder="e.g. Eastside Leisure Centre"
-        onChange={(e) => onChange(e.target.value ? { ...(value ?? {}), name: e.target.value, address: value?.address ?? '', lat: null, lng: null, placeId: '' } : null)}
-      />
-    )
-  }
+  if (!mapsEnabled) return <OsmLocationInput value={value} onChange={onChange} id={id} placeholder={placeholder} Boundary={MapBoundary} />
   return <MapsLocationInput value={value} onChange={onChange} id={id} placeholder={placeholder} />
 }
 
@@ -215,6 +207,11 @@ export function LocationView({ location, map = true, empty = '—' }) {
           Open in Google Maps
         </Button>
       </Space>
+      {map && pinned && !mapsEnabled && (
+        <MapBoundary>
+          <OsmMap position={{ lat: location.lat, lng: location.lng }} title={location.name} small />
+        </MapBoundary>
+      )}
       {map && pinned && mapsEnabled && (
         <MapBoundary>
         <div className="location-map small">

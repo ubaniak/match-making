@@ -8,6 +8,7 @@
 export const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
 // Pins (AdvancedMarker) need a Map ID. Google's DEMO_MAP_ID works until one is set up in the Cloud console.
 export const GOOGLE_MAPS_MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID'
+// true: Google Maps. false: the free OpenStreetMap map (OsmLocation.jsx). Either way places get a search and a pin.
 export const mapsEnabled = Boolean(GOOGLE_MAPS_KEY)
 
 const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? null : Number(v))

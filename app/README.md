@@ -130,25 +130,28 @@ The "Continue with Google" button stays hidden until you finish these steps. Inv
 
 Google sign-in sends no email, so it isn't affected by the email rate limit.
 
-## Google Maps
+## Maps
 
-Event locations are a Google Maps search with a map pin (migration 50, `20261104090000_event_locations.sql`). Each
-event has a bout location and a weigh-in location; the weigh-ins are at the bout location unless the Owner or a site
-Admin picks another place with the day times. Without a key, locations are typed as plain text and still get an
-"Open in Google Maps" link.
+Event locations are a place search with a map pin (migrations 50 and 54). Each event has a bout location and a
+weigh-in location; the weigh-ins are at the bout location unless the Owner or a site Admin picks another place with
+the day times. New events must have a pinned bout location.
 
-1. **Make a key.** Go to https://console.cloud.google.com/, create a project (e.g. "Match Making"), and add a billing
-   account (Google gives a monthly free allowance; a small club site stays well inside it).
-2. **Turn on two APIs.** APIs & Services > Library: enable **Maps JavaScript API** and **Places API (New)**.
-3. **Create the key.** APIs & Services > Credentials > Create credentials > API key.
-4. **Lock it down.** Edit the key: under Application restrictions pick **Websites** and add
-   `https://ubaniak.github.io/*` and `http://localhost:5173/*`; under API restrictions pick **Restrict key** and tick
-   Maps JavaScript API and Places API (New). Save. The key ships inside the page, so these limits are what keep it safe.
-5. **Give it to the site.** In GitHub, Settings > Secrets and variables > Actions > Variables, add
-   `VITE_GOOGLE_MAPS_API_KEY` with the key, then rerun the Deploy to GitHub Pages workflow. For local dev, put it in
-   `app/.env.local`.
-6. **Optional: your own Map ID.** Pins use Google's `DEMO_MAP_ID` until you make one: Google Maps Platform > Map
-   management > Create Map ID (JavaScript, Vector), then add it as the `VITE_GOOGLE_MAPS_MAP_ID` variable.
+**By default the map is free OpenStreetMap: nothing to set up.** Tiles come from tile.openstreetmap.org, drawn with
+Leaflet (react-leaflet), and the search is Photon (photon.komoot.io, OpenStreetMap data). No key, account or card.
+Both are free shared services meant for light use, which a club site is; the map shows the required OpenStreetMap
+credit. Every location also gets an "Open in Google Maps" link, which is free.
+
+**Optional: Google Maps instead.** Google's search knows more small venues but needs a billing account (it stays
+inside the free monthly allowance at this size). To switch:
+
+1. At https://console.cloud.google.com/ create a project, add billing, and enable **Maps JavaScript API** and
+   **Places API (New)**.
+2. APIs & Services > Credentials > Create credentials > API key. Restrict it to websites `https://ubaniak.github.io/*`
+   (and `http://localhost:5173/*`) and to those two APIs.
+3. In GitHub, Settings > Secrets and variables > Actions > Variables, add `VITE_GOOGLE_MAPS_API_KEY`, then rerun the
+   Deploy to GitHub Pages workflow. Optional: a Map ID from Map management as `VITE_GOOGLE_MAPS_MAP_ID`.
+
+Remove the variable and redeploy to go back to OpenStreetMap.
 
 ## Owner emails
 
