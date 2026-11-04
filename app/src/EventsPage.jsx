@@ -4,6 +4,7 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant
 import DataTable from './DataTable'
 import CsvImport from './CsvImport'
 import { api } from './api'
+import OfficialsAssignment from './OfficialsAssignment'
 import { EventBouts, EventOfficialsTab } from './Bouts'
 import { useEventBouts } from './useEventBouts'
 import { MyInvitations } from './Officials'
@@ -570,6 +571,13 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
         key: 'officials',
         label: 'Officials',
         children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} onEventChange={reload} />,
+      },
+      // Officials assignment (migration 47): the Chief Officials plan each night; officials working the
+      // event see the plan once it is approved.
+      bouts.seesBouts && (bouts.rights.siteAdmin || bouts.rights.officialRole || bouts.rights.weighInDays.length > 0) && {
+        key: 'assignment',
+        label: 'Officials assignment',
+        children: <OfficialsAssignment event={event} bouts={bouts} />,
       },
       (may.edit || siteAdmin) && {
         key: 'settings',
