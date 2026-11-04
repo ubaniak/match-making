@@ -108,6 +108,13 @@ export function categorise(athlete, eventDate) {
   }
 }
 
+// "Elite · 63.5 kg · Open": an athlete's age group, weight class and experience on the event's date.
+export function categoryText(athlete, eventDate) {
+  if (!athlete?.date_of_birth) return ''
+  const c = categorise(athlete, eventDate)
+  return [c.age?.label, c.weight?.label, c.experience?.label].filter(Boolean).join(' · ')
+}
+
 const ageOrder = (key) => {
   const index = ageCategories.findIndex((c) => c.key === key)
   return index === -1 ? -1 : index

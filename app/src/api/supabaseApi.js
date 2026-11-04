@@ -699,6 +699,45 @@ export const supabaseApi = {
     await rpc('withdraw_from_bout', { p_bout_id: boutId, p_user_id: userId || null })
   },
 
+  // ---------------------------------------------------------------------------
+  // Officials assignment plan (migration 47)
+  // ---------------------------------------------------------------------------
+
+  // One day's plan: { plan: { status, approved_at, ... } | null, slots: [{ bout_id, user_id, role }],
+  // pool: the officials working that day with level and ticked roles }. Officials who aren't a
+  // Chief Official get nothing until the plan is approved.
+  async getOfficialPlan(eventId, day) {
+    const [plan, slots, pool] = await Promise.all([
+      supabase.from('official_plans').select('status, updated_at, approved_at, approved_by, updated_by').eq('event_id', eventId).eq('day', day).maybeSingle(),
+      supabase.from('official_plan_slots').select('bout_id, user_id, role').eq('event_id', eventId).eq('day', day),
+      supabase.rpc('list_day_officials', { p_event_id: eventId, p_day: day }),
+    ])
+    const failed = plan.error || slots.error || pool.error
+    if (failed) throw failed
+    return { plan: plan.data, slots: slots.data, pool: pool.data ?? [] }
+  },
+
+  // slots: [{ bout_id, user_id, role }]; saving makes the plan a draft again.
+  async saveOfficialPlan(eventId, day, slots) {
+    await rpc('save_official_plan', { p_event_id: eventId, p_day: day, p_slots: slots })
+  },
+
+  async approveOfficialPlan(eventId, day) {
+    await rpc('approve_official_plan', { p_event_id: eventId, p_day: day })
+  },
+
+  async reopenOfficialPlan(eventId, day) {
+    await rpc('reopen_official_plan', { p_event_id: eventId, p_day: day })
+  },
+
+  // A Chief Official changes an official's event roles on the day: { judge, referee, supervisor, timekeeper }.
+  async setOfficialEventRoles(eventId, userId, roles) {
+    await rpc('set_official_event_roles', {
+      p_event_id: eventId, p_user_id: userId, p_judge: !!roles.judge, p_referee: !!roles.referee,
+      p_supervisor: !!roles.supervisor, p_timekeeper: !!roles.timekeeper,
+    })
+  },
+
   async setEventOfficial(eventId, role, userId) {
     await rpc('set_event_official', { p_event_id: eventId, p_role: role, p_user_id: userId || null })
   },
