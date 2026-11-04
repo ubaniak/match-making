@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
-import { CalendarOutlined, SafetyCertificateOutlined, UserOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
+import { CalendarOutlined, SafetyCertificateOutlined, UserOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, IdcardOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { seesClubs, useAuth } from './auth'
 import AdminPage, { AthletesPage, OfficialsPage } from './AdminPage'
@@ -12,7 +12,7 @@ import PublicEvents from './PublicEvents'
 import { ViewAsMenu, ViewingBar } from './ViewAs'
 import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
-const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
+const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, members: <IdcardOutlined /> }
 
 export default function App() {
   const { session, profile, can, loading, viewing } = useAuth()
@@ -48,7 +48,8 @@ export default function App() {
     // The site Admin gets Athletes and Officials in the top nav, not tucked under Admin (Bhavek, 2026-11-02).
     can('users:manage') && ['athletes', 'Athletes'],
     can('users:manage') && ['officials', 'Officials'],
-    can('users:manage') && ['admin', 'Admin'],
+    // Was "Admin"; renamed to Members (Bhavek, 2026-11-04).
+    can('users:manage') && ['members', 'Members'],
   ].filter(Boolean)
   const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
   // A link only counts for the user who clicked it (demo mode can switch users).
@@ -104,7 +105,7 @@ export default function App() {
           {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} clubId={linked.clubId} />}
           {current === 'athletes' && <AthletesPage key={visit} />}
           {current === 'officials' && <OfficialsPage key={visit} />}
-          {current === 'admin' && <AdminPage key={visit} />}
+          {current === 'members' && <AdminPage key={visit} />}
         </Layout.Content>
       </Layout>
     </NotificationsProvider>
@@ -114,7 +115,8 @@ export default function App() {
 // Routes live in the URL hash so GitHub Pages serves them without any server setup:
 //   (none), #upcoming  public upcoming events (the site root)
 //   #login             sign-in page
-//   #home, #events, #clubs, #athletes, #officials, #admin   the signed-in app's pages
+//   #home, #events, #clubs, #athletes, #officials, #members   the signed-in app's pages
+//                      (#admin, the old name, still opens Members)
 //                      (anything else goes to #home, e.g. a sign-in link's #access_token=…)
 function routeFor(hash) {
   const key = hash.replace(/^#\/?/, '')
@@ -123,11 +125,14 @@ function routeFor(hash) {
   return 'app'
 }
 
-const appPages = ['home', 'events', 'clubs', 'athletes', 'officials', 'admin']
+const appPages = ['home', 'events', 'clubs', 'athletes', 'officials', 'members']
+// Old hashes that still work, so saved links don't break.
+const pageAliases = { admin: 'members' }
 
 // Which app page a hash names (#events, #/clubs…), or null.
 function pageFor(hash) {
-  const key = hash.replace(/^#\/?/, '')
+  const raw = hash.replace(/^#\/?/, '')
+  const key = pageAliases[raw] ?? raw
   return appPages.includes(key) ? key : null
 }
 

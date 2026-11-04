@@ -98,7 +98,7 @@ function AdminBlock({ admin, counts, onOpen, eventLink }) {
         stats={[
           { key: 'requested', title: 'To approve', value: admin.requested.length, note: 'Events requested', onClick: events },
           { key: 'active', title: 'Active events', value: admin.active.length, note: `${admin.running.length} running today · ${admin.soon.length} in the next 30 days`, onClick: events },
-          { key: 'users', title: 'Users', value: admin.users.active, note: `${admin.users.invited} invited · ${admin.users.disabled} disabled`, onClick: () => onOpen({ page: 'admin' }) },
+          { key: 'users', title: 'Users', value: admin.users.active, note: `${admin.users.invited} invited · ${admin.users.disabled} disabled`, onClick: () => onOpen({ page: 'members' }) },
           { key: 'clubs', title: 'Clubs', value: admin.clubs, note: admin.clubInvites.length ? `${plural(admin.clubInvites.length, 'invite')} to approve` : 'No invites waiting', onClick: () => onOpen({ page: 'clubs' }) },
           { key: 'athletes', title: 'Athletes', value: admin.athletes, note: 'On the site', onClick: () => onOpen({ page: 'athletes' }) },
           { key: 'officials', title: 'Officials', value: admin.officials.total, note: `${admin.officials.signedIn} signed in`, onClick: () => onOpen({ page: 'officials' }) },
