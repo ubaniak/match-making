@@ -70,13 +70,13 @@ export function FormCard({ title, onSubmit, children, actions, compact, classNam
 
 // The label is tied to the control inside (by id), so screen readers read it out and clicking the
 // label focuses the box.
-export function Field({ label, hint, full, children }) {
+export function Field({ label, hint, full, className, children }) {
   const autoId = useId()
   const only = Children.count(children) === 1 && isValidElement(children) ? children : null
   const id = only ? only.props.id ?? `field-${autoId.replace(/:/g, '')}` : undefined
   return (
     <Form.Item
-      className={full ? 'field full' : 'field'}
+      className={['field', full && 'full', className].filter(Boolean).join(' ')}
       htmlFor={id}
       label={label && <span>{label}{hint && <Text type="secondary"> ({hint})</Text>}</span>}
     >
