@@ -1066,6 +1066,62 @@ body {
   width: min(360px, calc(100vw - 48px));
 }
 
+/* Event locations (LocationField.jsx): a Google Maps search box with the map and its pin below. */
+.location-input,
+.location-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.location-map {
+  height: 280px;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.location-map.small {
+  height: 200px;
+  max-width: 520px;
+}
+
+.location-input .ant-typography,
+.location-view .ant-typography {
+  margin-bottom: 0;
+}
+
+.place-option {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+  line-height: 1.35;
+  padding: 4px 0;
+}
+
+@media (max-width: 600px) {
+  .location-map {
+    height: 220px;
+  }
+}
+
+.location-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.public-location {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
 /* Officials assignment (migration 47): one colour per role, all dark text on a pale tint or white on
    navy, so each passes AAA contrast. The word is always shown, so colour is never the only cue. */
 .role-tag {

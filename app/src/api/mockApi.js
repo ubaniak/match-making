@@ -4,10 +4,15 @@
 // The demo admin can also preview the app as one of the sample users (see viewAs).
 
 import { athleteProblems } from '../athletes'
+import { locationColumns } from '../locations'
 import { ageCategory, experienceCategory } from '../categories'
 import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
 import { eventRoles, rolesFlags, rolesOf, rolesText } from '../officialRoles'
+
+// The location columns list_public_events returns (migration 50).
+const LOCATION_KEYS = ['venue', 'venue_address', 'venue_lat', 'venue_lng', 'venue_place_id', 'weigh_in_venue', 'weigh_in_address', 'weigh_in_lat', 'weigh_in_lng', 'weigh_in_place_id']
+const pickLocations = (event) => Object.fromEntries(LOCATION_KEYS.map((k) => [k, event[k] ?? null]))
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
 const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
@@ -65,6 +70,7 @@ function seed() {
     events: [
       {
         id: 'event-1', name: 'Eastside Winter Box Cup', venue: 'Eastside Leisure Centre',
+        venue_address: '1200 Main St, Winnipeg, MB, Canada', venue_lat: 49.9198, venue_lng: -97.1263,
         start_date: start, end_date: addDays(start, 1), status: 'active', poster_path: null, entry_deadline: null, timezone: DEFAULT_TIME_ZONE,
         days: [
           { day: start, weigh_in_start: '08:00', weigh_in_end: '10:00', sessions: [{ starts_at: '13:00', label: 'Afternoon' }, { starts_at: '18:30', label: 'Evening' }] },
@@ -947,7 +953,7 @@ export const mockApi = {
   },
 
   // Mirrors create_event.
-  async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
+  async createEvent({ name, venue, location, startDate, endDate, ownerId, timezone }) {
     const current = data()
     if (!isSiteAdmin()) {
       if (ownerId && ownerId !== currentUserId()) throw new Error('Only a site Admin can create an event for someone else')
@@ -957,7 +963,7 @@ export const mockApi = {
     if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
     if (!ownerId || !findUser(current, ownerId)) throw new Error('Pick an Owner who has signed in at least once')
     const event = {
-      id: crypto.randomUUID(), name: name.trim(), venue: venue.trim() || null,
+      id: crypto.randomUUID(), name: name.trim(), ...locationColumns(location ?? { name: venue ?? '' }, 'venue'),
       start_date: startDate, end_date: endDate, status: 'requested', poster_path: null, days: [],
       timezone: timezone || DEFAULT_TIME_ZONE,
     }
@@ -967,7 +973,7 @@ export const mockApi = {
     return event.id
   },
 
-  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline, timezone }) {
+  async updateEventDetails(eventId, { name, location, startDate, endDate, entryDeadline, timezone }) {
     const current = data()
     const event = requireEditor(current, eventId)
     if (timezone && timezone !== (event.timezone ?? DEFAULT_TIME_ZONE)) {
@@ -976,7 +982,7 @@ export const mockApi = {
     }
     if (!name.trim()) throw new Error('Give the event a name')
     if (daysBetween(startDate, endDate).length === 0) throw new Error('The end date must be on or after the start date, and within 31 days of it')
-    Object.assign(event, { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null })
+    Object.assign(event, { name: name.trim(), ...locationColumns(location, 'venue'), start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null })
     // Days that fall outside the new dates go with them.
     event.days = event.days.filter((d) => d.day >= startDate && d.day <= endDate)
     write(DATA_KEY, current)
@@ -992,6 +998,14 @@ export const mockApi = {
     const n = Number(min)
     if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error('The minimum number of officials must be between 1 and 100')
     event.min_officials = n
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors migration 50: null puts the weigh-ins back at the bout location.
+  async saveWeighInLocation(eventId, location) {
+    const current = data()
+    const event = requireEditor(current, eventId)
+    Object.assign(event, locationColumns(location, 'weigh_in'))
     write(DATA_KEY, current)
   },
 
@@ -1065,7 +1079,7 @@ export const mockApi = {
   async listPublicEvents() {
     return data().events
       .filter((e) => e.status === 'active' && e.end_date >= todayIso(e.timezone ?? DEFAULT_TIME_ZONE))
-      .map(({ id, name, venue, start_date, end_date, poster_path, days, timezone, show_public_bouts }) => ({ id, name, venue, start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE, bouts: show_public_bouts ? publicBouts(data(), id, start_date, days) : [] }))
+      .map(({ id, name, start_date, end_date, poster_path, days, timezone, show_public_bouts, ...rest }) => ({ id, name, ...pickLocations(rest), start_date, end_date, poster_path, days, timezone: timezone ?? DEFAULT_TIME_ZONE, bouts: show_public_bouts ? publicBouts(data(), id, start_date, days) : [] }))
       .sort((a, b) => a.start_date.localeCompare(b.start_date) || a.name.localeCompare(b.name))
   },
 

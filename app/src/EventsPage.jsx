@@ -18,6 +18,8 @@ import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, st
 import { seesClubs } from './auth'
 import { askConfirm, askText, askTypedConfirm, dash, showError } from './dialogs'
 import { minOfficials, shortOnOfficials } from './dashboard'
+import { LocationInput, LocationView } from './LocationField'
+import { boutLocation, weighInLocation, weighInSameAsBouts } from './locations'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner' }
@@ -339,7 +341,7 @@ function FormButtons({ saving, savingText, text, onCancel, disabled }) {
 
 // A site Admin picks the Owner; anyone else requesting an event becomes its Owner.
 function NewEventForm({ siteAdmin, onCancel, onCreated }) {
-  const [form, setField] = useEventFields({ name: '', venue: '', startDate: '', endDate: '', ownerId: '', timezone: browserTimeZone() })
+  const [form, setField] = useEventFields({ name: '', location: null, startDate: '', endDate: '', ownerId: '', timezone: browserTimeZone() })
   const users = useActiveUsers(siteAdmin)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -377,7 +379,8 @@ function NewEventForm({ siteAdmin, onCancel, onCreated }) {
     <form onSubmit={save}>
       <FormCard title="Details">
         <Field label="Name"><Input required {...field('name')} placeholder="e.g. Winter Box Cup" /></Field>
-        <Field label="Location" hint="optional"><Input {...field('venue')} /></Field>
+        <Field full label="Bout location" hint="optional"><LocationInput value={form.location} onChange={(v) => setField('location', v)} /></Field>
+        <FullRow><Muted>Weigh-ins are at the same place unless you change it with the day times.</Muted></FullRow>
         {siteAdmin && (
           <>
             <Field label="Owner">
@@ -594,7 +597,7 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
                 items={[
                   { key: 'name', label: 'Name', children: event.name },
                   { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
-                  { key: 'venue', label: 'Location', children: dash(event.venue) },
+                  { key: 'venue', label: 'Bout location', children: <LocationView location={boutLocation(event)} map={false} /> },
                   { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
                   { key: 'deadline', label: 'Entry deadline', children: <Deadline event={event} /> },
                 ]}
@@ -720,13 +723,14 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
 
   return (
     <>
+      {may.edit && <SetUpBanner event={event} onOpenSettings={() => onOpenTab('settings')} />}
       <Section title="Overview">
         <Descriptions
           size="small"
           column={{ xs: 1, sm: 2, md: 3 }}
           items={[
             { key: 'dates', label: 'Dates', children: formatDateRange(event.start_date, event.end_date) },
-            { key: 'venue', label: 'Location', children: dash(event.venue) },
+            { key: 'venue', label: 'Bout location', children: <LocationView location={boutLocation(event)} map={false} /> },
             { key: 'owner', label: 'Owner', children: personName(ownerOf(event)) },
             { key: 'role', label: 'Your role', children: siteAdmin ? <Badge>Site admin</Badge> : <RoleBadge role={may.role} /> },
             { key: 'zone', label: 'Time zone', children: zoneLabel(zoneOf(event), event.start_date) },
@@ -735,9 +739,63 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
         />
       </Section>
       <StatGrid stats={stats.map((st) => ({ ...st, onClick: st.tab ? () => onOpenTab(st.tab) : undefined }))} />
-      <Schedule event={event} canEdit={false} />
+      <Locations event={event} />
+      <Schedule event={event} canEdit={false} where={false} />
       <Poster event={event} canEdit={false} />
     </>
+  )
+}
+
+// Red banner for the Owner and site Admin while the weigh-in times or the location are missing, with a way to fix it.
+function SetUpBanner({ event, onOpenSettings }) {
+  if (!isEditableStatus(event)) return null
+  const missing = [
+    event.days.length === 0 && 'the weigh-in and bout times',
+    !boutLocation(event) && 'the location',
+  ].filter(Boolean)
+  if (!missing.length) return null
+  return (
+    <Alert
+      className="gap setup-banner"
+      type="error"
+      showIcon
+      title={`Set up ${missing.join(' and ')} for this event`}
+      description="Clubs, boxers and officials need to know when and where to weigh in. Weigh-ins are at the bout location unless you pick another place with the day times."
+      action={<Button type="primary" onClick={onOpenSettings}>Open settings</Button>}
+    />
+  )
+}
+
+// Where the bouts and the weigh-ins are, each with its map.
+function Locations({ event }) {
+  const bouts = boutLocation(event)
+  const same = weighInSameAsBouts(event)
+  if (!bouts && same) return null
+  return (
+    <Section title="Locations">
+      <div className="location-grid">
+        <div>
+          <Title level={4} style={{ marginTop: 0 }}>Bouts</Title>
+          <LocationView location={bouts} empty={<Muted>Not set yet.</Muted>} />
+        </div>
+        <div>
+          <Title level={4} style={{ marginTop: 0 }}>Weigh-ins</Title>
+          {same ? <Muted>Same place as the bouts.</Muted> : <LocationView location={weighInLocation(event)} />}
+        </div>
+      </div>
+    </Section>
+  )
+}
+
+// One line under the day times: where the weigh-ins are.
+function WeighInWhere({ event }) {
+  const loc = weighInLocation(event)
+  if (!loc) return <Muted>Weigh-in location: not set yet (it follows the bout location).</Muted>
+  return (
+    <div className="gap">
+      <Text strong>Weigh-in location{weighInSameAsBouts(event) ? ' (same as the bouts)' : ''}: </Text>
+      <LocationView location={loc} map={false} />
+    </div>
   )
 }
 
@@ -768,7 +826,7 @@ function ChangeOwner({ event, busy, run }) {
 
 function DetailsForm({ event, siteAdmin, onCancel, onSaved }) {
   const [form, setField] = useEventFields({
-    name: event.name, venue: event.venue ?? '', startDate: event.start_date, endDate: event.end_date, timezone: zoneOf(event),
+    name: event.name, location: boutLocation(event), startDate: event.start_date, endDate: event.end_date, timezone: zoneOf(event),
     deadline: isoToZonedInput(event.entry_deadline, zoneOf(event)),
   })
   const [error, setError] = useState(null)
@@ -800,7 +858,7 @@ function DetailsForm({ event, siteAdmin, onCancel, onSaved }) {
     <form onSubmit={save}>
       <FormCard title="Details">
         <Field label="Name"><Input required {...field('name')} /></Field>
-        <Field label="Location" hint="optional"><Input {...field('venue')} /></Field>
+        <Field full label="Bout location" hint="optional"><LocationInput value={form.location} onChange={(v) => setField('location', v)} /></Field>
         {siteAdmin && <TimeZoneSelect value={form.timezone} day={form.startDate} onChange={(tz) => setField('timezone', tz)} />}
       </FormCard>
       <FormCard title="Dates">
@@ -851,7 +909,7 @@ function Poster({ event, canEdit, run, busy }) {
   )
 }
 
-function Schedule({ event, canEdit, onEdit }) {
+function Schedule({ event, canEdit, onEdit, where = true }) {
   const days = daysBetween(event.start_date, event.end_date)
   const byDay = Object.fromEntries(event.days.map((d) => [d.day, d]))
   const zone = zoneOf(event)
@@ -896,9 +954,13 @@ function Schedule({ event, canEdit, onEdit }) {
       extra={canEdit && <Button onClick={onEdit}>{event.days.length ? 'Edit times' : 'Add times'}</Button>}
     >
       {event.days.length === 0 ? (
-        <Muted>No times yet. Each day with bouts needs a weigh-in and at least one bout session.</Muted>
+        <>
+          <Muted>No times yet. Each day with bouts needs a weigh-in and at least one bout session.</Muted>
+          {where && <WeighInWhere event={event} />}
+        </>
       ) : (
         <>
+          {where && <WeighInWhere event={event} />}
           <ZoneNote event={event} />
           <DataTable rowKey={(day) => day} columns={columns} dataSource={days} csvName={`${event.name} day times`} />
         </>
@@ -920,8 +982,11 @@ function TimesForm({ event, onCancel, onSaved }) {
         : { ...newDay(day), bouts: firstTime },
     )
   })
+  const [weighInSame, setWeighInSame] = useState(() => weighInSameAsBouts(event))
+  const [weighIn, setWeighIn] = useState(() => (weighInSameAsBouts(event) ? null : weighInLocation(event)))
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
+  const bouts = boutLocation(event)
 
   const problems = days.map((d) => (d.bouts ? dayProblems(d) : { weighIn: [], sessions: [] }))
   const blocked = problems.some(hasProblems)
@@ -936,8 +1001,10 @@ function TimesForm({ event, onCancel, onSaved }) {
     e.preventDefault()
     setError(null)
     if (blocked) return setError('Fix the highlighted times first.')
+    if (!weighInSame && !weighIn?.name?.trim()) return setError('Pick the weigh-in location, or tick "Same place as the bouts".')
     setSaving(true)
     try {
+      await api.saveWeighInLocation(event.id, weighInSame ? null : weighIn)
       await api.saveEventTimes(
         event.id,
         days.filter((d) => d.bouts).map(({ day, weigh_in_start, weigh_in_end, sessions }) => ({ day, weigh_in_start, weigh_in_end, sessions })),
@@ -956,6 +1023,21 @@ function TimesForm({ event, onCancel, onSaved }) {
         Each day with bouts has one weigh-in and one or more bout sessions. The weigh-in lasts at least 2 hours and ends at least
         3 hours before that day's first bout.
       </Muted>
+      <FormCard title="Weigh-in location">
+        <FullRow>
+          <Checkbox checked={weighInSame} onChange={(e) => setWeighInSame(e.target.checked)}>
+            Same place as the bouts{bouts ? ` (${bouts.name})` : ''}
+          </Checkbox>
+        </FullRow>
+        {weighInSame && !bouts && (
+          <FullRow><Text type="danger">The bout location isn't set yet. Add it with Edit details in Settings.</Text></FullRow>
+        )}
+        {!weighInSame && (
+          <Field full label="Where are the weigh-ins?">
+            <LocationInput value={weighIn} onChange={setWeighIn} placeholder="Search for the weigh-in venue or address" />
+          </Field>
+        )}
+      </FormCard>
       {days.map((d, i) => (
         <FormCard key={d.day} title={formatDay(d.day)}>
           <FullRow>
