@@ -10,6 +10,8 @@
 //     equal levels are picked at random. Judges, Referees and Timekeepers are randomised within the
 //     rules. The Supervisor is strict: only people who ticked Supervisor, never random, and the same
 //     person all night while they can do it.
+//   * Referee bouts are spread evenly: 9 bouts and 3 referees is 3 each; with 10 bouts one referee,
+//     picked at random, does an extra one.
 //   * The Chief Officials approve the plan and can change any of it by hand.
 
 export const MIN_OFFICIALS_TO_RUN = 5
@@ -47,6 +49,15 @@ export function generatePlan(pool, bouts, random = Math.random) {
   const shuffleKey = () => Object.fromEntries(pool.map((o) => [o.user_id, random()]))
   let prevReferee = null
   let prevSupervisor = null
+  // How many bouts each referee should do, worked out once the night's Supervisor is known.
+  let refQuota = null
+  const quotaFor = (supervisorId) => {
+    const refs = pool.filter((o) => o.referee && o.user_id !== supervisorId)
+    const order = refs.map((o) => [o.user_id, random()]).sort((a, b) => a[1] - b[1]).map(([id]) => id)
+    const base = refs.length ? Math.floor(bouts.length / refs.length) : 0
+    const extra = refs.length ? bouts.length % refs.length : 0
+    return Object.fromEntries(order.map((id, i) => [id, base + (i < extra ? 1 : 0)]))
+  }
 
   for (const bout of bouts) {
     const row = {}
@@ -67,11 +78,23 @@ export function generatePlan(pool, bouts, random = Math.random) {
     const supervisor = supervisors.find(leavesReferee) ?? supervisors[0]
     if (supervisor) take(supervisor, 'supervisor')
 
-    // Referee: whoever has refereed least, avoiding back-to-back, then the higher level, then random.
-    const referee = freeWith('referee').sort((a, b) =>
-      counts[a.user_id].referee - counts[b.user_id].referee
+    // Referee: someone still under their even share first, then whoever has refereed least,
+    // avoiding back-to-back, then random. If the only referee left refereed the last bout, they
+    // go again rather than leave the bout without one.
+    refQuota ??= quotaFor(supervisor?.user_id)
+    const under = (o) => counts[o.user_id].referee < (refQuota[o.user_id] ?? 0)
+    let refCandidates = freeWith('referee')
+    if (!refCandidates.length && restAfterRef && prevReferee) {
+      const again = pool.find((o) => o.user_id === prevReferee && o.referee && !row[o.user_id])
+      if (again) {
+        free.add(again.user_id)
+        refCandidates = [again]
+      }
+    }
+    const referee = refCandidates.sort((a, b) =>
+      under(b) - under(a)
+      || counts[a.user_id].referee - counts[b.user_id].referee
       || (a.user_id === prevReferee) - (b.user_id === prevReferee)
-      || (b.level ?? 0) - (a.level ?? 0)
       || tie[a.user_id] - tie[b.user_id])[0]
     if (referee) take(referee, 'referee')
 

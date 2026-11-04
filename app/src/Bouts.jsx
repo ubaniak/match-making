@@ -5,7 +5,7 @@ import CsvImport from './CsvImport'
 import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
-import { categorise } from './categories'
+import { categoryText } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
@@ -80,12 +80,6 @@ function boutCsvRows(event, data, athletes, days) {
 // 'Grace Adeyemi (Referee, Judge); Rob Turner (Timekeeper)'
 function officialsText(bout) {
   return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${rolesText(o, '')})`).join('; ')
-}
-
-function categoryText(athlete, eventDate) {
-  if (!athlete?.date_of_birth) return ''
-  const c = categorise(athlete, eventDate)
-  return [c.age?.label, c.weight?.label, c.experience?.label].filter(Boolean).join(' · ')
 }
 
 // The Bouts tab: the card, the weigh-in and results.
