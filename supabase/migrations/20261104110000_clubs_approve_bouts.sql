@@ -1,4 +1,4 @@
--- Migration 51: both corners' club owners AND the Chief Official or Deputy approve a bout.
+-- Migration 52: both corners' club owners AND the Chief Official or Deputy approve a bout.
 --
 -- Bhavek, 2026-11-04: "the official and club owners must all approve a bout". This brings back the
 -- corner approvals that migration 26 removed, while keeping migration 26's fixes:
@@ -19,7 +19,7 @@
 -- Also: either corner's club owner can withdraw their own athlete from a bout (withdraw_corner), at
 -- any time until it has a result. The bout is cancelled and everyone involved is told.
 --
--- Run after migration 50 (20261104090000_event_locations.sql).
+-- Run after migration 51 (20261104100000_hide_event_officials.sql, PR #94).
 
 -- ---------------------------------------------------------------------------
 -- Corners are back

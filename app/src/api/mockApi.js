@@ -344,10 +344,10 @@ function findBout(current, boutId) {
   return bout
 }
 
-// Mirrors club_has_owner (migration 51): an active owner who can approve for the club.
+// Mirrors club_has_owner (migration 52): an active owner who can approve for the club.
 const clubHasOwner = (current, clubId) => current.clubMembers.some((m) => m.club_id === clubId && m.role === 'owner' && m.status === 'active')
 
-// Mirrors bout_waiting_approvers (migration 51): { side, ids } for each side still to approve.
+// Mirrors bout_waiting_approvers (migration 52): { side, ids } for each side still to approve.
 // Approved sides and corners with no club owner are left out; one club in both corners is asked once.
 function waitingApprovers(current, bout) {
   const approved = new Set(bout.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
@@ -359,7 +359,7 @@ function waitingApprovers(current, bout) {
   ].filter((s) => !approved.has(s.side) && s.ids.length)
 }
 
-// Mirrors refresh_bout_status (migration 51): every corner with a club owner and a Chief Official
+// Mirrors refresh_bout_status (migration 52): every corner with a club owner and a Chief Official
 // approve; any rejection rejects.
 function refreshBoutStatus(current, bout) {
   if (bout.status === 'cancelled') return
@@ -1566,7 +1566,7 @@ export const mockApi = {
       bout = { id: crypto.randomUUID(), event_id: eventId, day, session_starts_at: null, position: nextPosition, comments: [], ...fields }
       current.bouts.push(bout)
     }
-    // The maker approves their own corner when they own that club (migration 51).
+    // The maker approves their own corner when they own that club (migration 52).
     if (boutType !== 'sparring') {
       for (const side of ['red', 'blue']) {
         if (clubRole(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) === 'owner') {
@@ -1579,7 +1579,7 @@ export const mockApi = {
     return bout.id
   },
 
-  // Mirrors request_bout_approvals (migration 51): each corner's club owners and the Chief Officials.
+  // Mirrors request_bout_approvals (migration 52): each corner's club owners and the Chief Officials.
   async requestBoutApprovals(boutIds) {
     const current = data()
     const bouts = boutIds.map((id) => findBout(current, id))
@@ -1631,7 +1631,7 @@ export const mockApi = {
     if (bout.bout_type === 'sparring') throw new Error('Sparring bouts don\'t need approval')
     if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
-    // Mirrors decide_bout (migration 51): each corner's club owners, and a Chief Official. After the
+    // Mirrors decide_bout (migration 52): each corner's club owners, and a Chief Official. After the
     // weigh-in starts a Chief Official can decide for a corner; a site Admin can decide any side.
     let override = false
     let sides = [side]
@@ -1707,7 +1707,7 @@ export const mockApi = {
       red_athlete_id: bout.blue_athlete_id, blue_athlete_id: bout.red_athlete_id,
       red_club_id: bout.blue_club_id, blue_club_id: bout.red_club_id,
     })
-    // Each corner's approval and open to-do move with its club (migration 51).
+    // Each corner's approval and open to-do move with its club (migration 52).
     if (bout.red_club_id !== bout.blue_club_id) {
       const flip = { red: 'blue', blue: 'red' }
       bout.approvals = bout.approvals.map((a) => (flip[a.side] ? { ...a, side: flip[a.side] } : a))
@@ -1719,7 +1719,7 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  // Mirrors withdraw_corner (migration 51): that corner's club owners (or a site Admin) take their
+  // Mirrors withdraw_corner (migration 52): that corner's club owners (or a site Admin) take their
   // athlete out of the bout at any time until it has a result. The bout is cancelled.
   async withdrawCorner(boutId, side, reason) {
     const current = data()

@@ -575,7 +575,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
   const recheck = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
   const newBlocks = recheck ? recheck.blocks.filter((b) => !(bout.override_blocks ?? []).includes(b)) : []
 
-  // Each corner's club owners and a Chief Official approve (migration 51). A corner whose club has
+  // Each corner's club owners and a Chief Official approve (migration 52). A corner whose club has
   // no owner doesn't need approving. After the weigh-in starts a Chief Official can decide for a
   // corner; a site Admin can decide any side. One club in both corners approves once for both.
   const clubOf = (side) => (side === 'red' ? bout.red_club_id : bout.blue_club_id)
@@ -978,7 +978,7 @@ function missingApprovers(list, rows, officials) {
     const approved = new Set(b.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
     const sameClub = Boolean(b.red_club_id) && b.red_club_id === b.blue_club_id
     for (const side of ['red', 'blue']) {
-      // Corners with no club owner don't need approving (migration 51).
+      // Corners with no club owner don't need approving (migration 52).
       if (sameClub && side === 'blue') continue
       if ((side === 'red' ? b.red_club_has_owner : b.blue_club_has_owner) === false) continue
       if (!approved.has(side) && !told.has(`${b.id}:${side}`)) {

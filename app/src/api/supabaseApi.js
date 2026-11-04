@@ -696,7 +696,7 @@ export const supabaseApi = {
   },
 
   // userId left out: the signed-in official withdraws. Otherwise the Owner, CO or Deputy removes them.
-  // A corner's club owner takes their athlete out of the bout; the bout is cancelled (migration 51).
+  // A corner's club owner takes their athlete out of the bout; the bout is cancelled (migration 52).
   async withdrawCorner(boutId, side, reason) {
     await rpc('withdraw_corner', { p_bout_id: boutId, p_side: side, p_reason: reason?.trim() || null })
   },

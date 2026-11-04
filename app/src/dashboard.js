@@ -151,7 +151,7 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
     const myBouts = bouts.bouts.filter((b) => b.status !== 'cancelled' && (myClubIds.has(b.red_club_id) || myClubIds.has(b.blue_club_id)))
     const waiting = myBouts.filter((b) => b.status === 'pending' && !b.winner)
     // Bouts waiting for my corner's answer: I own that corner's club and it hasn't decided
-    // (migration 51). One club in both corners answers once, on the red side.
+    // (migration 52). One club in both corners answers once, on the red side.
     const toApprove = waiting.filter((b) => ['red', 'blue'].some((side) => {
       const club = side === 'red' ? b.red_club_id : b.blue_club_id
       if (side === 'blue' && b.red_club_id === b.blue_club_id) return false
