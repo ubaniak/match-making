@@ -318,7 +318,7 @@ function Users() {
               setEmailing(null)
             }}
           />
-          {/* Demo accounts are for Test as (header menu), not View as (Bhavek, 2026-11-04). */}
+          {/* Demo accounts are for Test as (Admin > Test data), not View as (Bhavek, 2026-11-04). */}
           {api.mode === 'supabase' && u.id && !/@demo\.test$/i.test(u.email ?? '') && (
             <Button
               size="small"

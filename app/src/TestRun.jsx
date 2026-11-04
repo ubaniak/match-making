@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { Alert, Button, Dropdown, Select } from 'antd'
-import { DownOutlined, ExperimentOutlined, EyeOutlined, RollbackOutlined } from '@ant-design/icons'
+import { useEffect, useState } from 'react'
+import { Alert, Button, Popover, Select } from 'antd'
+import { DownOutlined, EyeOutlined, RollbackOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { showError } from './dialogs'
 import { ErrorAlert, Text } from './ui'
@@ -70,55 +70,81 @@ export function TestAsPicker({ currentEmail, placeholder = 'Pick a role to test�
   )
 }
 
-// The gold "Test as" button in the header for site Admins: become any demo role in one click,
-// or go to Admin > Users to View as a real person.
-export function TestAsMenu() {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState(null)
+// The gold "View as" button in the header for site Admins: search for any real person and see
+// the app exactly as they do (read-only). Demo roles aren't listed; they're on Admin > Test data.
+const accountLabels = { admin: 'Admin', user: 'User', official: 'Official', public: 'Public' }
 
-  async function pick({ key }) {
-    setError(null)
-    if (key === 'view-as') {
-      window.location.hash = 'admin'
-      return
-    }
+export function ViewAsMenu({ myId }) {
+  const [open, setOpen] = useState(false)
+  const [people, setPeople] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!open || people) return
+    api.listUsers()
+      .then((all) => setPeople(all.filter((u) => u.id && u.id !== myId && !/@demo\.test$/i.test(u.email ?? ''))))
+      .catch((err) => { showError(err.message); setPeople([]) })
+  }, [open, people, myId])
+
+  async function viewAs(id) {
+    const person = people.find((u) => u.id === id)
+    if (!person) return
     setBusy(true)
     try {
-      await api.actAsDemo(key)
+      await api.startViewAs(person)
+      setOpen(false)
       window.location.hash = 'home'
       window.scrollTo(0, 0)
     } catch (err) {
-      setError(err.message)
       showError(err.message)
     } finally {
       setBusy(false)
     }
   }
 
-  const items = [
-    {
-      type: 'group',
-      label: 'Sign in as a demo role (test data)',
-      children: demoAccounts.map((a) => ({
-        key: a.email,
-        label: (
+  const options = (people ?? []).map((u) => ({
+    value: u.id,
+    label: u.name || u.email,
+    search: `${u.name ?? ''} ${u.email ?? ''} ${u.role_name ?? ''}`.toLowerCase(),
+    email: u.email,
+    role: accountLabels[u.role_id] ?? u.role_name,
+  }))
+
+  const picker = (
+    <div className="view-as-picker">
+      <Select
+        aria-label="View as"
+        showSearch
+        autoFocus
+        defaultOpen
+        placeholder="Search by name or email…"
+        loading={!people || busy}
+        disabled={busy}
+        onChange={viewAs}
+        options={options}
+        filterOption={(input, option) => option.search.includes(input.toLowerCase())}
+        optionRender={(option) => (
           <div className="test-as-item">
-            <div><strong>{a.role}</strong>: {a.email}</div>
-            <Text type="secondary" style={{ fontSize: 15 }}>{a.detail}</Text>
+            <div><strong>{option.data.label}</strong>{option.data.role ? ` · ${option.data.role}` : ''}</div>
+            <Text type="secondary" style={{ fontSize: 15 }}>{option.data.email}</Text>
           </div>
-        ),
-      })),
-    },
-    { type: 'divider' },
-    { key: 'view-as', icon: <EyeOutlined />, label: 'View as a real user (Admin > Users, eye button)' },
-  ]
+        )}
+        notFoundContent={people ? 'Nobody matches' : 'Loading people…'}
+        style={{ width: '100%' }}
+        getPopupContainer={(node) => node.parentElement}
+      />
+      <Text type="secondary" style={{ fontSize: 15 }}>
+        Read-only: you see exactly what they see. To try the demo roles, use Admin &gt; Test data.
+      </Text>
+    </div>
+  )
 
   return (
-    <Dropdown menu={{ items, onClick: pick }} trigger={['click']} disabled={busy}>
-      <Button type="primary" icon={<ExperimentOutlined />} loading={busy} aria-label="Test as" title={error || 'Test the app as another role'}>
-        <span className="test-as-label">Test as</span> <DownOutlined />
+    <Popover content={picker} trigger="click" open={open} onOpenChange={setOpen} placement="bottomRight" destroyOnHidden>
+      <Button type="primary" icon={<EyeOutlined />} aria-label="View as" title="See the app as another person">
+        <span className="test-as-label">View as</span> <DownOutlined />
       </Button>
-    </Dropdown>
+    </Popover>
   )
 }
 

@@ -9,7 +9,7 @@ import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
-import { TestAsMenu, TestingBar, ViewingBar } from './TestRun'
+import { TestingBar, ViewAsMenu, ViewingBar } from './TestRun'
 import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
 const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
@@ -90,7 +90,7 @@ export default function App() {
               </nav>
             ) : <span style={{ flex: 1 }} />}
             <span className="who">
-              {api.mode === 'supabase' && can('users:manage') && !viewing && !api.testingFrom() && <TestAsMenu />}
+              {api.mode === 'supabase' && can('users:manage') && !viewing && !api.testingFrom() && <ViewAsMenu myId={session.user.id} />}
               <NotificationBell onOpen={open} />
               <Text className="who-name" title={profile?.name || session.user.email}>{profile?.name || session.user.email}</Text>
               {/* The site role is a label, not a button. Everyone is a User, so only Admin and Official show. */}
