@@ -184,6 +184,12 @@ applies them like this:
 
 - On weigh-in day, any official who accepted that day (and the CO and Deputy on every day)
   records each athlete's actual weight and a medical **pass** or **fail** with a note.
+- They also check each athlete's **date of birth** (against ID) and **experience** (number of
+  bouts): checked and correct, wrong (they type the right value and the athlete's record is fixed,
+  keeping the old value on the weigh-in), or couldn't check (Bhavek, 2026-11-04).
+- A check that couldn't be done, or a correction that moves the athlete to another age group or
+  between Novice and Open, or that makes the bout break the match rules, marks the bout
+  **Needs discussion**.
 - Every bout is checked again against the actual weights. A bout that no longer fits, or one with
   an athlete who fails the medical or doesn't show up, is marked **Needs discussion**. Nothing is
   cancelled automatically (Bhavek, 2026-11-03).

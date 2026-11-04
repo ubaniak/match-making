@@ -5,7 +5,7 @@ import CsvImport from './CsvImport'
 import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
-import { categoryText } from './categories'
+import { ageCategory, categoryText, experienceCategory } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
@@ -17,7 +17,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { askConfirm, askText } from './dialogs'
-import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
+import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
 const statusLabels = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
 const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Chief Official' }
@@ -1097,35 +1097,80 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
   const rows = ids.map((id) => athletes[id]).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
 
   async function save(athlete, form) {
+    // A correction to the date of birth or bouts fixes the athlete's record (migration 55).
+    const dobFixed = form.dobCheck === 'corrected' && form.dob && form.dob !== athlete.date_of_birth
+    const boutsFixed = form.experienceCheck === 'corrected' && form.bouts !== '' && Number(form.bouts) !== Number(athlete.bouts)
+    const fixed = { ...athlete, date_of_birth: dobFixed ? form.dob : athlete.date_of_birth, bouts: boutsFixed ? Number(form.bouts) : athlete.bouts }
     await run(async () => {
-      await api.recordWeighIn({ eventId: event.id, day, athleteId: athlete.id, weightKg: form.weight, medical: form.medical, note: form.note })
+      await api.recordWeighIn({
+        eventId: event.id, day, athleteId: athlete.id, weightKg: form.weight, medical: form.medical, note: form.note,
+        dobCheck: form.dobCheck, dob: form.dob, experienceCheck: form.experienceCheck, bouts: form.bouts,
+      })
       if (form.medical !== 'pass') return
-      // Re-check this athlete's bouts against the new weight; flag any that no longer fit for the
-      // Chief Official or Deputy to discuss (migration 35). Nothing is cancelled automatically.
+      // A correction that moves the athlete to another age group or from Novice to Open (or back)
+      // always needs discussing.
+      const corrections = []
+      if (dobFixed) {
+        const [was, now] = [ageCategory(athlete.date_of_birth, event.start_date), ageCategory(form.dob, event.start_date)]
+        const moved = was?.key !== now?.key ? `, ${was?.label ?? 'no age group'} to ${now?.label ?? 'no age group'}` : ''
+        corrections.push({ text: `${athlete.name}'s date of birth was corrected from ${athlete.date_of_birth ?? 'blank'} to ${form.dob}${moved}.`, moved: Boolean(moved) })
+      }
+      if (boutsFixed) {
+        const [was, now] = [experienceCategory(athlete.bouts), experienceCategory(form.bouts)]
+        const moved = was?.key !== now?.key ? `, ${was?.label ?? 'unknown'} to ${now?.label}` : ''
+        corrections.push({ text: `${athlete.name}'s bouts were corrected from ${athlete.bouts ?? 'blank'} to ${Number(form.bouts)}${moved}.`, moved: Boolean(moved) })
+      }
+      // Re-check this athlete's bouts against the new weight and corrected record; flag any that no
+      // longer fit for the Chief Official or Deputy to discuss (migration 35). Nothing is cancelled
+      // automatically.
       const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
       weights[athlete.id] = Number(form.weight)
+      const withFix = (id) => (id === athlete.id ? fixed : athletes[id])
       for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
-        const check = checkMatch(athletes[b.red_athlete_id], athletes[b.blue_athlete_id], event.start_date, weights)
+        const check = checkMatch(withFix(b.red_athlete_id), withFix(b.blue_athlete_id), event.start_date, weights)
         // On a Developmental bout, rule breaks an official already overrode don't count again.
         const broken = check.blocks.filter((x) => !(b.override_blocks ?? []).includes(x))
-        if (broken.length) await api.flagBoutForReview(b.id, `${athlete.name} weighed ${formatWeight(form.weight)}, so the bout no longer fits: ${broken.join(' ')}`)
+        const moved = corrections.filter((c) => c.moved)
+        if (!broken.length && !moved.length) continue
+        const reason = corrections.length
+          ? [...corrections.map((c) => c.text), broken.length ? `The bout no longer fits: ${broken.join(' ')}` : ''].filter(Boolean).join(' ')
+          : `${athlete.name} weighed ${formatWeight(form.weight)}, so the bout no longer fits: ${broken.join(' ')}`
+        await api.flagBoutForReview(b.id, reason)
       }
-    })
+    }, { entries: Boolean(dobFixed || boutsFixed) })
   }
 
-  // Each row keeps its own form; the key resets it when a new weigh-in is recorded.
+  const checksText = (w) => [
+    w.dob_check && `DOB ${checkLabels[w.dob_check].toLowerCase()}${w.dob_before ? ` (was ${w.dob_before})` : ''}`,
+    w.experience_check && `bouts ${checkLabels[w.experience_check].toLowerCase()}${w.bouts_before != null ? ` (was ${w.bouts_before})` : ''}`,
+  ].filter(Boolean).join(', ')
+
+  // Each row keeps its own form; the key resets it when a new weigh-in is recorded or the athlete's
+  // record is corrected.
   const columns = [
     { title: 'Athlete', key: 'athlete', value: (a) => `${a.name} ${a.club ?? ''}`, csv: (a) => (a.club ? `${a.name} (${a.club})` : a.name), render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
     { title: 'Entered', key: 'entered', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
+    {
+      title: 'Date of birth',
+      key: 'dob',
+      value: (a) => a.date_of_birth,
+      render: (_, a) => <>{a.date_of_birth ?? '—'}<br /><Text type="secondary">{ageCategory(a.date_of_birth, event.start_date)?.label ?? ''}</Text></>,
+    },
+    {
+      title: 'Bouts',
+      key: 'bouts',
+      value: (a) => a.bouts,
+      render: (_, a) => <>{a.bouts ?? '—'}<br /><Text type="secondary">{experienceCategory(a.bouts)?.label ?? ''}</Text></>,
+    },
     {
       title: 'Weigh-in',
       key: 'form',
       csv: (a) => {
         const w = recorded[a.id]
-        return w ? [w.weight_kg != null ? formatWeight(w.weight_kg) : '', medicalLabels[w.medical] ?? '', w.note ?? ''].filter(Boolean).join(', ') : ''
+        return w ? [w.weight_kg != null ? formatWeight(w.weight_kg) : '', medicalLabels[w.medical] ?? '', checksText(w), w.note ?? ''].filter(Boolean).join(', ') : ''
       },
       render: (_, a) => (
-        <WeighInForm key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} />
+        <WeighInForm key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}-${a.date_of_birth}-${a.bouts}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} checksText={checksText} />
       ),
     },
   ]
@@ -1138,39 +1183,93 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
       ) : (
         <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} weigh-in ${day}`} />
       )}
-      <Muted>A failed medical, a no-show or a weight that no longer fits marks the athlete's bouts "Needs discussion". Nothing is cancelled automatically: a Chief Official keeps or cancels each one, and the opponent can still weigh in.</Muted>
+      <Muted>
+        Check each athlete's weight, medical, date of birth (against their ID) and number of bouts. If the date of birth or bouts are wrong, pick "Wrong, correct it" and type the right value: the athlete's record is fixed.
+        A failed medical, a no-show, a weight that no longer fits, a date of birth or bouts that couldn't be checked, or a correction that changes the athlete's age group or Novice/Open marks the athlete's bouts "Needs discussion".
+        Nothing is cancelled automatically: a Chief Official keeps or cancels each one, and the opponent can still weigh in.
+      </Muted>
     </div>
   )
 }
 
-function WeighInForm({ athlete, recorded, busy, onSave }) {
+const checkLabels = { verified: 'Checked', corrected: 'Corrected', unverified: 'Couldn\'t check' }
+const checkOptions = [
+  { value: 'verified', label: 'Checked, correct' },
+  { value: 'corrected', label: 'Wrong, correct it' },
+  { value: 'unverified', label: 'Couldn\'t check' },
+]
+
+function WeighInForm({ athlete, recorded, busy, onSave, checksText }) {
   const [form, setForm] = useState({
     weight: recorded?.weight_kg ?? '', medical: recorded?.medical ?? 'pass', note: recorded?.note ?? '',
+    // A correction already saved shows the corrected value (now on the record); a new one starts blank.
+    dobCheck: recorded?.dob_check ?? '', dob: recorded?.dob_check === 'corrected' ? athlete.date_of_birth ?? '' : '',
+    experienceCheck: recorded?.experience_check ?? '', bouts: recorded?.experience_check === 'corrected' ? athlete.bouts ?? '' : '',
   })
+  const checking = form.medical !== 'absent'
+  // A new correction has to change something.
+  const sameDob = recorded?.dob_check !== 'corrected' && form.dob === athlete.date_of_birth
+  const sameBouts = recorded?.experience_check !== 'corrected' && form.bouts !== '' && Number(form.bouts) === Number(athlete.bouts)
+  const missing =
+    (form.medical === 'pass' && form.weight === '') ||
+    (form.medical === 'pass' && (!form.dobCheck || !form.experienceCheck)) ||
+    (checking && form.dobCheck === 'corrected' && (!form.dob || sameDob)) ||
+    (checking && form.experienceCheck === 'corrected' && (form.bouts === '' || sameBouts))
   return (
-    <Space wrap size={6}>
-      <NumberInput
-        aria-label={`${athlete.name} weight`}
-        placeholder="kg"
-        step={0.1}
-        min={10}
-        max={250}
-        style={{ width: 90 }}
-        value={form.weight}
-        onChange={(weight) => setForm({ ...form, weight })}
-      />
-      <Pick
-        aria-label={`${athlete.name} medical`}
-        style={{ width: 110 }}
-        value={form.medical}
-        onChange={(medical) => setForm({ ...form, medical })}
-        options={Object.entries(medicalLabels).map(([value, label]) => ({ value, label }))}
-      />
-      <Input aria-label={`${athlete.name} note`} placeholder="Note" style={{ width: 160 }} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-      <Button disabled={busy || (form.medical === 'pass' && form.weight === '')} onClick={() => onSave(form)}>
-        {recorded ? 'Update' : 'Save'}
-      </Button>
-      {recorded && <Text type="secondary">{medicalLabels[recorded.medical]}</Text>}
+    <Space orientation="vertical" size={6}>
+      <Space wrap size={6}>
+        <NumberInput
+          aria-label={`${athlete.name} weight`}
+          placeholder="kg"
+          step={0.1}
+          min={10}
+          max={250}
+          style={{ width: 90 }}
+          value={form.weight}
+          onChange={(weight) => setForm({ ...form, weight })}
+        />
+        <Pick
+          aria-label={`${athlete.name} medical`}
+          style={{ width: 110 }}
+          value={form.medical}
+          onChange={(medical) => setForm({ ...form, medical })}
+          options={Object.entries(medicalLabels).map(([value, label]) => ({ value, label }))}
+        />
+        <Input aria-label={`${athlete.name} note`} placeholder="Note" style={{ width: 160 }} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+      </Space>
+      {checking && (
+        <Space wrap size={6}>
+          <Pick
+            aria-label={`${athlete.name} date of birth check`}
+            placeholder="Date of birth?"
+            style={{ width: 190 }}
+            value={form.dobCheck}
+            onChange={(dobCheck) => setForm({ ...form, dobCheck })}
+            options={checkOptions}
+          />
+          {form.dobCheck === 'corrected' && (
+            <DateInput aria-label={`${athlete.name} correct date of birth`} placeholder="YYYY-MM-DD" style={{ width: 150 }} value={form.dob} onChange={(dob) => setForm({ ...form, dob })} />
+          )}
+          <Pick
+            aria-label={`${athlete.name} experience check`}
+            placeholder="Bouts?"
+            style={{ width: 190 }}
+            value={form.experienceCheck}
+            onChange={(experienceCheck) => setForm({ ...form, experienceCheck })}
+            options={checkOptions}
+          />
+          {checking && (sameDob || sameBouts) && <Text type="danger">{sameDob ? 'That date of birth' : 'That number of bouts'} is already on the record.</Text>}
+          {form.experienceCheck === 'corrected' && (
+            <NumberInput aria-label={`${athlete.name} correct bouts`} placeholder="Bouts" min={0} max={1000} step={1} style={{ width: 90 }} value={form.bouts} onChange={(bouts) => setForm({ ...form, bouts })} />
+          )}
+        </Space>
+      )}
+      <Space wrap size={6}>
+        <Button disabled={busy || missing} onClick={() => onSave(form)}>
+          {recorded ? 'Update' : 'Save'}
+        </Button>
+        {recorded && <Text type="secondary">{[medicalLabels[recorded.medical], checksText(recorded)].filter(Boolean).join(', ')}</Text>}
+      </Space>
     </Space>
   )
 }
