@@ -225,22 +225,14 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
       <ErrorAlert>{error}</ErrorAlert>
       {mine && <MyAnswer invitation={mine} event={event} busy={busy} act={act} />}
       {seesLists && <MinOfficials event={event} accepted={counts.accepted} canEdit={setsMin} busy={busy} run={run} onSaved={onEventChange} />}
-      {missing.length > 0 && (
+      {seesLists && missing.length > 0 && (
         <Muted>Every event needs two Chief Officials. They approve bouts, run the weigh-in and record results.</Muted>
       )}
       {seesLists ? (
         <Manage event={event} may={may} manager={manager} canAdd={canAdd} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
       ) : (
-        <AntCard size="small" className="form-card">
-          <Space size="large" wrap>
-            {['chief', 'deputy'].map((role) => (
-              <span key={role}>
-                <Text type="secondary">{officialLabels[role]}: </Text>
-                <Text strong>{byRole[role] ? personName(byRole[role].user) : 'Not chosen'}</Text>
-              </span>
-            ))}
-          </Space>
-        </AntCard>
+        // Bhavek: only the event's Owner, its officials and site Admins see who is officiating (migration 51).
+        <Muted>Only the event's Owner, its officials and site Admins can see who is officiating.</Muted>
       )}
     </Section>
   )
