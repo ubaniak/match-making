@@ -67,6 +67,7 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
     <>
       <FormCard
         key={round}
+        className="athlete-form"
         title={title ?? (editing ? `Edit ${athlete.name}` : 'Add an athlete')}
         onSubmit={save}
         actions={
@@ -76,11 +77,11 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
           </>
         }
       >
-        <Field label="Name"><Input required {...text('name')} /></Field>
+        <Field label="Name" className="wide"><Input required {...text('name')} /></Field>
         {!editing && (
-          <Field label="Email" hint="optional, lets them sign in"><Input type="email" {...text('email')} /></Field>
+          <Field label="Email" hint="optional, lets them sign in" className="wide"><Input type="email" {...text('email')} /></Field>
         )}
-        <Field label="Coach" hint="optional">
+        <Field label="Coach" hint="optional" className="wide">
           <Pick
             allowEmpty
             value={form.coachId}
@@ -88,16 +89,8 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
             options={[{ value: '', label: 'No coach' }, ...activeUsers.map((u) => ({ value: u.id, label: u.name || u.email }))]}
           />
         </Field>
-        <Field label="Date of birth"><DateInput value={form.dateOfBirth} onChange={set('dateOfBirth')} placeholder="YYYY-MM-DD" /></Field>
-        <Field label="Gender">
-          <Pick value={form.gender} onChange={set('gender')} placeholder="Choose…" options={genders.map(([value, label]) => ({ value, label }))} />
-        </Field>
-        <Field label="Weight" hint="saved in kg"><WeightInput value={form.weightKg} onChange={set('weightKg')} /></Field>
-        <Field label="Experience (bouts)"><NumberInput min={0} max={1000} step={1} precision={0} value={form.bouts} onChange={set('bouts')} /></Field>
-        <Field label="BC number" hint="Boxing Canada, optional"><Input {...text('bcNumber')} /></Field>
-        <Field label="Last medical" hint="optional"><DateInput value={form.lastMedical} onChange={set('lastMedical')} placeholder="YYYY-MM-DD" /></Field>
         {clubs && !editing && (
-          <Field label="Club">
+          <Field label="Club" className="wide">
             <Pick
               value={form.clubId}
               onChange={set('clubId')}
@@ -106,6 +99,14 @@ export default function AthleteForm({ athlete, clubs, clubId, users, onSave, onC
             />
           </Field>
         )}
+        <Field label="Date of birth"><DateInput value={form.dateOfBirth} onChange={set('dateOfBirth')} placeholder="YYYY-MM-DD" /></Field>
+        <Field label="Gender">
+          <Pick value={form.gender} onChange={set('gender')} placeholder="Choose…" options={genders.map(([value, label]) => ({ value, label }))} />
+        </Field>
+        <Field label="Weight" hint="saved in kg" className="weight"><WeightInput value={form.weightKg} onChange={set('weightKg')} /></Field>
+        <Field label="Experience (bouts)" className="phone-wide"><NumberInput min={0} max={1000} step={1} precision={0} value={form.bouts} onChange={set('bouts')} /></Field>
+        <Field label="BC number" hint="optional"><Input {...text('bcNumber')} /></Field>
+        <Field label="Last medical" hint="optional"><DateInput value={form.lastMedical} onChange={set('lastMedical')} placeholder="YYYY-MM-DD" /></Field>
       </FormCard>
       <FormMessage message={message} />
     </>
