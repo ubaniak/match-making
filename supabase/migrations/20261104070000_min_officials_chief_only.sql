@@ -1,9 +1,9 @@
--- Migration 47 (Bhavek, 2026-11-04): "the site CO picks the min number of officials"
+-- Migration 48 (Bhavek, 2026-11-04): "the site CO picks the min number of officials"
 --
 -- Only the event's Chief Officials (both seats; the second is stored as 'deputy') can change
 -- events.min_officials. The event's Owner and site Admins still see it but can no longer change it.
 --
--- Run after migration 46.
+-- Run after migration 47 (20261104060000_officials_assignment.sql, PR #88). If that one is not merged yet, it can run on its own after 46.
 
 create or replace function public.set_min_officials(p_event_id uuid, p_min integer)
 returns void
