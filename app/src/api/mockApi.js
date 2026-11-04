@@ -1456,6 +1456,7 @@ export const mockApi = {
         red_club: { id: b.red_club_id, name: clubName(current, b.red_club_id) },
         blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
+        bout_officials: (b.bout_officials ?? []).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
       }))
     return { officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId) }
   },
@@ -1747,6 +1748,33 @@ export const mockApi = {
       notify(current, [...clubPeopleIds(current, bout.red_club_id, true), ...clubPeopleIds(current, bout.blue_club_id, true), ...eventOwnerIds(current, bout.event_id)],
         'bout_decision', `Bout approved: ${boutLabel(current, bout)}`, { body: boutWhere(current, bout), eventId: bout.event_id, boutId: bout.id, tab: 'bouts' })
     }
+    write(DATA_KEY, current)
+  },
+
+  // Mirrors migration 41: the CO or Deputy, or an official who accepted the bout's day, takes the
+  // bout as 'judge' (Judge only) or 'ref_judge' (Ref and Judge).
+  async acceptBout(boutId, role) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    if (!['judge', 'ref_judge'].includes(role)) throw new Error('Choose Judge only or Ref and Judge')
+    if (!officialRole(current, bout.event_id) && !myDays(current, bout.event_id).includes(bout.day)) throw new Error('Only officials working this day can accept the bout')
+    if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('Bouts can be accepted only while the event is Active')
+    if (bout.status === 'cancelled') throw new Error('This bout is cancelled')
+    if (bout.winner) throw new Error('This bout already has a result')
+    const me = currentUserId()
+    bout.bout_officials = [...(bout.bout_officials ?? []).filter((o) => o.user_id !== me), { user_id: me, role, accepted_at: now() }]
+    write(DATA_KEY, current)
+  },
+
+  async withdrawFromBout(boutId, userId) {
+    const current = data()
+    const bout = findBout(current, boutId)
+    const who = userId || currentUserId()
+    if (who !== currentUserId() && !isOwnerOf(current, bout.event_id) && !isOfficial(current, bout.event_id)) {
+      throw new Error('Only the event\'s Owner, Chief Official or Deputy can take another official off a bout')
+    }
+    if (bout.winner && !isSiteAdmin()) throw new Error('This bout already has a result')
+    bout.bout_officials = (bout.bout_officials ?? []).filter((o) => o.user_id !== who)
     write(DATA_KEY, current)
   },
 

@@ -48,6 +48,7 @@ export function useEventBouts({ event, may, clubs, profile, onEntriesChange }) {
     // The CO and Deputy record every day's weigh-in; other officials only on the days they accepted.
     weighInDays: data.acceptedDays ?? [],
     officialRole,
+    me: profile?.id ?? null,
     ownedClubs,
     cardOpen: event.status === 'active',
   }

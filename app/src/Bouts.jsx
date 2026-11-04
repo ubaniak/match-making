@@ -29,6 +29,8 @@ const boutTypeHelp = {
   developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. The Chief Official or Deputy approves it.',
   sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
 }
+// How an official works a bout (migration 41). Every official who accepts a bout picks one.
+const boutRoleLabels = { judge: 'Judge only', ref_judge: 'Ref and Judge' }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
 const personName = (user) => (user ? user.name || user.email : '—')
 // Emailed links go straight to sign-in and then Home; the bare root is the public page.
@@ -53,7 +55,7 @@ function boutCsvRows(event, data, athletes, days) {
     'Day', 'Bout', 'Session', 'Type', 'Status',
     'Red boxer', 'Red club', 'Red category', 'Red weigh-in',
     'Blue boxer', 'Blue club', 'Blue category', 'Blue weigh-in',
-    'Winner', 'Method', 'Result note', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason', 'Needs discussion',
+    'Winner', 'Method', 'Result note', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason', 'Needs discussion', 'Officials',
   ]
   const rows = days.flatMap((day) => {
     const dayBouts = data.bouts.filter((b) => b.day === day)
@@ -69,10 +71,16 @@ function boutCsvRows(event, data, athletes, days) {
         decision ? `${decision.decision === 'approved' ? 'Approved' : 'Rejected'}${decision.note ? `: ${decision.note}` : ''}` : '',
         b.approval_requested_at ? sentLabel(b.approval_requested_at) : '',
         b.override_reason ?? '', b.cancel_reason ?? '', b.status === 'cancelled' ? '' : b.review_reason ?? '',
+        officialsText(b),
       ]
     })
   })
   return [header, ...rows]
+}
+
+// 'Grace Adeyemi (Ref and Judge); Rob Turner (Judge only)'
+function officialsText(bout) {
+  return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${boutRoleLabels[o.role] ?? o.role})`).join('; ')
 }
 
 function categoryText(athlete, eventDate) {
@@ -748,6 +756,8 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
       </ul>
       )}
 
+      <BoutOfficials bout={bout} rights={rights} open={open} busy={busy} run={run} />
+
       <Space size={4} wrap>
         <Button size="small" onClick={() => setShowComments(!showComments)}>
           {showComments ? 'Hide comments' : `Comments (${bout.comments.length})`}
@@ -828,6 +838,78 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
         </div>
       )}
     </AntCard>
+  )
+}
+
+// Who is working the bout and as what (migration 41). An official working the bout's day accepts it
+// and must choose Judge only or Ref and Judge; they can change that or withdraw until the result.
+// The Owner, Chief Official or Deputy can take an official off the bout.
+function BoutOfficials({ bout, rights, open, busy, run }) {
+  const list = bout.bout_officials ?? []
+  const mine = list.find((o) => o.user_id === rights.me)
+  const canWork = open && bout.status !== 'cancelled' && Boolean(rights.me)
+    && (Boolean(rights.officialRole) || rights.weighInDays.includes(bout.day))
+  const canRemove = open && (rights.owner || rights.official)
+  const [picking, setPicking] = useState(false)
+  const [role, setRole] = useState(null)
+  const pickerId = `bout-role-${bout.id}`
+
+  function startPicking() {
+    setRole(mine?.role ?? null)
+    setPicking(true)
+  }
+
+  async function accept() {
+    if (!role) return
+    if (await run(() => api.acceptBout(bout.id, role))) setPicking(false)
+  }
+
+  async function remove(o) {
+    const self = o.user_id === rights.me
+    const what = self ? 'Withdraw from this bout?' : `Take ${personName(o.user)} off this bout?`
+    if (await askConfirm(what, { okText: self ? 'Withdraw' : 'Remove', danger: true })) {
+      run(() => api.withdrawFromBout(bout.id, self ? null : o.user_id))
+    }
+  }
+
+  if (list.length === 0 && !canWork) return null
+  return (
+    <div className="bout-officials">
+      <Space size={6} wrap>
+        <span>Officials:</span>
+        {list.length === 0 && <Text type="secondary">None yet</Text>}
+        {list.map((o) => (
+          <span key={o.user_id} className="bout-official">
+            <Badge strong={o.role === 'ref_judge'}>{personName(o.user)}{o.user_id === rights.me ? ' (you)' : ''} · {boutRoleLabels[o.role] ?? o.role}</Badge>
+            {(canRemove || (o.user_id === rights.me && open)) && (
+              <Button size="small" type="link" danger disabled={busy} onClick={() => remove(o)}>
+                {o.user_id === rights.me ? 'Withdraw' : 'Remove'}
+              </Button>
+            )}
+          </span>
+        ))}
+        {canWork && !picking && (
+          <Button size="small" type={mine ? 'default' : 'primary'} disabled={busy} onClick={startPicking}>
+            {mine ? 'Change my role' : 'Accept bout'}
+          </Button>
+        )}
+      </Space>
+      {picking && (
+        <div className="bout-role-picker" role="group" aria-labelledby={pickerId}>
+          <Text strong id={pickerId}>How will you work this bout?</Text>
+          <Radio.Group
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            options={Object.entries(boutRoleLabels).map(([value, label]) => ({ value, label }))}
+          />
+          <Space size={6} wrap>
+            <Button size="small" type="primary" disabled={busy || !role} onClick={accept}>{mine ? 'Save' : 'Accept bout'}</Button>
+            <Button size="small" onClick={() => setPicking(false)}>Cancel</Button>
+          </Space>
+          {!role && <Muted>Choose Judge only or Ref and Judge to accept.</Muted>}
+        </div>
+      )}
+    </div>
   )
 }
 
