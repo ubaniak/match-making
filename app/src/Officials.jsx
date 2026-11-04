@@ -29,10 +29,12 @@ function answerOf(invitation, timeZone) {
   return invitation.status
 }
 
-// Can the official still answer? Until the event's first day, and not after an unanswered respond-by date.
+// Can the official still answer? While the event is Active, up to its last day (Bhavek: "If I am
+// invited as an official I should be allowed to accept or decline"), and not after an unanswered
+// respond-by date.
 function canAnswer(invitation, event) {
-  if (effectiveStatus(event) !== 'active' || event.status !== 'active') return false
-  if (todayIso(event.timezone) >= event.start_date) return false
+  if (event.status !== 'active') return false
+  if (todayIso(event.timezone) > event.end_date) return false
   return answerOf(invitation, event.timezone) !== 'expired'
 }
 
@@ -231,8 +233,9 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
       )}
       {seesLists ? (
         <Manage event={event} may={may} manager={manager} canAdd={canAdd} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
-      ) : (
+      ) : !mine && (
         // Bhavek: only the event's Owner, its officials and site Admins see who is officiating (migration 51).
+        // Someone invited sees their invitation above instead; the list shows once they accept.
         <Muted>Only the event's Owner, its officials and site Admins can see who is officiating.</Muted>
       )}
     </Section>
@@ -299,7 +302,8 @@ function MyAnswer({ invitation, event, busy, act }) {
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
         )}
       </Space>
-      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or one of the event's officials to invite you again.</Muted>}
+      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or one of the event's Chief Officials to invite you again.</Muted>}
+      {!open && answer !== 'expired' && <Muted>This event is over or no longer running, so this invitation can't be changed.</Muted>}
     </AntCard>
   )
 }
