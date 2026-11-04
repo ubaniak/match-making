@@ -312,7 +312,7 @@ body {
   margin-top: 4px;
 }
 
-/* Add/edit athlete: boxes in rows. Four columns on wide screens (name, email, coach and club take
+/* Add/edit athlete: boxes in rows. Four columns on wide screens (name, email and club take
    two each; the short boxes one each), two on tablets and phones, one on very small phones.
    "dense" fills gaps, so the layout stays tidy when the email or club box isn't shown. */
 .athlete-form .form-grid {

@@ -308,7 +308,6 @@ function Athletes() {
     { title: 'BC number', key: 'bc', value: (a) => a.bc_number, render: (_, a) => dash(a.bc_number) },
     { title: 'Last medical', key: 'medical', value: (a) => a.last_medical, render: (_, a) => dash(a.last_medical) },
     { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
-    { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
     { title: 'Login', key: 'login', value: (a) => a.invite_email, render: (_, a) => <LoginBadge record={a} /> },
     {
       key: 'actions',
@@ -329,15 +328,11 @@ function Athletes() {
     <section>
       <AthleteForm
         clubs={clubs}
-        users={users}
         onSave={async (record) => {
           await api.addAthlete(record)
           reload()
         }}
       />
-      {users.some((u) => !u.id) && (
-        <Muted>Invited users appear in the coach list once they've signed in.</Muted>
-      )}
       <Muted>Clubs are made on the Clubs page. To move an athlete to another club, open their club there.</Muted>
       <CsvImport
         kind="athletes"
@@ -359,7 +354,6 @@ function Athletes() {
           <AthleteForm
             key={editing.id}
             athlete={editing}
-            users={users}
             onCancel={() => setEditing(null)}
             onSave={async (record) => {
               await api.updateAthlete(editing.id, record)
