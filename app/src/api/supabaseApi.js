@@ -1,4 +1,4 @@
-import { supabase } from '../supabase'
+import { supabase, VIEW_AS_READ_ONLY } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
 const eventColumns = `id, name, venue, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts, min_officials,
@@ -32,6 +32,31 @@ function writeTestingFrom(value) {
   }
 }
 
+// "View as" (migration 44): the person a site Admin is viewing as, { id, name, email }, kept here so
+// the page knows straight away after a reload. The database holds the real switch; checkViewAs()
+// brings this copy in line with it.
+const VIEW_AS_KEY = 'mm-viewing-as'
+function readViewAs() {
+  try {
+    return JSON.parse(window.localStorage.getItem(VIEW_AS_KEY)) || null
+  } catch {
+    return null
+  }
+}
+function writeViewAs(value) {
+  try {
+    if (value) window.localStorage.setItem(VIEW_AS_KEY, JSON.stringify(value))
+    else window.localStorage.removeItem(VIEW_AS_KEY)
+  } catch {
+    // Storage blocked: checkViewAs() still finds the session on the next load.
+  }
+  window.dispatchEvent(new Event('mm-view-as'))
+}
+// Emails and poster files don't go through the database, so View as blocks them here.
+function refuseWhileViewing() {
+  if (readViewAs()) throw new Error(VIEW_AS_READ_ONLY)
+}
+
 // Only invited people can sign in (migration 34). Supabase reports a refused new account as
 // "Database error saving new user"; this is what we tell the person instead.
 export const notInvitedMessage = (email) =>
@@ -46,6 +71,7 @@ async function rpc(name, args) {
 
 // Calls the send-event-email Edge Function and turns its error into a readable message.
 async function invokeEmail(body) {
+  refuseWhileViewing()
   const { error } = await supabase.functions.invoke('send-event-email', { body })
   if (error) {
     let message = error.message
@@ -95,11 +121,42 @@ export const supabaseApi = {
     return () => data.subscription.unsubscribe()
   },
 
-  signOut() {
-    // Signing out while testing ends the test run too; the Admin signs in again as usual.
+  async signOut() {
+    // Signing out ends View as and the test run too; the Admin signs in again as usual.
+    if (readViewAs()) await this.stopViewAs().catch(() => {})
     const testing = readTestingFrom()
     writeTestingFrom(null)
     return supabase.auth.signOut(testing ? { scope: 'local' } : undefined)
+  },
+
+  // Who the site Admin is viewing as ({ id, name, email }), or null.
+  viewingAs() {
+    return readViewAs()
+  },
+
+  // Site Admins only: see the app exactly as this person does, read-only. Nobody signs in as them.
+  async startViewAs(user) {
+    await rpc('start_view_as', { p_target_id: user.id })
+    writeViewAs({ id: user.id, name: user.name || user.email, email: user.email })
+  },
+
+  async stopViewAs() {
+    try {
+      await rpc('stop_view_as')
+    } finally {
+      writeViewAs(null)
+    }
+  },
+
+  // Asks the database who (if anyone) the signed-in Admin is viewing as, and keeps the copy in step.
+  async checkViewAs() {
+    const { data, error } = await supabase.rpc('my_view_as')
+    if (error) return readViewAs() // migration 44 not run yet: nothing to check against
+    const row = data?.[0]
+    const current = readViewAs()
+    const next = row ? { id: row.id, name: row.name || row.email, email: row.email } : null
+    if (next?.id !== current?.id) writeViewAs(next)
+    return next
   },
 
   // Who started the test run ({ email, name }), or null when nobody is acting as a demo account.
@@ -550,6 +607,7 @@ export const supabaseApi = {
   },
 
   async uploadPoster(eventId, file, oldPath) {
+    refuseWhileViewing()
     const extension = (file.name.split('.').pop() || 'img').toLowerCase().replace(/[^a-z0-9]/g, '')
     const path = `${eventId}/${Date.now()}.${extension}`
     const upload = await supabase.storage.from(POSTERS).upload(path, file, { contentType: file.type })
@@ -560,6 +618,7 @@ export const supabaseApi = {
   },
 
   async removePoster(eventId, path) {
+    refuseWhileViewing()
     const { error } = await supabase.from('events').update({ poster_path: null }).eq('id', eventId)
     if (error) throw error
     if (path) await supabase.storage.from(POSTERS).remove([path])
@@ -575,6 +634,7 @@ export const supabaseApi = {
   // Site Admin only. The database removes the event's bouts, entries, officials, weigh-ins
   // and alerts with it (every table points at events with on delete cascade).
   async deleteEvent(eventId) {
+    refuseWhileViewing()
     const { data, error } = await supabase.from('events').delete().eq('id', eventId).select('id')
     if (error) throw error
     // Row security turns a refused delete into "nothing deleted" rather than an error.

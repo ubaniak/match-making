@@ -1058,3 +1058,15 @@ body {
   align-items: center;
   gap: 8px;
 }
+
+/* Header "Test as" menu: each demo role on two lines. */
+.test-as-item {
+  padding: 4px 0;
+  line-height: 1.35;
+}
+
+@media (max-width: 600px) {
+  .app-header .test-as-label {
+    display: none;
+  }
+}

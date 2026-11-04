@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Alert, Button, Select } from 'antd'
-import { RollbackOutlined } from '@ant-design/icons'
+import { Alert, Button, Dropdown, Select } from 'antd'
+import { DownOutlined, ExperimentOutlined, EyeOutlined, RollbackOutlined } from '@ant-design/icons'
 import { api } from './api'
+import { showError } from './dialogs'
 import { ErrorAlert, Text } from './ui'
 
 // The demo accounts "Load test data" makes (migrations 20 and 33), one per role to test.
@@ -69,6 +70,58 @@ export function TestAsPicker({ currentEmail, placeholder = 'Pick a role to testâ
   )
 }
 
+// The gold "Test as" button in the header for site Admins: become any demo role in one click,
+// or go to Admin > Users to View as a real person.
+export function TestAsMenu() {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function pick({ key }) {
+    setError(null)
+    if (key === 'view-as') {
+      window.location.hash = 'admin'
+      return
+    }
+    setBusy(true)
+    try {
+      await api.actAsDemo(key)
+      window.location.hash = 'home'
+      window.scrollTo(0, 0)
+    } catch (err) {
+      setError(err.message)
+      showError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const items = [
+    {
+      type: 'group',
+      label: 'Sign in as a demo role (test data)',
+      children: demoAccounts.map((a) => ({
+        key: a.email,
+        label: (
+          <div className="test-as-item">
+            <div><strong>{a.role}</strong>: {a.email}</div>
+            <Text type="secondary" style={{ fontSize: 15 }}>{a.detail}</Text>
+          </div>
+        ),
+      })),
+    },
+    { type: 'divider' },
+    { key: 'view-as', icon: <EyeOutlined />, label: 'View as a real user (Admin > Users, eye button)' },
+  ]
+
+  return (
+    <Dropdown menu={{ items, onClick: pick }} trigger={['click']} disabled={busy}>
+      <Button type="primary" icon={<ExperimentOutlined />} loading={busy} aria-label="Test as" title={error || 'Test the app as another role'}>
+        <span className="test-as-label">Test as</span> <DownOutlined />
+      </Button>
+    </Dropdown>
+  )
+}
+
 // Shown on every page while a site Admin is acting as a demo account: who you are now,
 // a quick switch to another role, and the way back to your own account.
 export function TestingBar({ email }) {
@@ -107,6 +160,45 @@ export function TestingBar({ email }) {
           <Button icon={<RollbackOutlined />} loading={busy} onClick={back}>
             Back to {from.name || from.email}
           </Button>
+          <ErrorAlert>{error}</ErrorAlert>
+        </>
+      }
+    />
+  )
+}
+
+// Shown on every page while a site Admin uses View as: whose view this is, that it's read-only,
+// and the way back.
+export function ViewingBar({ viewing }) {
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  if (!viewing) return null
+
+  async function back() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.stopViewAs()
+      window.location.hash = 'admin'
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Alert
+      className="demo-banner testing-bar"
+      type="warning"
+      title={
+        <>
+          <span>
+            <EyeOutlined /> <strong>Viewing as {viewing.name}</strong>
+            {viewing.email && viewing.email !== viewing.name ? ` (${viewing.email})` : ''}.
+            {' '}Read-only: you see exactly what they see, but nothing can be changed.
+          </span>
+          <Button icon={<RollbackOutlined />} loading={busy} onClick={back}>Back to my account</Button>
           <ErrorAlert>{error}</ErrorAlert>
         </>
       }
