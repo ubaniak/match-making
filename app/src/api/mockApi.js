@@ -1355,8 +1355,11 @@ export const mockApi = {
   async getBouts(eventId) {
     const current = data()
     if (!canSee(current, eventId)) return { officials: [], bouts: [], weighIns: [], acceptedDays: [] }
+    // Like migration 51: only the site Admin, the Owner and the event's officials see who officiates.
+    const me = currentUserId()
+    const seesOfficials = isOwnerOf(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
     const officials = current.eventOfficials
-      .filter((o) => o.event_id === eventId)
+      .filter((o) => o.event_id === eventId && (seesOfficials || o.user_id === me))
       .map((o) => ({ ...o, user: findUser(current, o.user_id) }))
     if (!canSeeEntries(current, eventId)) return { officials, bouts: [], weighIns: [], acceptedDays: [] }
     const athlete = (id) => {
@@ -1373,7 +1376,7 @@ export const mockApi = {
         blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
         red_club_has_owner: clubHasOwner(current, b.red_club_id), blue_club_has_owner: clubHasOwner(current, b.blue_club_id),
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
-        bout_officials: (b.bout_officials ?? []).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
+        bout_officials: (b.bout_officials ?? []).filter((o) => seesOfficials || o.user_id === me).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
       }))
     return {
       officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId),

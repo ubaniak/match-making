@@ -697,14 +697,15 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
 
   // Same rule as Home: an Active event with fewer accepted than its minimum (events.min_officials) shows red, with the
   // shortfall in words. Only people who can see the official lists get the count, so only they see it.
-  const seesLists = siteAdmin || may.role === 'owner' || invitations.length > 0
+  // Everyone else doesn't see the event's officials at all (migration 51), so gets no Officials card.
+  const seesLists = siteAdmin || may.role === 'owner' || invitations.length > 0 || bouts.rights?.officialRole != null
   const short = seesLists && shortOnOfficials(event, accepted)
   const officialsNote = invitations.length
     ? `${waiting} waiting · ${declined} declined`
     : `Chief Officials: ${roleName('chief')} · ${roleName('deputy')}`
 
   const stats = [
-    {
+    seesLists && {
       key: 'officials', tab: 'officials', title: 'Officials',
       value: invitations.length ? accepted : officials.length,
       note: short ? `Short: ${accepted} of ${minOfficials(event)} officials accepted · ${officialsNote}` : officialsNote,
