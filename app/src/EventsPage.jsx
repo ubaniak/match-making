@@ -16,7 +16,7 @@ import {
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
 import { isOfficial } from './auth'
 import { askConfirm, askText, askTypedConfirm, dash, showError } from './dialogs'
-import { MIN_OFFICIALS, shortOnOfficials } from './dashboard'
+import { minOfficials, shortOnOfficials } from './dashboard'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
 const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
@@ -571,7 +571,7 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
       {
         key: 'officials',
         label: 'Officials',
-        children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} />,
+        children: <EventOfficialsTab event={event} may={may} profile={profile} bouts={bouts} onEventChange={reload} />,
       },
       (may.edit || siteAdmin) && {
         key: 'settings',
@@ -690,7 +690,7 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
   const days = daysBetween(event.start_date, event.end_date).length
   const weighIns = (data?.weighIns ?? []).length
 
-  // Same rule as Home: an Active event with fewer than MIN_OFFICIALS accepted shows red, with the
+  // Same rule as Home: an Active event with fewer accepted than its minimum (events.min_officials) shows red, with the
   // shortfall in words. Only people who can see the official lists get the count, so only they see it.
   const seesLists = siteAdmin || may.role === 'owner' || invitations.length > 0
   const short = seesLists && shortOnOfficials(event, accepted)
@@ -702,7 +702,7 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
     {
       key: 'officials', tab: 'officials', title: 'Officials',
       value: invitations.length ? accepted : officials.length,
-      note: short ? `Short: ${accepted} of ${MIN_OFFICIALS} officials accepted · ${officialsNote}` : officialsNote,
+      note: short ? `Short: ${accepted} of ${minOfficials(event)} officials accepted · ${officialsNote}` : officialsNote,
       danger: short,
     },
     may.seesClubs && { key: 'clubs', tab: 'clubs', title: 'Clubs', value: clubsIn, note: asking ? `${asking} asking to join` : 'Clubs in the event' },

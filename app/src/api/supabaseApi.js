@@ -1,7 +1,7 @@
 import { supabase } from '../supabase'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts,
+const eventColumns = `id, name, venue, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts, min_officials,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
@@ -520,6 +520,11 @@ export const supabaseApi = {
       .select('id')
     if (error) throw error
     if (!data.length) throw new Error('You can\'t change this event')
+  },
+
+  // How many accepted officials the event needs (migration 43). CO, Deputy, Owner or site Admin.
+  async setMinOfficials(eventId, min) {
+    await rpc('set_min_officials', { p_event_id: eventId, p_min: min })
   },
 
   // days: [{ day, weigh_in_start, weigh_in_end, sessions: [{ starts_at, label }] }], one per day with bouts.

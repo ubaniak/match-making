@@ -2,12 +2,13 @@
 // on the event invites officials, officials accept or decline, and the CO and Deputy are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card as AntCard, Checkbox, Input, Modal, Segmented, Select, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Checkbox, Input, InputNumber, Modal, Segmented, Select, Space, Tabs, Tag } from 'antd'
 import CsvImport from './CsvImport'
 import DataTable from './DataTable'
 import { api } from './api'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
+import { minOfficials, shortOnOfficials } from './dashboard'
 import { eventRoles, rolesFlags, rolesOf, rolesText } from './officialRoles'
 import { askConfirm } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
@@ -173,7 +174,7 @@ function useAcceptDays() {
 // ---------------------------------------------------------------------------
 
 // officials: the event's CO and Deputy rows. run: the bouts section's runner, which reloads them.
-export function EventOfficials({ event, may, profile, officials, busy, run }) {
+export function EventOfficials({ event, may, profile, officials, busy, run, onEventChange }) {
   // Site Admins and the event's Chief Official invite and remove officials (Bhavek: "admins and
   // the nominated CO"). Only a site Admin picks the Chief Official; either picks the Deputy.
   const chief = officials.some((o) => o.role === 'chief' && o.user_id === profile?.id)
@@ -187,6 +188,8 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
   const canAdd = manager || onEvent
   // The event's Owner sees the lists too, but can't change them.
   const seesLists = canAdd || may.role === 'owner'
+  // Bhavek: "the CO and deputy can set the min number of officials" (the Owner and site Admins can too).
+  const setsMin = may.siteAdmin || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id && ['chief', 'deputy'].includes(o.role))
   const listsByRole = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
 
   const load = useCallback(async () => {
@@ -222,6 +225,7 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
     <Section title={seesLists ? `Officials (${counts.accepted})` : 'Officials'} extra={extra}>
       <ErrorAlert>{error}</ErrorAlert>
       {mine && <MyAnswer invitation={mine} event={event} busy={busy} act={act} />}
+      {seesLists && <MinOfficials event={event} accepted={counts.accepted} canEdit={setsMin} busy={busy} run={run} onSaved={onEventChange} />}
       {missing.length > 0 && (
         <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
       )}
@@ -240,6 +244,37 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
         </AntCard>
       )}
     </Section>
+  )
+}
+
+// How many accepted officials the event needs. Below it, the event shows red on Home and its Dashboard.
+function MinOfficials({ event, accepted, canEdit, busy, run, onSaved }) {
+  const min = minOfficials(event)
+  const [value, setValue] = useState(min)
+  useEffect(() => setValue(min), [min])
+  const short = shortOnOfficials(event, accepted)
+  const status = short
+    ? <Tag className="badge short-officials">{`Short: ${accepted} of ${min} officials`}</Tag>
+    : <Text type="secondary">{`${accepted} of ${min} accepted`}</Text>
+  if (!canEdit) {
+    return (
+      <Space wrap>
+        <Text>Minimum officials: <Text strong>{min}</Text></Text>
+        {status}
+      </Space>
+    )
+  }
+  const save = () => run(async () => {
+    await api.setMinOfficials(event.id, value)
+    await onSaved?.()
+  })
+  return (
+    <Space wrap align="center">
+      <label htmlFor={`min-officials-${event.id}`}><Text>Minimum officials</Text></label>
+      <InputNumber id={`min-officials-${event.id}`} min={1} max={100} precision={0} value={value} onChange={(v) => setValue(v)} style={{ width: 96 }} />
+      <Button onClick={save} loading={busy} disabled={!value || value === min}>Save</Button>
+      {status}
+    </Space>
   )
 }
 

@@ -6,7 +6,7 @@ import { ReloadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import HomeAlerts from './HomeAlerts'
 import { formatDateRange } from './dates'
-import { loadDashboard, MIN_OFFICIALS, shortOnOfficials } from './dashboard'
+import { loadDashboard, minOfficials, shortOnOfficials } from './dashboard'
 import { effectiveStatus, statusLabels } from './events'
 import { Badge, ErrorAlert, Muted, PageHeading, Section, StatGrid, Text } from './ui'
 
@@ -14,12 +14,13 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 const officialRoles = { chief: 'Chief Official', deputy: 'Deputy' }
 
-// Officials who accepted an event. Active events with fewer than MIN_OFFICIALS get a red tag that
+// Officials who accepted an event. Active events with fewer than their minimum get a red tag that
 // says so in words, and their table row turns red (rowClassName below), so colour is never the only cue.
 function OfficialsCount({ event, count }) {
   if (count == null || effectiveStatus(event) !== 'active') return '—'
   if (!shortOnOfficials(event, count)) return count
-  return <Tag className="badge short-officials" title={`Needs at least ${MIN_OFFICIALS} officials`}>{`Short: ${count} of ${MIN_OFFICIALS} officials`}</Tag>
+  const min = minOfficials(event)
+  return <Tag className="badge short-officials" title={`Needs at least ${min} officials`}>{`Short: ${count} of ${min} officials`}</Tag>
 }
 const officialsSortValue = (event, count) => (effectiveStatus(event) === 'active' ? count ?? 0 : null)
 const shortRow = (event, count) => (count != null && shortOnOfficials(event, count) ? 'row-short-officials' : '')
@@ -64,7 +65,7 @@ export default function HomePage({ profile, can, onOpen }) {
       {data?.admin && <AdminBlock admin={data.admin} counts={data.officialCounts} onOpen={onOpen} eventLink={eventLink} />}
       {data?.owner && <OwnerBlock owner={data.owner} onOpen={onOpen} eventLink={eventLink} />}
       {data?.club && <ClubBlock club={data.club} onOpen={onOpen} eventLink={eventLink} />}
-      {data?.official && <OfficialBlock official={data.official} counts={data.officialCounts} onOpen={onOpen} eventLink={eventLink} />}
+      {data?.official && <OfficialBlock official={data.official} counts={data.officialCounts} events={data.events} onOpen={onOpen} eventLink={eventLink} />}
 
       {data && roles.length === 0 && (
         <Section title="Getting started">
@@ -104,7 +105,7 @@ function AdminBlock({ admin, counts, onOpen, eventLink }) {
           { key: 'clubs', title: 'Clubs', value: admin.clubs, note: admin.clubInvites.length ? `${plural(admin.clubInvites.length, 'invite')} to approve` : 'No invites waiting', onClick: () => onOpen({ page: 'clubs' }) },
           { key: 'athletes', title: 'Athletes', value: admin.athletes, note: 'On the site', onClick: () => onOpen({ page: 'athletes' }) },
           { key: 'officials', title: 'Officials', value: admin.officials.total, note: `${admin.officials.signedIn} signed in`, onClick: () => onOpen({ page: 'officials' }) },
-          { key: 'short', title: 'Short on officials', value: admin.short.length, note: `Active events with fewer than ${MIN_OFFICIALS} officials`, danger: admin.short.length > 0, onClick: events },
+          { key: 'short', title: 'Short on officials', value: admin.short.length, note: 'Active events below their minimum', danger: admin.short.length > 0, onClick: events },
         ]}
       />
       {admin.requested.length > 0 && (
@@ -146,7 +147,7 @@ function OwnerBlock({ owner, onOpen, eventLink }) {
           { key: 'athletes', title: 'Athletes', value: totals.athletes, note: 'Entered', onClick: go('clubs') },
           { key: 'requests', title: 'Requests', value: totals.requests, note: 'Clubs and late entries to answer', onClick: go('clubs') },
           { key: 'bouts', title: 'Bouts', value: totals.bouts, note: `${totals.approved} approved · ${totals.pending} waiting`, onClick: go('bouts') },
-          totals.short > 0 && { key: 'short', title: 'Short on officials', value: totals.short, note: `Fewer than ${MIN_OFFICIALS} officials accepted`, danger: true, onClick: go('officials') },
+          totals.short > 0 && { key: 'short', title: 'Short on officials', value: totals.short, note: 'Fewer officials accepted than the event needs', danger: true, onClick: go('officials') },
         ]}
       />
       {rows.length > 0 ? <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={rows} rowClassName={(r) => shortRow(r.event, r.officials)} csvName="Your events" /> : <Muted>None of your events are running right now.</Muted>}
@@ -193,10 +194,14 @@ function ClubBlock({ club, onOpen, eventLink }) {
 
 const clubState = (r) => (r.joined ? 'In' : r.invited ? 'Invited: accept on the Clubs tab' : r.asked ? 'Asked to join' : 'Not in')
 
-function OfficialBlock({ official, counts, onOpen, eventLink }) {
+function OfficialBlock({ official, counts, events, onOpen, eventLink }) {
   const { next } = official
   const roleOf = (i) => officialRoles[official.roles.find((r) => r.event.id === i.event_id)?.role] ?? 'Official'
-  const eventOf = (i) => ({ status: i.event_status, start_date: i.start_date, end_date: i.end_date, timezone: i.timezone })
+  // The invitation carries the event's dates and status; its minimum comes from the events list.
+  const eventOf = (i) => ({
+    min_officials: events.find((e) => e.id === i.event_id)?.min_officials,
+    status: i.event_status, start_date: i.start_date, end_date: i.end_date, timezone: i.timezone,
+  })
   const toApproveOf = (i) => official.roles.find((r) => r.event.id === i.event_id)?.toApprove.length ?? 0
   const columns = [
     { title: 'Event', key: 'name', value: (i) => i.event_name, render: (_, i) => eventLink({ id: i.event_id, name: i.event_name }, 'officials') },
