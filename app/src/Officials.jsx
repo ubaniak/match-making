@@ -189,8 +189,9 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
   const canAdd = manager || onEvent
   // The event's Owner sees the lists too, but can't change them.
   const seesLists = canAdd || may.role === 'owner'
-  // Bhavek: "the CO and deputy can set the min number of officials" (the Owner and site Admins can too).
-  const setsMin = may.siteAdmin || may.role === 'owner' || chief
+  // Bhavek: "the site CO picks the min number of officials". Only the event's Chief Officials (both
+  // seats); the Owner and site Admins see it read-only.
+  const setsMin = chief
   const listsByRole = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
 
   const load = useCallback(async () => {

@@ -517,7 +517,7 @@ export const supabaseApi = {
     if (!data.length) throw new Error('You can\'t change this event')
   },
 
-  // How many accepted officials the event needs (migration 43). CO, Deputy, Owner or site Admin.
+  // How many accepted officials the event needs (migration 43). Only the event's Chief Officials (migration 48).
   async setMinOfficials(eventId, min) {
     await rpc('set_min_officials', { p_event_id: eventId, p_min: min })
   },
