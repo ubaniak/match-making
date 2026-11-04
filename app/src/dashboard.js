@@ -7,8 +7,10 @@ import { effectiveStatus, isOpen } from './events'
 // Upcoming or running events we load in detail (entries, bouts). Keeps Home quick on big sites.
 const MAX_DETAILED = 12
 
-// An Active event with fewer officials than this who accepted is shown in red on Home.
+// How many accepted officials an event needs unless its CO, Deputy, Owner or a site Admin changes
+// it (events.min_officials). An Active event with fewer shows red on Home and its Dashboard tab.
 export const MIN_OFFICIALS = 5
+export const minOfficials = (event) => event?.min_officials ?? MIN_OFFICIALS
 
 const quietly = (promise, fallback) => promise.catch(() => fallback)
 
@@ -20,7 +22,7 @@ export function answerOf(invitation) {
 
 const isLive = (event) => ['requested', 'active'].includes(effectiveStatus(event))
 // Only Active events can invite officials, so a Requested event isn't flagged yet.
-export const shortOnOfficials = (event, count) => effectiveStatus(event) === 'active' && count < MIN_OFFICIALS
+export const shortOnOfficials = (event, count) => effectiveStatus(event) === 'active' && count < minOfficials(event)
 const entriesOpen = (event) => isOpen(event) && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline))
 
 export async function loadDashboard({ profile, siteAdmin }) {

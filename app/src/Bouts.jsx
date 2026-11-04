@@ -129,12 +129,12 @@ function PublicBoutsSwitch({ event, data, publish }) {
 }
 
 // The Officials tab.
-export function EventOfficialsTab({ event, may, profile, bouts }) {
+export function EventOfficialsTab({ event, may, profile, bouts, onEventChange }) {
   if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
   return (
     <>
       <ErrorAlert>{bouts.error}</ErrorAlert>
-      <EventOfficials event={event} may={may} profile={profile} officials={bouts.data.officials} busy={bouts.busy} run={bouts.run} />
+      <EventOfficials event={event} may={may} profile={profile} officials={bouts.data.officials} busy={bouts.busy} run={bouts.run} onEventChange={onEventChange} />
     </>
   )
 }
