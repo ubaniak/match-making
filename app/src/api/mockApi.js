@@ -1943,7 +1943,7 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
+  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note, dobCheck, dob, experienceCheck, bouts }) {
     const current = data()
     const event = findEvent(current, eventId)
     if (!isOfficial(current, eventId) && !myDays(current, eventId).includes(day)) throw new Error('Only the event\'s officials record the weigh-in, on the days they officiate')
@@ -1951,12 +1951,36 @@ export const mockApi = {
     if (!current.eventAthletes.some((ea) => ea.event_id === eventId && ea.athlete_id === athleteId)) throw new Error('That athlete isn\'t entered in the event')
     const kg = weightKg === '' || weightKg == null ? null : Number(weightKg)
     if (medical === 'pass' && kg == null) throw new Error('Enter the athlete\'s weight')
+    // Date of birth and experience checks (migration 55). A correction fixes the athlete's record.
+    const dobChk = medical === 'absent' ? null : dobCheck || null
+    const expChk = medical === 'absent' ? null : experienceCheck || null
+    if (medical === 'pass' && (!dobChk || !expChk)) throw new Error('Check the athlete\'s date of birth and experience')
+    if (dobChk === 'corrected' && !dob) throw new Error('Enter the athlete\'s correct date of birth')
+    const boutCount = bouts === '' || bouts == null ? null : Number(bouts)
+    if (expChk === 'corrected' && (boutCount == null || boutCount < 0)) throw new Error('Enter the athlete\'s correct number of bouts')
+    const athlete = current.athletes.find((a) => a.id === athleteId)
+    const previous = current.weighIns.find((w) => w.event_id === eventId && w.day === day && w.athlete_id === athleteId)
+    let dobBefore = dobChk === 'corrected' ? previous?.dob_before ?? null : null
+    let boutsBefore = expChk === 'corrected' ? previous?.bouts_before ?? null : null
+    if (dobChk === 'corrected' && athlete.date_of_birth !== dob) {
+      dobBefore = athlete.date_of_birth
+      athlete.date_of_birth = dob
+    }
+    if (expChk === 'corrected' && athlete.bouts !== boutCount) {
+      boutsBefore = athlete.bouts
+      athlete.bouts = boutCount
+    }
     current.weighIns = current.weighIns.filter((w) => !(w.event_id === eventId && w.day === day && w.athlete_id === athleteId))
-    current.weighIns.push({ event_id: eventId, day, athlete_id: athleteId, weight_kg: kg, medical, note: note?.trim() || null, recorded_at: now() })
+    current.weighIns.push({
+      event_id: eventId, day, athlete_id: athleteId, weight_kg: kg, medical, note: note?.trim() || null,
+      dob_check: dobChk, dob_before: dobBefore, experience_check: expChk, bouts_before: boutsBefore, recorded_at: now(),
+    })
     // A failed medical or a no-show flags the bouts for the officials to discuss; it doesn't cancel them (migration 34).
     const name = athleteName(current, athleteId) ?? 'A boxer'
     if (medical === 'fail') flagAthleteBouts(current, eventId, athleteId, day, `${name} failed the medical.`)
     if (medical === 'absent') flagAthleteBouts(current, eventId, athleteId, day, `${name} didn't come to the weigh-in.`)
+    if (dobChk === 'unverified') flagAthleteBouts(current, eventId, athleteId, day, `${name}'s date of birth couldn't be checked.`)
+    if (expChk === 'unverified') flagAthleteBouts(current, eventId, athleteId, day, `${name}'s experience couldn't be checked.`)
     write(DATA_KEY, current)
   },
 

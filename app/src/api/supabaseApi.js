@@ -690,7 +690,7 @@ export const supabaseApi = {
         bout_conflicts(user_id, reason, created_at, user:profiles!bout_conflicts_user_id_fkey(id, name, email)),
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
-      supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
+      supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, dob_check, dob_before, experience_check, bouts_before, recorded_at').eq('event_id', eventId),
       supabase.rpc('my_official_days', { p_event_id: eventId }),
       supabase.rpc('my_event_roles', { p_event_id: eventId }).maybeSingle(),
     ])
@@ -926,10 +926,15 @@ export const supabaseApi = {
     await rpc('add_bout_comment', { p_bout_id: boutId, p_body: body })
   },
 
-  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
+  // dobCheck / experienceCheck: 'verified', 'corrected' or 'unverified' (migration 55). A correction
+  // (dob, bouts) also fixes the athlete's record.
+  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note, dobCheck, dob, experienceCheck, bouts }) {
     await rpc('record_weigh_in', {
       p_event_id: eventId, p_day: day, p_athlete_id: athleteId,
       p_weight_kg: weightKg === '' || weightKg == null ? null : Number(weightKg), p_medical: medical, p_note: note || null,
+      p_dob_check: dobCheck || null, p_dob: dobCheck === 'corrected' ? dob || null : null,
+      p_experience_check: experienceCheck || null,
+      p_bouts: experienceCheck === 'corrected' && bouts !== '' && bouts != null ? Number(bouts) : null,
     })
   },
 
