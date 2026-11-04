@@ -4,13 +4,12 @@ import { useMemo, useState } from 'react'
 import CsvImport from './CsvImport'
 import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
-import RoleChoices from './RoleChoices'
 import { formatWeight } from './athletes'
 import { categoryText } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
-import { eventRoles, rolesFlags, rolesOf, rolesText } from './officialRoles'
+import { rolesText } from './officialRoles'
 import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
@@ -782,7 +781,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
       </ul>
       )}
 
-      <BoutOfficials bout={bout} rights={rights} open={open} busy={busy} run={run} />
+      <BoutOfficials bout={bout} rights={rights} />
 
       <Space size={4} wrap>
         <Button size="small" onClick={() => setShowComments(!showComments)}>
@@ -868,76 +867,21 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
   )
 }
 
-// Who is working the bout and as what (migrations 41, 42). An official working the bout's day
-// accepts it and ticks which of their event roles they do on it (Referee, Judge, Supervisor,
-// Timekeeper); they can change that or withdraw until the result. The Owner, Chief Official or
-// Deputy can take an official off the bout.
-function BoutOfficials({ bout, rights, open, busy, run }) {
+// Who is working the bout and as what. The Chief Official plans this on the Officials assignment
+// tab; approving the plan copies it onto the bouts, so cards only show it read-only.
+function BoutOfficials({ bout, rights }) {
   const list = bout.bout_officials ?? []
-  const mine = list.find((o) => o.user_id === rights.me)
-  const myRoles = eventRoles.filter((r) => rights.myRoles?.[r.key])
-  const worksDay = Boolean(rights.me) && (Boolean(rights.officialRole) || rights.weighInDays.includes(bout.day))
-  const canWork = open && bout.status !== 'cancelled' && worksDay
-  const canRemove = open && (rights.owner || rights.official)
-  const [picking, setPicking] = useState(false)
-  const [roles, setRoles] = useState([])
-  const pickerId = `bout-role-${bout.id}`
-
-  function startPicking() {
-    // A new pick starts with every event role ticked when there's only one to choose.
-    setRoles(mine ? rolesOf(mine).filter((k) => rights.myRoles?.[k]) : myRoles.length === 1 ? [myRoles[0].key] : [])
-    setPicking(true)
-  }
-
-  async function accept() {
-    if (roles.length === 0) return
-    if (await run(() => api.acceptBout(bout.id, rolesFlags(roles)))) setPicking(false)
-  }
-
-  async function remove(o) {
-    const self = o.user_id === rights.me
-    const what = self ? 'Withdraw from this bout?' : `Take ${personName(o.user)} off this bout?`
-    if (await askConfirm(what, { okText: self ? 'Withdraw' : 'Remove', danger: true })) {
-      run(() => api.withdrawFromBout(bout.id, self ? null : o.user_id))
-    }
-  }
-
-  if (list.length === 0 && !canWork) return null
+  if (list.length === 0) return null
   return (
     <div className="bout-officials">
       <Space size={6} wrap>
         <span>Officials:</span>
-        {list.length === 0 && <Text type="secondary">None yet</Text>}
         {list.map((o) => (
           <span key={o.user_id} className="bout-official">
             <Badge strong={Boolean(o.referee)}>{personName(o.user)}{o.user_id === rights.me ? ' (you)' : ''} · {rolesText(o, 'No role')}</Badge>
-            {(canRemove || (o.user_id === rights.me && open)) && (
-              <Button size="small" type="link" danger disabled={busy} onClick={() => remove(o)}>
-                {o.user_id === rights.me ? 'Withdraw' : 'Remove'}
-              </Button>
-            )}
           </span>
         ))}
-        {canWork && !picking && myRoles.length > 0 && (
-          <Button size="small" type={mine ? 'default' : 'primary'} disabled={busy} onClick={startPicking}>
-            {mine ? 'Change my roles' : 'Accept bout'}
-          </Button>
-        )}
       </Space>
-      {canWork && myRoles.length === 0 && (
-        <Muted>Pick your event roles on the Officials tab before you accept bouts.</Muted>
-      )}
-      {picking && (
-        <div className="bout-role-picker" role="group" aria-labelledby={pickerId}>
-          <Text strong id={pickerId}>Which roles will you do on this bout?</Text>
-          <RoleChoices roles={myRoles} value={roles} onChange={setRoles} />
-          <Space size={6} wrap>
-            <Button size="small" type="primary" disabled={busy || roles.length === 0} onClick={accept}>{mine ? 'Save' : 'Accept bout'}</Button>
-            <Button size="small" onClick={() => setPicking(false)}>Cancel</Button>
-          </Space>
-          {roles.length === 0 && <Muted>Pick at least one role to accept.</Muted>}
-        </div>
-      )}
     </div>
   )
 }
