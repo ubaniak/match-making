@@ -1,7 +1,9 @@
 import { supabase, VIEW_AS_READ_ONLY } from '../supabase'
+import { locationColumns } from '../locations'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts, min_officials,
+const eventColumns = `id, name, venue, venue_address, venue_lat, venue_lng, venue_place_id,
+  weigh_in_venue, weigh_in_address, weigh_in_lat, weigh_in_lng, weigh_in_place_id, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts, min_officials,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
@@ -479,23 +481,30 @@ export const supabaseApi = {
   },
 
   // Site Admins only. The event starts as Requested. Returns its id.
-  async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
+  // location: { name, address, lat, lng, placeId } from the Google Maps field (migration 49); a CSV import passes venue text.
+  async createEvent({ name, venue, location, startDate, endDate, ownerId, timezone }) {
     const { data, error } = await supabase.rpc('create_event', {
       p_name: name,
-      p_venue: venue,
+      p_venue: location?.name ?? venue,
       p_start_date: startDate,
       p_end_date: endDate,
       p_owner_id: ownerId || null,
       p_timezone: timezone,
     })
     if (error) throw error
+    // The address and pin go on straight after; the new event's Owner or the site Admin can edit it.
+    if (location?.name) {
+      const { error: pinError } = await supabase.from('events').update(locationColumns(location, 'venue')).eq('id', data)
+      if (pinError) throw pinError
+    }
     return data
   },
 
   // entryDeadline: an ISO timestamp, or '' for no deadline.
   // timezone: only a site Admin can change it; leave it out to keep the current one.
-  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline, timezone }) {
-    const changes = { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null }
+  // location: the bout location, { name, address, lat, lng, placeId } or null.
+  async updateEventDetails(eventId, { name, location, startDate, endDate, entryDeadline, timezone }) {
+    const changes = { name: name.trim(), ...locationColumns(location, 'venue'), start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null }
     if (timezone) changes.timezone = timezone
     const { data, error } = await supabase
       .from('events')
@@ -511,6 +520,17 @@ export const supabaseApi = {
     const { data, error } = await supabase
       .from('events')
       .update({ show_public_bouts: show })
+      .eq('id', eventId)
+      .select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('You can\'t change this event')
+  },
+
+  // Where the weigh-ins are (migration 49). null means at the bout location. Owner or site Admin (the update policy checks).
+  async saveWeighInLocation(eventId, location) {
+    const { data, error } = await supabase
+      .from('events')
+      .update(locationColumns(location, 'weigh_in'))
       .eq('id', eventId)
       .select('id')
     if (error) throw error

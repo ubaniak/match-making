@@ -130,6 +130,26 @@ The "Continue with Google" button stays hidden until you finish these steps. Inv
 
 Google sign-in sends no email, so it isn't affected by the email rate limit.
 
+## Google Maps
+
+Event locations are a Google Maps search with a map pin (migration 49, `20261104080000_event_locations.sql`). Each
+event has a bout location and a weigh-in location; the weigh-ins are at the bout location unless the Owner or a site
+Admin picks another place with the day times. Without a key, locations are typed as plain text and still get an
+"Open in Google Maps" link.
+
+1. **Make a key.** Go to https://console.cloud.google.com/, create a project (e.g. "Match Making"), and add a billing
+   account (Google gives a monthly free allowance; a small club site stays well inside it).
+2. **Turn on two APIs.** APIs & Services > Library: enable **Maps JavaScript API** and **Places API (New)**.
+3. **Create the key.** APIs & Services > Credentials > Create credentials > API key.
+4. **Lock it down.** Edit the key: under Application restrictions pick **Websites** and add
+   `https://ubaniak.github.io/*` and `http://localhost:5173/*`; under API restrictions pick **Restrict key** and tick
+   Maps JavaScript API and Places API (New). Save. The key ships inside the page, so these limits are what keep it safe.
+5. **Give it to the site.** In GitHub, Settings > Secrets and variables > Actions > Variables, add
+   `VITE_GOOGLE_MAPS_API_KEY` with the key, then rerun the Deploy to GitHub Pages workflow. For local dev, put it in
+   `app/.env.local`.
+6. **Optional: your own Map ID.** Pins use Google's `DEMO_MAP_ID` until you make one: Google Maps Platform > Map
+   management > Create Map ID (JavaScript, Vector), then add it as the `VITE_GOOGLE_MAPS_MAP_ID` variable.
+
 ## Owner emails
 
 When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations, sends bouts for approval, and welcomes people a site Admin adds on Admin > Users or an official adds to an event (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:

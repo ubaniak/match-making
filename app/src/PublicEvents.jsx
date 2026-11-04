@@ -3,6 +3,8 @@ import { Button, Card, Layout } from 'antd'
 import { HomeOutlined, LoginOutlined } from '@ant-design/icons'
 import { api } from './api'
 import { DEFAULT_TIME_ZONE, browserTimeZone, formatDateRange, formatDay, yourTimes, zoneAbbr, zoneLabel } from './dates'
+import { LocationView } from './LocationField'
+import { boutLocation, weighInLocation, weighInSameAsBouts } from './locations'
 import { Badge, ErrorAlert, Muted, PageHeading, Paragraph, Text, Title } from './ui'
 
 // The site's front page (the root URL): upcoming Active events, no sign-in needed. Shows approved bouts (boxer, club,
@@ -52,10 +54,19 @@ function PublicEvent({ event }) {
       {poster && <img className="poster" src={poster} alt={`Poster for ${event.name}`} />}
       <div>
         <Title level={3} style={{ marginTop: 0, marginBottom: 4 }}>{event.name}</Title>
-        <Paragraph strong>
-          {formatDateRange(event.start_date, event.end_date)}
-          {event.venue && <> · {event.venue}</>}
-        </Paragraph>
+        <Paragraph strong>{formatDateRange(event.start_date, event.end_date)}</Paragraph>
+        {boutLocation(event) && (
+          <div className="public-location">
+            <Text strong>Bouts at</Text>
+            <LocationView location={boutLocation(event)} />
+          </div>
+        )}
+        {!weighInSameAsBouts(event) && (
+          <div className="public-location">
+            <Text strong>Weigh-ins at</Text>
+            <LocationView location={weighInLocation(event)} map={false} />
+          </div>
+        )}
         {event.days.length === 0 ? (
           <Muted>Times to be announced.</Muted>
         ) : (
