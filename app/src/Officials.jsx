@@ -180,12 +180,13 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
-  // Any official who accepted can invite more officials and resend invitations (Bhavek: "an
-  // official is allowed to add other officials"), and sees the lists. Removing stays with managers.
-  const onEvent = officials.some((o) => o.user_id === profile?.id) || mine?.status === 'accepted'
-  const canAdd = manager || onEvent
+  // Only the Chief Official and Deputy (and site Admins) invite, add and resend (Bhavek: "only the
+  // CO and deputy can invite other officials. Ordinary ones can only change their role in an
+  // event"). Officials who accepted still see the lists, read-only, and change their own roles.
+  const onEvent = chief || mine?.status === 'accepted'
+  const canAdd = manager
   // The event's Owner sees the lists too, but can't change them.
-  const seesLists = canAdd || may.role === 'owner'
+  const seesLists = canAdd || onEvent || may.role === 'owner'
   // Bhavek: "the site CO picks the min number of officials". Only the event's Chief Officials (both
   // seats); the Owner and site Admins see it read-only.
   const setsMin = chief
@@ -486,7 +487,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
   return (
     <>
       {canAdd && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
-      {!manager && may.role === 'owner' && <Muted>A site Admin or the event's officials invite more officials. A site Admin picks the first Chief Official.</Muted>}
+      {!manager && <Muted>Only the event's Chief Official, Deputy or a site Admin invite officials. A site Admin picks the first Chief Official.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}
