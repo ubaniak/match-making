@@ -664,6 +664,7 @@ export const supabaseApi = {
       supabase.from('bouts').select(`*,
         red:athletes!bouts_red_athlete_id_fkey(id, name), blue:athletes!bouts_blue_athlete_id_fkey(id, name),
         red_club:clubs!bouts_red_club_id_fkey(id, name), blue_club:clubs!bouts_blue_club_id_fkey(id, name),
+        red_club_has_owner, blue_club_has_owner,
         approvals:bout_approvals(side, decision, note, override, decided_by, decided_at),
         bout_officials(user_id, judge, referee, supervisor, timekeeper, accepted_at, user:profiles!bout_officials_user_id_fkey(id, name, email)),
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
@@ -695,6 +696,11 @@ export const supabaseApi = {
   },
 
   // userId left out: the signed-in official withdraws. Otherwise the Owner, CO or Deputy removes them.
+  // A corner's club owner takes their athlete out of the bout; the bout is cancelled (migration 51).
+  async withdrawCorner(boutId, side, reason) {
+    await rpc('withdraw_corner', { p_bout_id: boutId, p_side: side, p_reason: reason?.trim() || null })
+  },
+
   async withdrawFromBout(boutId, userId) {
     await rpc('withdraw_from_bout', { p_bout_id: boutId, p_user_id: userId || null })
   },
