@@ -15,7 +15,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v11' // v11: officials pick event roles (Judge, Referee, Supervisor, Timekeeper)
+const DATA_KEY = 'mock-data-v12' // v12: Admin + Member accounts, no event Viewers (migration 45)
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -70,7 +70,6 @@ function seed() {
     ],
     eventMembers: [
       { event_id: 'event-1', user_id: 'user-1', role: 'owner' },
-      { event_id: 'event-1', user_id: 'user-3', role: 'viewer' },
       { event_id: 'event-2', user_id: 'user-2', role: 'owner' },
     ],
     eventClubs: [
@@ -163,11 +162,12 @@ function setSession(session) {
   listeners.forEach((callback) => callback(session))
 }
 
-const roleNames = { admin: 'Admins', user: 'Users', official: 'Officials', public: 'Public' }
+// Two account types (migration 45): Admin and Member. Older saved data may still say user or official.
+const roleNames = { admin: 'Admins', member: 'Members' }
+const accountOf = (user) => (user?.role_id === 'admin' ? 'admin' : 'member')
 
-// Users request events; a site Admin approves or denies them (migration 20261103050000).
-const permissionsFor = (roleId) => (roleId === 'user' ? [...userPermissions, 'events:create'] : userPermissions)
-const currentRole = (current) => (isSiteAdmin() ? 'admin' : current.users.find((u) => u.id && u.id === currentUserId())?.role_id ?? 'user')
+// Members request events; a site Admin approves or denies them (migration 20261103050000).
+const memberPermissions = () => [...userPermissions, 'events:create']
 const byName = (a, b) => (a.name || a.email).localeCompare(b.name || b.email)
 
 function currentUserId() {
@@ -179,7 +179,7 @@ const findUser = (current, id) => (id === ADMIN_ID ? adminUser : current.users.f
 
 const isSiteAdmin = () => currentUserId() === ADMIN_ID
 
-// The signed-in user's role on an event: 'owner', 'coach', 'viewer' or null.
+// The signed-in user's role on an event: 'owner' or null.
 function roleOn(current, eventId) {
   const userId = currentUserId()
   return current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)?.role ?? null
@@ -242,7 +242,8 @@ const canSeeEntries = (current, eventId) => isSiteAdmin() || roleOn(current, eve
 const isOwnerOf = (current, eventId) => isSiteAdmin() || roleOn(current, eventId) === 'owner'
 const eventOpen = (event) => effectiveStatus(event) === 'active'
 // Mirrors can_invite_officials: site Admins and the event's Chief Official.
-const canInviteOfficials = (current, eventId) => isSiteAdmin() || officialRole(current, eventId) === 'chief'
+// Both Chief Official seats count (migration 45).
+const canInviteOfficials = (current, eventId) => isSiteAdmin() || Boolean(officialRole(current, eventId))
 // Mirrors can_add_officials (migration 24): also the Deputy and any official who accepted.
 const canAddOfficials = (current, eventId) => canInviteOfficials(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
 
@@ -401,8 +402,7 @@ function addHelperAccounts(current) {
     }
   }
   for (const [event, owner] of [[one, 'demo-owner1'], [multi, 'demo-owner2']]) {
-    current.eventMembers.forEach((m) => { if (m.event_id === event.id && m.role === 'owner' && m.user_id !== owner) m.role = 'viewer' })
-    current.eventMembers = current.eventMembers.filter((m) => !(m.event_id === event.id && m.user_id === owner))
+    current.eventMembers = current.eventMembers.filter((m) => !(m.event_id === event.id && (m.user_id === owner || m.role === 'owner')))
     current.eventMembers.push({ event_id: event.id, user_id: owner, role: 'owner' })
   }
   current.officialInvitations = current.officialInvitations ?? []
@@ -518,8 +518,12 @@ export const mockApi = {
     const user = data().users.find((u) => u.id && u.id === userId)
     if (user) {
       return {
-        profile: { id: user.id, email: user.email, name: user.name, role_id: user.role_id ?? 'user', status: 'active', roles: { name: roleNames[user.role_id ?? 'user'] } },
-        permissions: permissionsFor(user.role_id ?? 'user'),
+        profile: {
+          id: user.id, email: user.email, name: user.name, role_id: accountOf(user), status: 'active', roles: { name: roleNames[accountOf(user)] },
+          in_club: data().clubMembers.some((m) => m.user_id === user.id),
+          owns_event: data().eventMembers.some((m) => m.user_id === user.id && m.role === 'owner'),
+        },
+        permissions: memberPermissions(),
       }
     }
     return {
@@ -533,7 +537,7 @@ export const mockApi = {
     const current = data()
     return [
       { ...adminUser, role_id: 'admin', role_name: 'Admins' },
-      ...current.users.map((u) => ({ ...u, role_id: u.role_id ?? 'user', role_name: roleNames[u.role_id ?? 'user'] })),
+      ...current.users.map((u) => ({ ...u, role_id: accountOf(u), role_name: roleNames[accountOf(u)] })),
     ].sort(byName)
   },
 
@@ -574,7 +578,7 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  async addUser({ name, email, roleId = 'user' }) {
+  async addUser({ name, email, roleId = 'member' }) {
     const clean = email.trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
     if (clean === adminUser.email.toLowerCase()) throw new Error('In demo mode the demo admin can\'t be changed')
@@ -582,9 +586,9 @@ export const mockApi = {
     const existing = current.users.find((u) => u.email === clean)
     if (existing) {
       existing.name = name.trim() || existing.name
-      existing.role_id = roleId || 'user'
+      existing.role_id = roleId || 'member'
     } else {
-      current.users.push({ id: null, email: clean, name: name.trim(), role_id: roleId || 'user', state: 'Invited' })
+      current.users.push({ id: null, email: clean, name: name.trim(), role_id: roleId || 'member', state: 'Invited' })
     }
     write(DATA_KEY, current)
     return existing ? 'updated' : 'invited'
@@ -651,6 +655,7 @@ export const mockApi = {
     return {
       ...club,
       members: clubMembers(current, clubId),
+      email_invites: isSiteAdmin() || clubRole(current, clubId) === 'owner' ? (current.clubEmailInvites ?? []).filter((i) => i.club_id === clubId) : [],
       athletes: current.athletes.filter((a) => a.club_id === clubId).map((a) => withClub(current, a)).sort(byName),
       transfers: current.transfers
         .filter((t) => (t.from_club_id === clubId || t.to_club_id === clubId) && canSeeTransfers(t))
@@ -721,9 +726,24 @@ export const mockApi = {
   async inviteClubMember(clubId, email, role) {
     const clean = (email ?? '').trim().toLowerCase()
     const user = data().users.find((u) => u.id && u.email?.toLowerCase() === clean)
-    if (!user) throw new Error(`Nobody has signed in with ${clean} yet. Ask them to sign in once, then invite them.`)
+    if (!user) {
+      // Mirrors migration 45: hold the place until they sign in (demo mode has no real sign-in).
+      const current = data()
+      current.clubEmailInvites = current.clubEmailInvites ?? []
+      if (current.clubEmailInvites.some((i) => i.club_id === clubId && i.email === clean)) throw new Error(`${clean} is already invited`)
+      current.clubEmailInvites.push({ club_id: clubId, email: clean, role: role || 'coach', status: isSiteAdmin() ? 'active' : 'pending', invited_at: new Date().toISOString() })
+      if (!current.users.some((u) => u.email === clean)) current.users.push({ id: null, email: clean, name: null, role_id: 'member', state: 'Invited' })
+      write(DATA_KEY, current)
+      return { name: clean, new_account: true }
+    }
     await mockApi.addClubMember(clubId, user.id, role || 'coach', { approved: isSiteAdmin() })
-    return user.name || user.email
+    return { name: user.name || user.email, new_account: false }
+  },
+
+  async cancelClubEmailInvite(clubId, email) {
+    const current = data()
+    current.clubEmailInvites = (current.clubEmailInvites ?? []).filter((i) => !(i.club_id === clubId && i.email === email))
+    write(DATA_KEY, current)
   },
 
   async approveClubMember(clubId, userId) {
@@ -910,7 +930,6 @@ export const mockApi = {
   async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
     const current = data()
     if (!isSiteAdmin()) {
-      if (currentRole(current) !== 'user') throw new Error('Only event owners and site Admins can create events')
       if (ownerId && ownerId !== currentUserId()) throw new Error('Only a site Admin can create an event for someone else')
       ownerId = currentUserId()
     }
@@ -948,7 +967,7 @@ export const mockApi = {
     const event = current.events.find((e) => e.id === eventId)
     if (!event) throw new Error('That event no longer exists')
     if (!isOwnerOf(current, eventId) && !['chief', 'deputy'].includes(officialRole(current, eventId))) {
-      throw new Error('Only the Chief Official, the Deputy, the event\'s Owner or a site Admin can set the minimum number of officials')
+      throw new Error('Only a Chief Official, the event\'s Owner or a site Admin can set the minimum number of officials')
     }
     const n = Number(min)
     if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error('The minimum number of officials must be between 1 and 100')
@@ -1158,38 +1177,12 @@ export const mockApi = {
     return counts
   },
 
-  // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.
-  async setEventMember(eventId, userId, role) {
-    const current = data()
-    const event = requireEditor(current, eventId)
-    if (role !== 'viewer') throw new Error('Only a site Admin can change who owns an event')
-    const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
-    if (existing?.role === 'owner') throw new Error('Only a site Admin can change who owns an event')
-    if (existing) existing.role = role
-    else {
-      if (effectiveStatus(event) !== 'active') throw new Error('People can be added once the event is Active')
-      current.eventMembers.push({ event_id: eventId, user_id: userId, role })
-    }
-    write(DATA_KEY, current)
-  },
-
-  async removeEventMember(eventId, userId) {
-    const current = data()
-    requireEditor(current, eventId)
-    const member = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
-    if (member?.role === 'owner') throw new Error('Only a site Admin can change who owns an event')
-    current.eventMembers = current.eventMembers.filter((m) => m !== member)
-    write(DATA_KEY, current)
-  },
-
-  // The old Owner stays on as a Viewer.
+  // The old Owner comes off the event (there are no Viewers since migration 45).
   async transferEventOwnership(eventId, userId) {
     requireSiteAdmin('Only a site Admin can change who owns an event')
     const current = data()
     findEvent(current, eventId)
-    current.eventMembers.forEach((m) => {
-      if (m.event_id === eventId && m.role === 'owner' && m.user_id !== userId) m.role = 'viewer'
-    })
+    current.eventMembers = current.eventMembers.filter((m) => !(m.event_id === eventId && m.role === 'owner' && m.user_id !== userId))
     const existing = current.eventMembers.find((m) => m.event_id === eventId && m.user_id === userId)
     if (existing) existing.role = 'owner'
     else current.eventMembers.push({ event_id: eventId, user_id: userId, role: 'owner' })
@@ -1487,16 +1480,16 @@ export const mockApi = {
   async setEventOfficial(eventId, role, userId) {
     const current = data()
     if (role === 'chief') {
-      requireSiteAdmin('Only a site Admin can choose the Chief Official')
+      requireSiteAdmin('Only a site Admin can choose the first Chief Official')
     } else {
-      if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official can choose the Deputy')
-      if (!isSiteAdmin() && !eventOpen(findEvent(current, eventId))) throw new Error('The Deputy can be changed while the event is Active')
+      if (!canInviteOfficials(current, eventId)) throw new Error('Only a site Admin or a Chief Official of this event can choose the second Chief Official')
+      if (!isSiteAdmin() && !eventOpen(findEvent(current, eventId))) throw new Error('Chief Officials can be changed while the event is Active')
     }
     if (userId && !userAccepted(current, eventId, userId)) throw new Error('Pick an official who has accepted the invitation to this event')
     current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === eventId && o.role === role))
     if (userId) {
       if (current.eventOfficials.some((o) => o.event_id === eventId && o.user_id === userId)) {
-        throw new Error('The Chief Official and the Deputy must be different people')
+        throw new Error('The two Chief Officials must be different people')
       }
       current.eventOfficials.push({ event_id: eventId, role, user_id: userId })
     }
@@ -1565,8 +1558,7 @@ export const mockApi = {
       official = { id: crypto.randomUUID(), name: name.trim(), invite_email: clean, qualifications: null, user_id: user?.id ?? null }
       current.officials.push(official)
     }
-    if (newAccount) current.users.push({ id: null, email: clean, name: name.trim(), role_id: 'official', state: 'Invited' })
-    else if (user && user.role_id === 'public') user.role_id = 'official'
+    if (newAccount) current.users.push({ id: null, email: clean, name: name.trim(), role_id: 'member', state: 'Invited' })
     write(DATA_KEY, current)
     const [invitationId] = await mockApi.inviteOfficials(eventId, [official.id], respondBy)
     if (!invitationId) throw new Error('That official has already accepted this event')
@@ -1668,7 +1660,7 @@ export const mockApi = {
     if (old?.winner) throw new Error('This bout has a result, so it can\'t be re-matched')
     if ((old && !canMatch(current, eventId, old.day)) || !canMatch(current, eventId, day)) {
       throw new Error(roleOn(current, eventId) === 'owner'
-        ? 'The weigh-in for that day has started, so only the Chief Official or Deputy can make bouts'
+        ? 'The weigh-in for that day has started, so only a Chief Official can make bouts'
         : 'Only the event\'s Owner or officials can make bouts')
     }
     if (!cardOpen(event)) throw new Error('Bouts can be made only while the event is Active')
@@ -1688,7 +1680,7 @@ export const mockApi = {
     if (blocks.length) {
       if (boutType === 'scored') throw new Error('A Scored bout must follow every match rule')
       if (boutType === 'sparring') throw new Error('A Sparring bout must follow the match rules')
-      if (!isOfficial(current, eventId)) throw new Error('Only the Chief Official or Deputy can override the match rules')
+      if (!isOfficial(current, eventId)) throw new Error('Only a Chief Official can override the match rules')
       if (!reason) throw new Error('Give a reason for overriding the match rules')
     } else {
       reason = null
@@ -1726,7 +1718,7 @@ export const mockApi = {
     const bouts = boutIds.map((id) => findBout(current, id))
     for (const eventId of new Set(bouts.map((b) => b.event_id))) {
       if (!isOwnerOf(current, eventId) && !isOfficial(current, eventId)) {
-        throw new Error('Only the event\'s Owner, its Chief Official or Deputy, or a site Admin can send bouts for approval')
+        throw new Error('Only the event\'s Owner, a Chief Official or a site Admin can send bouts for approval')
       }
       if (!cardOpen(findEvent(current, eventId))) throw new Error('Bouts can be sent for approval only while the event is Active')
     }
@@ -1766,9 +1758,9 @@ export const mockApi = {
     if (bout.bout_type === 'sparring') throw new Error('Sparring bouts don\'t need approval')
     if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
-    // Only the Chief Official or Deputy (or a site Admin) decides (migration 26).
+    // Only a Chief Official (or a site Admin) decides (migration 26).
     if ((side ?? 'official') !== 'official' || !isOfficial(current, bout.event_id)) {
-      throw new Error('Only the Chief Official or Deputy can approve or reject bouts')
+      throw new Error('Only a Chief Official can approve or reject bouts')
     }
     side = 'official'
     const override = false
@@ -1815,7 +1807,7 @@ export const mockApi = {
     const bout = findBout(current, boutId)
     const who = userId || currentUserId()
     if (who !== currentUserId() && !isOwnerOf(current, bout.event_id) && !isOfficial(current, bout.event_id)) {
-      throw new Error('Only the event\'s Owner, Chief Official or Deputy can take another official off a bout')
+      throw new Error('Only the event\'s Owner or a Chief Official can take another official off a bout')
     }
     if (bout.winner && !isSiteAdmin()) throw new Error('This bout already has a result')
     bout.bout_officials = (bout.bout_officials ?? []).filter((o) => o.user_id !== who)
@@ -1839,7 +1831,7 @@ export const mockApi = {
     const current = data()
     const bout = findBout(current, boutId)
     if (!canMatch(current, bout.event_id, bout.day)) throw new Error('Only the event\'s Owner (before the weigh-in) or officials can cancel bouts')
-    if (bout.review_reason && !isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy cancels a bout that needs discussing')
+    if (bout.review_reason && !isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official cancels a bout that needs discussing')
     if (bout.winner) throw new Error('This bout has a result, so it can\'t be cancelled')
     Object.assign(bout, { status: 'cancelled', cancel_reason: reason?.trim() || null, cancelled_at: now() })
     resolveNotes(current, `bout:${bout.id}:%`)
@@ -1852,9 +1844,9 @@ export const mockApi = {
 
   async setCardOrder(eventId, day, order) {
     const current = data()
-    // Mirrors migration 29: the Owner, Chief Official or Deputy; every bout that day is renumbered,
+    // Mirrors migration 29: the Owner or a Chief Official; every bout that day is renumbered,
     // the ones sent first in the order sent, then the rest in their old order.
-    if (!isOwnerOf(current, eventId) && !isOfficial(current, eventId)) throw new Error('Only the event\'s Owner, Chief Official or Deputy sets the order of the card')
+    if (!isOwnerOf(current, eventId) && !isOfficial(current, eventId)) throw new Error('Only the event\'s Owner or a Chief Official sets the order of the card')
     if (!cardOpen(findEvent(current, eventId))) throw new Error('The card can change only while the event is Active')
     const sent = new Map()
     order.forEach(({ id, session }) => { if (!sent.has(id)) sent.set(id, { n: sent.size, session: session || null }) })
@@ -1892,7 +1884,7 @@ export const mockApi = {
   async clearBoutReview(boutId) {
     const current = data()
     const bout = findBout(current, boutId)
-    if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy decides on a bout that needs discussing')
+    if (!isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official decides on a bout that needs discussing')
     Object.assign(bout, { review_reason: null, review_at: null })
     resolveNotes(current, `review:${bout.id}`)
     write(DATA_KEY, current)
@@ -1918,7 +1910,7 @@ export const mockApi = {
   async recordResult(boutId, winner, method, note) {
     const current = data()
     const bout = findBout(current, boutId)
-    if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy records results')
+    if (!isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official records results')
     if (bout.status !== 'approved') throw new Error('Only approved bouts get a result')
     if (bout.review_reason) throw new Error('This bout needs discussing first: keep it or cancel it')
     if (!['red', 'blue'].includes(winner) || !method) throw new Error('Pick the winner and how they won')
@@ -1932,7 +1924,7 @@ export const mockApi = {
   async clearResult(boutId) {
     const current = data()
     const bout = findBout(current, boutId)
-    if (!isOfficial(current, bout.event_id)) throw new Error('Only the Chief Official or Deputy changes results')
+    if (!isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official changes results')
     if (!bout.winner) return
     for (const a of current.athletes) if ([bout.red_athlete_id, bout.blue_athlete_id].includes(a.id)) a.bouts = Math.max((a.bouts ?? 0) - 1, 0)
     Object.assign(bout, { winner: null, method: null, result_note: null, result_by: null, result_at: null })

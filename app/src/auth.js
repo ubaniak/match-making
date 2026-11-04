@@ -66,5 +66,6 @@ export function useAuth() {
   return { session, profile, can, loading, viewing: sessionUserId ? viewing : null }
 }
 
-// Accounts with the Official role. Officials don't see clubs (Bhavek, 2026-11-02).
-export const isOfficial = (profile) => profile?.role_id === 'official'
+// Clubs only matter to people in a club and to event Owners (Bhavek, 2026-11-02: officials don't
+// see clubs). There's no Official account type any more, so this goes by what they belong to.
+export const seesClubs = (profile) => profile?.role_id === 'admin' || Boolean(profile?.in_club || profile?.owns_event)

@@ -14,12 +14,12 @@ import {
   timeZoneOptions, yourTimes, zoneAbbr, zoneLabel, zonedInputToIso,
 } from './dates'
 import { dayProblems, effectiveStatus, hasProblems, isEditableStatus, isOpen, statusLabels } from './events'
-import { isOfficial } from './auth'
+import { seesClubs } from './auth'
 import { askConfirm, askText, askTypedConfirm, dash, showError } from './dialogs'
 import { minOfficials, shortOnOfficials } from './dashboard'
 import { BackLink, Badge, PageHeading, DateInput, DateTimeInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, StatGrid, Text, TimeInput, Title } from './ui'
 
-const roleLabels = { owner: 'Owner', viewer: 'Viewer' }
+const roleLabels = { owner: 'Owner' }
 
 const myRole = (event, profile) => event.members.find((m) => m.user_id === profile?.id)?.role ?? null
 const ownerOf = (event) => event.members.find((m) => m.role === 'owner')?.user
@@ -64,13 +64,11 @@ function rightsFor(event, profile, siteAdmin) {
     role,
     siteAdmin,
     edit: siteAdmin || (owner && editable),
-    members: siteAdmin || (owner && editable),
-    addMembers: open && (siteAdmin || owner),
     // Invite clubs and answer join and late-entry requests.
     manageClubs: siteAdmin || (owner && editable),
-    // Officials don't see clubs: no Clubs tab and no club or entry numbers (unless they own this event).
-    // Bouts still name each corner's club, which officials need for matching.
-    seesClubs: siteAdmin || owner || !isOfficial(profile),
+    // Officials don't see clubs: no Clubs tab and no club or entry numbers (unless they own this event
+    // or are in a club). Bouts still name each corner's club, which officials need for matching.
+    seesClubs: siteAdmin || owner || seesClubs(profile),
     open,
     editable,
     entriesOpen: open && (!event.entry_deadline || new Date() <= new Date(event.entry_deadline)),
@@ -597,7 +595,6 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
             {siteAdmin && <ChangeOwner event={event} busy={busy} run={run} />}
             <Schedule event={event} canEdit={may.edit} onEdit={() => setEditing('times')} />
             <Poster event={event} canEdit={may.edit} run={run} busy={busy} />
-            <EventMembers event={event} may={may} onChange={reload} />
             {siteAdmin && (
               <Section title="Delete">
                 <Muted>Cancelling keeps a record of the event; deleting removes it and everything in it for good.</Muted>
@@ -696,7 +693,7 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
   const short = seesLists && shortOnOfficials(event, accepted)
   const officialsNote = invitations.length
     ? `${waiting} waiting · ${declined} declined`
-    : `Chief Official: ${roleName('chief')} · Deputy: ${roleName('deputy')}`
+    : `Chief Officials: ${roleName('chief')} · ${roleName('deputy')}`
 
   const stats = [
     {
@@ -744,7 +741,7 @@ function ChangeOwner({ event, busy, run }) {
   async function save(e) {
     e.preventDefault()
     const user = users.find((u) => u.id === choice)
-    if (!user || !(await askConfirm(`Make ${personName(user)} the Owner of ${event.name}? ${personName(current)} stays on as a Viewer.`, { okText: 'Change owner' }))) return
+    if (!user || !(await askConfirm(`Make ${personName(user)} the Owner of ${event.name}? ${personName(current)} comes off the event.`, { okText: 'Change owner' }))) return
     run(async () => {
       await api.transferEventOwnership(event.id, choice)
       setChoice('')
@@ -1479,91 +1476,5 @@ function ExperienceCell({ category, bouts }) {
       <Badge>{category.label}</Badge>
       <Text type="secondary">{formatBouts(bouts)}</Text>
     </>
-  )
-}
-
-// Who's on the event: the Owner, plus Viewers once the event is Active.
-// Only a site Admin changes the Owner (see ChangeOwner).
-function EventMembers({ event, may, onChange }) {
-  const allUsers = useAllUsers(may.addMembers)
-  const users = allUsers.filter((u) => u.id && u.state === 'Active')
-  const [form, setForm] = useState({ userId: '', role: 'viewer' })
-  const [error, setError] = useState(null)
-  const [busy, setBusy] = useState(false)
-
-  const memberIds = new Set(event.members.map((m) => m.user_id))
-  const addable = users.filter((u) => !memberIds.has(u.id))
-  const order = ['owner', 'viewer']
-  const members = [...event.members].sort(
-    (a, b) => order.indexOf(a.role) - order.indexOf(b.role) || personName(a.user).localeCompare(personName(b.user)),
-  )
-
-  async function run(action) {
-    setBusy(true)
-    setError(null)
-    try {
-      await action()
-      await onChange()
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function add(e) {
-    e.preventDefault()
-    if (!form.userId) return
-    run(async () => {
-      await api.setEventMember(event.id, form.userId, form.role)
-      setForm({ userId: '', role: form.role })
-    })
-  }
-
-  const columns = [
-    { title: 'Name', key: 'name', render: (_, m) => m.user?.name || '—' },
-    { title: 'Email', key: 'email', render: (_, m) => m.user?.email || '—' },
-    { title: 'Role', key: 'role', value: (m) => roleLabels[m.role], render: (_, m) => <RoleBadge role={m.role} /> },
-    may.members && {
-      key: 'actions',
-      className: 'actions',
-      render: (_, m) => m.role !== 'owner' && (
-        <Button size="small" disabled={busy} onClick={() => run(() => api.removeEventMember(event.id, m.user_id))}>Remove</Button>
-      ),
-    },
-  ].filter(Boolean)
-
-  return (
-    <Section title={`People (${event.members.length})`}>
-      <Muted>
-        Viewers can see the event's details and times. Clubs enter athletes on the Clubs tab.
-        {effectiveStatus(event) === 'requested' && ' People can be added once the event is approved.'}
-      </Muted>
-      {may.addMembers && (
-        <FormCard compact onSubmit={add} actions={<Button type="primary" htmlType="submit" disabled={busy || !form.userId}>Add</Button>}>
-          <Field label="Add a viewer">
-            <Pick
-              value={form.userId}
-              onChange={(userId) => setForm({ ...form, userId })}
-              placeholder={allUsers === usersLoading ? 'Loading people…' : addable.length ? 'Choose a user…' : 'Everyone is already on this event'}
-              options={addable.map((u) => ({ value: u.id, label: userLabel(u) }))}
-            />
-          </Field>
-        </FormCard>
-      )}
-      {may.addMembers && (
-        <CsvImport
-          kind="eventViewers"
-          title="Add viewers from a CSV file"
-          context={{ usersByEmail: usersByEmail(allUsers), memberIds }}
-          importRow={async ({ userId }) => {
-            await api.setEventMember(event.id, userId, 'viewer')
-          }}
-          onDone={onChange}
-        />
-      )}
-      <ErrorAlert>{error}</ErrorAlert>
-      <DataTable rowKey="user_id" columns={columns} dataSource={members} csvName={`${event.name} people`} />
-    </Section>
   )
 }

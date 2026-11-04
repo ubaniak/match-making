@@ -26,8 +26,8 @@ const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkov
 // Deputy override a rule break with a reason; Sparring follows the rules but needs no approval.
 const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparring: 'Sparring' }
 const boutTypeHelp = {
-  scored: 'Must follow every match rule. The Chief Official or Deputy approves it.',
-  developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. The Chief Official or Deputy approves it.',
+  scored: 'Must follow every match rule. A Chief Official approves it.',
+  developmental: 'The match rules apply, but a Chief Official can override them with a reason. A Chief Official approves it.',
   sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
 }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
@@ -203,7 +203,7 @@ function Card({ event, data, rights, busy, run, publish }) {
     const what = unsent.length
       ? `Send ${list.length} bout${list.length === 1 ? '' : 's'} that ${list.length === 1 ? "hasn't" : "haven't"} been sent yet for approval?`
       : `Every waiting bout has been sent already. Send a reminder for all ${list.length}?`
-    if (await askConfirm(`${what} The Chief Official and Deputy each get one email listing the bouts.`, { okText: 'Send' })) {
+    if (await askConfirm(`${what} The Chief Officials each get one email listing the bouts.`, { okText: 'Send' })) {
       sendForApproval(list)
     }
   }
@@ -282,7 +282,7 @@ function Card({ event, data, rights, busy, run, publish }) {
           }))}
         />
       )}
-      {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only the Chief Official or Deputy can make or change bouts.</Muted>}
+      {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only a Chief Official can make or change bouts.</Muted>}
 
       {canMatch && (
         <MatchForm
@@ -364,7 +364,7 @@ function BoutsImport({ event, data, days, official, run }) {
   for (const b of live) (takenByDay[b.day] ??= []).push(b.red_athlete_id, b.blue_athlete_id)
   const weightsByDay = {}
   for (const w of data.weighIns) if (w.weight_kg != null) (weightsByDay[w.day] ??= {})[w.athlete_id] = Number(w.weight_kg)
-  // Once a day's weigh-in has started, only the Chief Official or Deputy makes bouts that day.
+  // Once a day's weigh-in has started, only a Chief Official makes bouts that day.
   const lockedDays = new Set(official ? [] : data.weighIns.map((w) => w.day))
   return (
     <CsvImport
@@ -504,13 +504,13 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
       {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
       {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
       {blocked && check.hard.length === 0 && boutType !== 'developmental' && (
-        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Developmental bout can, if the Chief Official or Deputy overrides them with a reason.</Muted></FullRow>
+        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Developmental bout can, if a Chief Official overrides them with a reason.</Muted></FullRow>
       )}
       {blocked && boutType === 'developmental' && check.hard.length > 0 && (
         <FullRow><Muted>No one can override this, even on a Developmental bout.</Muted></FullRow>
       )}
       {overridable && !canOverride && (
-        <FullRow><Muted>Only the Chief Official or Deputy can override the match rules. Ask them to make this bout.</Muted></FullRow>
+        <FullRow><Muted>Only a Chief Official can override the match rules. Ask them to make this bout.</Muted></FullRow>
       )}
       {overriding && (
         <FullRow>
@@ -529,7 +529,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
         <FullRow><Text>Check before approving: {check.warnings.join('; ')}.</Text></FullRow>
       )}
       {check && check.blocks.length === 0 && check.warnings.length === 0 && <FullRow><Text strong>These two are a good match.</Text></FullRow>}
-      {bout && <FullRow><Muted>Re-matching clears the bout's approval; the Chief Official or Deputy approves it again.</Muted></FullRow>}
+      {bout && <FullRow><Muted>Re-matching clears the bout's approval; a Chief Official approves it again.</Muted></FullRow>}
     </FormCard>
   )
 }
@@ -590,7 +590,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   }
 
   // A failed medical, a no-show or a weight that no longer fits flags the bout (migration 35). Only
-  // the Chief Official or Deputy settles it: keep the bout or cancel it.
+  // a Chief Official settles it: keep the bout or cancel it.
   const review = !hasResult && bout.status !== 'cancelled' ? bout.review_reason : null
 
   async function keep() {
@@ -725,7 +725,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
                   <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>
                 </Space>
               ) : (
-                <Muted>The Chief Official or Deputy decides whether to keep or cancel this bout.</Muted>
+                <Muted>A Chief Official decides whether to keep or cancel this bout.</Muted>
               )}
             </>
           }
@@ -742,7 +742,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
       <ul className="approvals">
         <li>
           <Space size={6} wrap>
-            <span>Chief Official or Deputy:</span>
+            <span>Chief Official:</span>
             {decision ? (
               <span>{decision.decision === 'approved' ? 'Approved' : 'Rejected'}{decision.note ? ` (“${decision.note}”)` : ''}</span>
             ) : (
@@ -939,14 +939,14 @@ function groupByPerson(rows) {
   return [...people.values()].map((p) => ({ ...p, bouts: [...p.bouts.values()] }))
 }
 
-// Approvals still needed that nobody could be told about: no Chief Official or Deputy yet, or
+// Approvals still needed that nobody could be told about: no Chief Official yet, or
 // they have no email.
 function missingApprovers(list, rows, officials) {
   const told = new Set(rows.map((r) => r.bout_id))
   const notes = new Set()
   for (const b of list.filter(sendable)) {
     if (!told.has(b.id)) {
-      notes.add(officials.length ? 'the Chief Official and Deputy have no email' : 'the event has no Chief Official or Deputy yet')
+      notes.add(officials.length ? 'the Chief Officials have no email' : 'the event has no Chief Official yet')
     }
   }
   return [...notes]
@@ -1057,7 +1057,7 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
       ) : (
         <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} weigh-in ${day}`} />
       )}
-      <Muted>A failed medical, a no-show or a weight that no longer fits marks the athlete's bouts "Needs discussion". Nothing is cancelled automatically: the Chief Official or Deputy keeps or cancels each one, and the opponent can still weigh in.</Muted>
+      <Muted>A failed medical, a no-show or a weight that no longer fits marks the athlete's bouts "Needs discussion". Nothing is cancelled automatically: a Chief Official keeps or cancels each one, and the opponent can still weigh in.</Muted>
     </div>
   )
 }

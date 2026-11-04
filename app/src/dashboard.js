@@ -149,7 +149,7 @@ async function clubStats(myClubs, myClubIds, ownedClubIds, liveEvents, byId) {
     const inEvent = (event.clubs ?? []).filter((ec) => myClubIds.has(ec.club_id))
     const entered = event.athletes.filter((a) => myClubIds.has(a.entry_club_id ?? a.club_id))
     const myBouts = bouts.bouts.filter((b) => b.status !== 'cancelled' && (myClubIds.has(b.red_club_id) || myClubIds.has(b.blue_club_id)))
-    // My club's bouts still waiting for the Chief Official or Deputy to decide. Clubs don't approve.
+    // My club's bouts still waiting for a Chief Official to decide. Clubs don't approve.
     const waiting = myBouts.filter((b) => b.status === 'pending' && !b.winner)
     return {
       event: e,

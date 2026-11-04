@@ -1,5 +1,5 @@
 // Officials on an event (plan/events.md, "Inviting officials"): a site Admin or any official
-// on the event invites officials, officials accept or decline, and the CO and Deputy are picked from
+// on the event invites officials, officials accept or decline, and the two Chief Officials are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card as AntCard, Checkbox, Input, InputNumber, Modal, Segmented, Select, Space, Tabs, Tag } from 'antd'
@@ -15,7 +15,8 @@ import WelcomeNotice from './WelcomeNotice'
 import { sendWelcome } from './welcome'
 import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, Text } from './ui'
 
-const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
+// Two Chief Officials with the same powers (Option B, 2026-11-04). The second seat is stored as 'deputy'.
+const officialLabels = { chief: 'Chief Official', deputy: 'Second Chief Official' }
 const answerLabels = { accepted: 'Accepted', declined: 'Declined', pending: 'Waiting', expired: 'No response' }
 const personName = (user) => (user ? user.name || user.email : '—')
 // Emailed links go straight to sign-in and then Home; the bare root is the public page.
@@ -173,11 +174,11 @@ function useAcceptDays() {
 // The event's Officials section
 // ---------------------------------------------------------------------------
 
-// officials: the event's CO and Deputy rows. run: the bouts section's runner, which reloads them.
+// officials: the event's two Chief Official rows. run: the bouts section's runner, which reloads them.
 export function EventOfficials({ event, may, profile, officials, busy, run, onEventChange }) {
   // Site Admins and the event's Chief Official invite and remove officials (Bhavek: "admins and
-  // the nominated CO"). Only a site Admin picks the Chief Official; either picks the Deputy.
-  const chief = officials.some((o) => o.role === 'chief' && o.user_id === profile?.id)
+  // the nominated CO"). Only a site Admin picks the first Chief Official; either picks the second.
+  const chief = officials.some((o) => o.user_id === profile?.id)
   const manager = may.siteAdmin || chief
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
@@ -189,7 +190,7 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
   // The event's Owner sees the lists too, but can't change them.
   const seesLists = canAdd || may.role === 'owner'
   // Bhavek: "the CO and deputy can set the min number of officials" (the Owner and site Admins can too).
-  const setsMin = may.siteAdmin || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id && ['chief', 'deputy'].includes(o.role))
+  const setsMin = may.siteAdmin || may.role === 'owner' || chief
   const listsByRole = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
 
   const load = useCallback(async () => {
@@ -227,7 +228,7 @@ export function EventOfficials({ event, may, profile, officials, busy, run, onEv
       {mine && <MyAnswer invitation={mine} event={event} busy={busy} act={act} />}
       {seesLists && <MinOfficials event={event} accepted={counts.accepted} canEdit={setsMin} busy={busy} run={run} onSaved={onEventChange} />}
       {missing.length > 0 && (
-        <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
+        <Muted>Every event needs two Chief Officials. They approve bouts, run the weigh-in and record results.</Muted>
       )}
       {seesLists ? (
         <Manage event={event} may={may} manager={manager} canAdd={canAdd} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
@@ -313,7 +314,7 @@ function MyAnswer({ invitation, event, busy, act }) {
 }
 
 // The lists of who answered what. Site Admins and the event's officials also invite here (and
-// add someone new); site Admins and the Chief Official also remove and pick the CO and Deputy.
+// add someone new); site Admins and the Chief Officials also remove officials and pick the Chief Officials.
 function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, act }) {
   const [officialsList, setOfficialsList] = useState([])
   const [choice, setChoice] = useState([])
@@ -376,11 +377,11 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
     }
   }
 
-  // Someone not on the Officials list: the same onboarding as Admin > Add a user (an Official
-  // account and the welcome email), then the event invitation.
+  // Someone not on the Officials list: the same onboarding as Admin > Add a user (a Member account
+  // on the Officials list, and the welcome email), then the event invitation.
   async function addNew(e) {
     e.preventDefault()
-    const person = { name: newOfficial.name.trim(), email: newOfficial.email.trim().toLowerCase(), roleId: 'official' }
+    const person = { name: newOfficial.name.trim(), email: newOfficial.email.trim().toLowerCase(), roleId: 'member' }
     let added = null
     setWelcome(null)
     const ok = await deliver(
@@ -410,7 +411,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
       const added = await api.addEventOfficial(event.id, row.name, row.email, respondBy)
       invitationIds = [added.invitation_id]
       if (added.new_account) {
-        const welcome = await sendWelcome({ name: row.name, email: row.email, roleId: 'official' })
+        const welcome = await sendWelcome({ name: row.name, email: row.email, roleId: 'member' })
         if (!welcome.sent) notes.push(`the welcome email wasn't sent (${welcome.reason})`)
       }
     }
@@ -495,7 +496,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
   return (
     <>
       {canAdd && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
-      {!manager && may.role === 'owner' && <Muted>A site Admin or the event's officials invite more officials. A site Admin picks the Chief Official.</Muted>}
+      {!manager && may.role === 'owner' && <Muted>A site Admin or the event's officials invite more officials. A site Admin picks the first Chief Official.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}
@@ -538,7 +539,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
             <Input type="email" value={newOfficial.email} onChange={(e) => setNewOfficial({ ...newOfficial, email: e.target.value })} placeholder="name@example.com" />
           </Field>
           <FullRow>
-            <Muted>They're added to the Officials list with an Official account, get the same welcome email as a new user, then get this event's invitation.</Muted>
+            <Muted>They're added to the Officials list (which lets them sign in), get the same welcome email as a new user, then get this event's invitation.</Muted>
           </FullRow>
         </FormCard>
       )}
@@ -558,7 +559,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
           }}
         >
           <Muted>
-            Someone on the Officials list is invited; anyone else is added with an Official account and gets the welcome email first.
+            Someone on the Officials list is invited; anyone else is added to the Officials list and gets the welcome email first.
             {respondBy ? ` They have until ${formatDay(respondBy)} to answer (the Respond by date above).` : ' Set Respond by above first if they need a deadline.'}
           </Muted>
         </CsvImport>
@@ -584,7 +585,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
           </Field>
         ))}
         {manager && pickable.length === 0 && (
-          <FullRow><Muted>{may.siteAdmin ? 'Pick the Chief Official and Deputy from the officials who accepted.' : 'Pick the Deputy from the officials who accepted.'}</Muted></FullRow>
+          <FullRow><Muted>{may.siteAdmin ? 'Pick both Chief Officials from the officials who accepted.' : 'Pick the second Chief Official from the officials who accepted.'}</Muted></FullRow>
         )}
       </FormCard>
 

@@ -55,23 +55,25 @@ function findAthlete(list, name, club, errors, { what = 'athlete', notFound } = 
   return null
 }
 
-const accountIds = { admin: 'admin', user: 'user', official: 'official', public: 'public' }
+// Older files may still say user or official: both are Members now, and official also puts them on the Officials list.
+const accountIds = { admin: 'admin', member: 'member', user: 'member', official: 'member' }
 const boutTypes = { scored: 'scored', developmental: 'developmental', sparring: 'sparring' }
 
 export const importSpecs = {
   users: {
     label: 'users',
     singular: 'user',
-    columns: ['name', 'email', 'account'],
+    columns: ['name', 'email', 'account', 'official'],
     required: ['name', 'email'],
-    example: [['Maria Lopez', 'maria@example.com', 'user'], ['Pat Kim', 'pat@example.com', 'official']],
-    notes: { account: 'admin, user, official or public; blank means user' },
+    example: [['Maria Lopez', 'maria@example.com', 'member', ''], ['Pat Kim', 'pat@example.com', 'member', 'yes']],
+    notes: { account: 'admin or member; blank means member', official: 'yes adds them to the Officials list' },
     check(values, errors) {
       if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors, { required: true })
-      const account = lower(values.account) || 'user'
-      if (!accountIds[account]) errors.push(`Account "${values.account}" should be admin, user, official or public`)
-      return { name: values.name, email: lower(values.email), roleId: accountIds[account] ?? 'user' }
+      const account = lower(values.account) || 'member'
+      if (!accountIds[account]) errors.push(`Account "${values.account}" should be admin or member`)
+      const official = account === 'official' || ['yes', 'y', 'true', '1'].includes(lower(values.official))
+      return { name: values.name, email: lower(values.email), roleId: accountIds[account] ?? 'member', official }
     },
   },
 
@@ -211,21 +213,7 @@ export const importSpecs = {
     },
   },
 
-  // Viewers on an event.
-  eventViewers: {
-    label: 'viewers',
-    singular: 'viewer',
-    columns: ['email'],
-    required: ['email'],
-    example: [['sam@example.com']],
-    describe: (values) => values.email,
-    check(values, errors, { usersByEmail, memberIds }) {
-      checkEmail(values.email, errors, { required: true })
-      const user = values.email && EMAIL.test(values.email) ? activeUser(values.email, usersByEmail, errors) : null
-      if (user && memberIds?.has(user.id)) errors.push(`${lower(values.email)} is already on this event`)
-      return { userId: user?.id }
-    },
-  },
+
 
   // Clubs in an event: an existing club is invited; a new one is made with its owners and joins.
   eventClubs: {
@@ -324,7 +312,7 @@ export const importSpecs = {
       if (!day && days.length === 1) day = days[0]
       if (!day) errors.push('Day is missing')
       else if (!days.includes(day)) errors.push(`Day "${day}" isn't a day of this event (${days[0]}${days.length > 1 ? ` to ${days[days.length - 1]}` : ''})`)
-      else if (lockedDays?.has(day)) errors.push(`The weigh-in for ${day} has started, so only the Chief Official or Deputy can make bouts that day`)
+      else if (lockedDays?.has(day)) errors.push(`The weigh-in for ${day} has started, so only a Chief Official can make bouts that day`)
 
       const boutType = boutTypes[lower(values.bout_type) || 'scored']
       if (!boutType) errors.push(`Bout type "${values.bout_type}" should be scored, developmental or sparring`)

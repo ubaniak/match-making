@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Input, Popconfirm, Space, Tabs } from 'antd'
+import { Alert, Button, Checkbox, Input, Popconfirm, Space, Tabs } from 'antd'
 import { DeleteOutlined, EditOutlined, EyeOutlined, MailOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
@@ -8,19 +8,17 @@ import AthleteForm from './AthleteForm'
 import { cleanText, formatBouts, formatLevel, formatWeight, genderLabel } from './athletes'
 import { dash } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
-import { TestAsPicker } from './TestRun'
 import { accountAs, sendWelcome } from './welcome'
 import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, NumberInput, PageHeading, Pick, Section, Title } from './ui'
 
+// Two account types (Bhavek, 2026-11-04, Option B). Everything else is a role on a club or an event.
 const accountTypes = [
+  { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
-  { value: 'user', label: 'User' },
-  { value: 'official', label: 'Official' },
-  { value: 'public', label: 'Public (no access yet)' },
 ]
-const blankUser = { name: '', email: '', roleId: 'user' }
+const blankUser = { name: '', email: '', roleId: 'member', official: false }
 
-// An Official account should also be on the Officials list, so they can be picked for events.
+// Being an official means being on the Officials list, so they can be invited to events.
 // Adds them there unless that email is already listed.
 async function ensureOfficial({ name, email }) {
   const clean = email.trim().toLowerCase()
@@ -34,7 +32,7 @@ async function ensureOfficial({ name, email }) {
 // welcome email didn't go out (the envelope on their row sends it again).
 async function importUser(user) {
   await api.addUser(user)
-  if (user.roleId === 'official') await ensureOfficial(user)
+  if (user.official) await ensureOfficial(user)
   const welcome = await sendWelcome(user)
   return welcome.sent ? null : { note: `the welcome email wasn't sent (${welcome.reason}). Use the envelope on their row to send it again` }
 }
@@ -124,7 +122,7 @@ function TestData() {
       if (kind === 'seed-helpers' || kind === 'clear-helpers') {
         const c = kind === 'seed-helpers' ? await api.seedHelperAccounts() : await api.clearHelperAccounts()
         const n = `${c.accounts} helper login${c.accounts === 1 ? '' : 's'}`
-        setMessage({ text: kind === 'seed-helpers' ? `Added ${n}. Owners and Chief/Deputy roles are set on both TEST events.` : `Removed ${n}.` })
+        setMessage({ text: kind === 'seed-helpers' ? `Added ${n}. Owners and Chief Officials are set on both TEST events.` : `Removed ${n}.` })
         return
       }
       const c = kind === 'seed' ? await api.seedTestData() : await api.clearTestData()
@@ -154,9 +152,9 @@ function TestData() {
       <ul>
         <li><strong>owner1@demo.test</strong>: Owner of TEST One-Day Card</li>
         <li><strong>owner2@demo.test</strong>: Owner of TEST Multi-Day Open</li>
-        <li><strong>official1@demo.test</strong>: Chief Official of TEST One-Day Card and Deputy of TEST Multi-Day Open</li>
-        <li><strong>official2@demo.test</strong>: Chief Official of TEST Multi-Day Open and Deputy of TEST One-Day Card</li>
-        <li><strong>event-owner@demo.test</strong>: a viewer on both TEST events (their Owner when the helper logins are removed)</li>
+        <li><strong>official1@demo.test</strong>: a Chief Official of both TEST events</li>
+        <li><strong>official2@demo.test</strong>: a Chief Official of both TEST events</li>
+        <li><strong>event-owner@demo.test</strong>: a plain Member with no roles (Owner of both TEST events when the helper logins are removed)</li>
         <li><strong>club-owner@demo.test</strong>: Owner of TEST North End Boxing</li>
         <li><strong>official@demo.test</strong>: an official accepted for every day of both events (their Chief Official when the helper logins are removed)</li>
       </ul>
@@ -165,7 +163,8 @@ function TestData() {
         remove just the first four accounts while test data is loaded.
       </Muted>
       <Muted>
-        Anyone who knows these can sign in as them while test data is loaded, so clear it when you&rsquo;re done.
+        To try a role, sign in as one of these in a private window (or sign out first). Anyone who knows these
+        can sign in as them while test data is loaded, so clear it when you&rsquo;re done.
       </Muted>
       <Space style={{ marginTop: 16 }}>
         <Popconfirm title="Load test data?" okText="Load" cancelText="Cancel" onConfirm={() => run('seed')}>
@@ -204,18 +203,6 @@ function TestData() {
         </Popconfirm>
       </Space>
       <FormMessage message={message} />
-      {api.mode === 'supabase' && (
-        <div className="test-as">
-          <Title level={4}>Test as another role</Title>
-          <Muted>
-            Signs this browser in as one of the demo accounts above, so you can try the app as an event owner,
-            club owner or official without another email. A yellow bar stays at the top while you test: use it to
-            switch roles, or click <strong>Back to</strong> your name to return to this Admin account. Load the test
-            data (and the helper logins) first.
-          </Muted>
-          <TestAsPicker />
-        </div>
-      )}
     </Section>
   )
 }
@@ -275,7 +262,7 @@ function Users() {
     let listed = false
     try {
       data = await api.addUser(form)
-      if (form.roleId === 'official') listed = await ensureOfficial(form)
+      if (form.official) listed = await ensureOfficial(form)
     } catch (err) {
       setSaving(false)
       return setMessage({ error: true, text: err.message })
@@ -283,7 +270,7 @@ function Users() {
     const added = { name: form.name.trim(), email: form.email.trim().toLowerCase(), roleId: form.roleId }
     setWelcome(await sendWelcome(added))
     setSaving(false)
-    const role = accountAs[form.roleId] ?? 'a User'
+    const role = accountAs[form.roleId] ?? 'a Member'
     const officialNote = listed ? ' They are on the Officials list too.' : ''
     setMessage({
       text: data === 'updated'
@@ -318,7 +305,7 @@ function Users() {
               setEmailing(null)
             }}
           />
-          {/* Demo accounts are for Test as (Admin > Test data), not View as (Bhavek, 2026-11-04). */}
+          {/* Demo accounts are left out of View as (Bhavek, 2026-11-04): sign in as them instead. */}
           {api.mode === 'supabase' && u.id && !/@demo\.test$/i.test(u.email ?? '') && (
             <Button
               size="small"
@@ -353,16 +340,22 @@ function Users() {
         <Field label="Name"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Email"><Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
         <Field label="Account"><Pick value={form.roleId} onChange={(roleId) => setForm({ ...form, roleId })} options={accountTypes} /></Field>
+        <FullRow>
+          <Checkbox checked={form.official} onChange={(e) => setForm({ ...form, official: e.target.checked })}>
+            Official: also add them to the Officials list, so they can be invited to events
+          </Checkbox>
+        </FullRow>
       </FormCard>
       <FormMessage message={message} />
       <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
       <Muted>
         Adding someone emails them how to sign in; the envelope on their row sends it again.
-        Account sets what they can do across the site: Admins manage everything, Officials are also added to the Officials list.
-        Users can request events (and own them); a site Admin approves or denies them. Site Admins create clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
+        There are two accounts: Admins manage everything; everyone else is a Member. Any Member can request an event
+        (and own it once a site Admin approves it). Everything else a Member does comes from their roles: Owner or Coach
+        of a club, Owner of an event, or an official on an event (anyone on the Officials list can be invited).
       </Muted>
       <CsvImport kind="users" importRow={importUser} onDone={reload}>
-        <Muted>Each person gets the same welcome email as adding them above. Officials are added to the Officials list too.</Muted>
+        <Muted>Each person gets the same welcome email as adding them above. Put yes in the official column to add them to the Officials list too.</Muted>
       </CsvImport>
 
       <Section title="Users">
@@ -374,11 +367,7 @@ function Users() {
             busy={changes.busy}
             onCancel={() => setEditing(null)}
             onSave={async (fields) => {
-              const becameOfficial = fields.roleId === 'official' && editing.role_id !== 'official'
-              const saved = await changes.run(async () => {
-                await api.updateUser(editing, fields)
-                if (becameOfficial) await ensureOfficial({ name: fields.name, email: fields.email })
-              })
+              const saved = await changes.run(() => api.updateUser(editing, fields))
               if (saved) setEditing(null)
             }}
           />
@@ -584,7 +573,7 @@ function Officials() {
           name={o.name}
           busy={changes.busy}
           onEdit={() => { changes.setError(null); setEditing(o) }}
-          deleteText="Their event invitations are removed too, and they stop being Chief Official or Deputy on those events."
+          deleteText="Their event invitations are removed too, and they stop being Chief Official on those events."
           onDelete={() => changes.run(() => api.deleteOfficial(o.id))}
         />
       ),
@@ -637,7 +626,7 @@ function UserForm({ user, busy, onSave, onCancel }) {
   const [form, setForm] = useState({
     name: user.name ?? '',
     email: user.email,
-    roleId: user.role_id ?? 'user',
+    roleId: user.role_id === 'admin' ? 'admin' : 'member',
     status: user.status ?? (user.state === 'Disabled' ? 'disabled' : 'active'),
   })
   const set = (key) => (value) => setForm({ ...form, [key]: value })
