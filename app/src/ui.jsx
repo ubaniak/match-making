@@ -278,7 +278,7 @@ export function StatGrid({ stats }) {
         <Col key={st.key} xs={12} md={8} xl={4}>
           <Card
             size="small"
-            className="stat-card"
+            className={`stat-card${st.danger ? ' stat-danger' : ''}`}
             hoverable={Boolean(st.onClick)}
             onClick={st.onClick}
             role={st.onClick ? 'button' : undefined}

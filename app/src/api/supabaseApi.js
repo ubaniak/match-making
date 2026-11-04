@@ -637,6 +637,17 @@ export const supabaseApi = {
     return rpc('list_event_invitations', { p_event_id: eventId })
   },
 
+  // How many officials accepted each event: { [eventId]: count }. Row security only returns
+  // invitations the user may see (site Admin, the event's Owner and its officials), so other events count 0.
+  async acceptedOfficialCounts(eventIds) {
+    if (!eventIds.length) return {}
+    const { data, error } = await supabase.from('official_invitations').select('event_id').eq('status', 'accepted').in('event_id', eventIds)
+    if (error) throw error
+    const counts = Object.fromEntries(eventIds.map((id) => [id, 0]))
+    for (const row of data) counts[row.event_id] += 1
+    return counts
+  },
+
   // The signed-in user's own invitations, with each event's name, dates and status.
   async listMyInvitations() {
     return rpc('list_my_invitations')

@@ -21,6 +21,7 @@
   --shadow-md: 0 8px 24px rgba(30, 58, 138, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
   --inset-highlight: rgba(255, 255, 255, 0.9);
   --corner-red: #b91c1c;
+  --danger: #b00000;
   --corner-blue: #1d4ed8;
   --radius-sm: 10px;
   --radius-md: 12px;
@@ -340,6 +341,33 @@ body {
 
 .ant-table tr.row-error td {
   background: var(--bg-subtle);
+}
+
+/* Home: Active events with fewer than 5 officials. Red tint and edge, plus a red tag that says so in
+   words (white on #b00000 is 7.4:1, AAA). Row text stays #111 on the pale tint. */
+.ant-table tr.row-short-officials > td {
+  background: rgba(176, 0, 0, 0.07);
+}
+
+.ant-table tr.row-short-officials > td:first-child {
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.badge.ant-tag.short-officials {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  white-space: normal;
+}
+
+.stat-card.stat-danger {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger), var(--shadow-md);
+}
+
+.stat-card.stat-danger .ant-statistic-content {
+  color: var(--danger);
 }
 
 .poster {
