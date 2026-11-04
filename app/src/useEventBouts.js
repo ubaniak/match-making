@@ -49,6 +49,8 @@ export function useEventBouts({ event, may, clubs, profile, onEntriesChange }) {
     weighInDays: data.acceptedDays ?? [],
     officialRole,
     me: profile?.id ?? null,
+    // The signed-in user's event roles (migration 42), which they can take on a bout.
+    myRoles: data.myRoles ?? {},
     ownedClubs,
     cardOpen: event.status === 'active',
   }

@@ -597,32 +597,39 @@ export const supabaseApi = {
 
   // The event's officials, bouts (with approvals and comments) and weigh-ins.
   async getBouts(eventId) {
-    const [officials, bouts, weighIns, accepted] = await Promise.all([
+    const [officials, bouts, weighIns, accepted, roles] = await Promise.all([
       supabase.from('event_officials').select('role, user_id, user:profiles!event_officials_user_id_fkey(id, name, email)').eq('event_id', eventId),
       supabase.from('bouts').select(`*,
         red:athletes!bouts_red_athlete_id_fkey(id, name), blue:athletes!bouts_blue_athlete_id_fkey(id, name),
         red_club:clubs!bouts_red_club_id_fkey(id, name), blue_club:clubs!bouts_blue_club_id_fkey(id, name),
         approvals:bout_approvals(side, decision, note, override, decided_by, decided_at),
-        bout_officials(user_id, role, accepted_at, user:profiles!bout_officials_user_id_fkey(id, name, email)),
+        bout_officials(user_id, judge, referee, supervisor, timekeeper, accepted_at, user:profiles!bout_officials_user_id_fkey(id, name, email)),
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
       supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
       supabase.rpc('my_official_days', { p_event_id: eventId }),
+      supabase.rpc('my_event_roles', { p_event_id: eventId }).maybeSingle(),
     ])
-    const failed = officials.error || bouts.error || weighIns.error || accepted.error
+    const failed = officials.error || bouts.error || weighIns.error || accepted.error || roles.error
     if (failed) throw failed
     return {
       officials: officials.data,
       // Days the signed-in user accepted to officiate (they record those days' weigh-ins).
       acceptedDays: accepted.data ?? [],
+      // The signed-in user's event roles (migration 42): { judge, referee, supervisor, timekeeper }.
+      myRoles: roles.data ?? {},
       bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
       weighIns: weighIns.data,
     }
   },
 
-  // An official takes a bout (migration 41). role: 'judge' (Judge only) or 'ref_judge' (Ref and Judge).
-  async acceptBout(boutId, role) {
-    await rpc('accept_bout', { p_bout_id: boutId, p_role: role })
+  // An official takes a bout (migrations 41, 42). roles: { judge, referee, supervisor, timekeeper },
+  // each one of the roles they chose for the event.
+  async acceptBout(boutId, roles) {
+    await rpc('accept_bout', {
+      p_bout_id: boutId, p_judge: !!roles?.judge, p_referee: !!roles?.referee,
+      p_supervisor: !!roles?.supervisor, p_timekeeper: !!roles?.timekeeper,
+    })
   },
 
   // userId left out: the signed-in official withdraws. Otherwise the Owner, CO or Deputy removes them.
@@ -677,10 +684,13 @@ export const supabaseApi = {
 
   // days: the days accepted ('YYYY-MM-DD'); left out means every day of the event.
   // sessions: 'YYYY-MM-DD HH:mm' keys for days worked only in some bout sessions.
-  async respondToInvitation(invitationId, accept, days, sessions) {
+  // roles: { judge, referee, supervisor, timekeeper }; accepting needs at least one (migration 42).
+  async respondToInvitation(invitationId, accept, days, sessions, roles) {
     await rpc('respond_to_invitation', {
       p_invitation_id: invitationId, p_accept: accept,
       p_days: accept && days?.length ? days : null, p_sessions: accept && sessions?.length ? sessions : null,
+      p_judge: accept && !!roles?.judge, p_referee: accept && !!roles?.referee,
+      p_supervisor: accept && !!roles?.supervisor, p_timekeeper: accept && !!roles?.timekeeper,
     })
   },
 
