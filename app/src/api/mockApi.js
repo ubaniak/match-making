@@ -243,8 +243,8 @@ const eventOpen = (event) => effectiveStatus(event) === 'active'
 // Mirrors can_invite_officials: site Admins and the event's Chief Official.
 // Both Chief Official seats count (migration 45).
 const canInviteOfficials = (current, eventId) => isSiteAdmin() || Boolean(officialRole(current, eventId))
-// Mirrors can_add_officials (migration 24): also the Deputy and any official who accepted.
-const canAddOfficials = (current, eventId) => canInviteOfficials(current, eventId) || Boolean(officialRole(current, eventId)) || acceptedOfficial(current, eventId)
+// Mirrors can_add_officials (migration 49): site Admins and the event's Chief Official and Deputy.
+const canAddOfficials = (current, eventId) => canInviteOfficials(current, eventId)
 
 // Mirrors can_manage_event_clubs: the event's Owner or a site Admin, while the event is Active.
 function requireClubManager(current, eventId, what) {
@@ -1334,7 +1334,7 @@ export const mockApi = {
   // Official invitations: the same rules as the database functions in migrations 14 and 21.
   async listInvitableOfficials(eventId) {
     const current = data()
-    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or an official on this event can invite officials')
+    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official or Deputy can invite officials')
     return current.officials
       .filter((o) => o.invite_email)
       .map((o) => ({ id: o.id, name: o.name, email: o.invite_email, signed_in: Boolean(o.user_id) }))
@@ -1382,7 +1382,7 @@ export const mockApi = {
   // Official, or linking their account) and invites them to the event.
   async addEventOfficial(eventId, name, email, respondBy) {
     const current = data()
-    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or an official on this event can invite officials')
+    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official or Deputy can invite officials')
     const clean = (email ?? '').trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) throw new Error('That email address doesn\'t look right')
     if (!name?.trim()) throw new Error('Give the official\'s name')
@@ -1403,7 +1403,7 @@ export const mockApi = {
   async inviteOfficials(eventId, officialIds, respondBy) {
     const current = data()
     const event = findEvent(current, eventId)
-    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or an official on this event can invite officials')
+    if (!canAddOfficials(current, eventId)) throw new Error('Only a site Admin or the event\'s Chief Official or Deputy can invite officials')
     if (!eventOpen(event)) throw new Error('Officials can be invited once the event is Active, and until it is over')
     if (respondBy && respondBy < todayIso(event.timezone)) throw new Error('The respond-by date has already passed')
     if (respondBy && respondBy > event.end_date) throw new Error('The respond-by date must be on or before the event\'s last day')
