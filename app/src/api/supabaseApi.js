@@ -481,7 +481,7 @@ export const supabaseApi = {
   },
 
   // Site Admins only. The event starts as Requested. Returns its id.
-  // location: { name, address, lat, lng, placeId } from the Google Maps field (migration 49); a CSV import passes venue text.
+  // location: { name, address, lat, lng, placeId } from the Google Maps field (migration 50); a CSV import passes venue text.
   async createEvent({ name, venue, location, startDate, endDate, ownerId, timezone }) {
     const { data, error } = await supabase.rpc('create_event', {
       p_name: name,
@@ -526,7 +526,7 @@ export const supabaseApi = {
     if (!data.length) throw new Error('You can\'t change this event')
   },
 
-  // Where the weigh-ins are (migration 49). null means at the bout location. Owner or site Admin (the update policy checks).
+  // Where the weigh-ins are (migration 50). null means at the bout location. Owner or site Admin (the update policy checks).
   async saveWeighInLocation(eventId, location) {
     const { data, error } = await supabase
       .from('events')

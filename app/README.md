@@ -132,7 +132,7 @@ Google sign-in sends no email, so it isn't affected by the email rate limit.
 
 ## Google Maps
 
-Event locations are a Google Maps search with a map pin (migration 49, `20261104080000_event_locations.sql`). Each
+Event locations are a Google Maps search with a map pin (migration 50, `20261104090000_event_locations.sql`). Each
 event has a bout location and a weigh-in location; the weigh-ins are at the bout location unless the Owner or a site
 Admin picks another place with the day times. Without a key, locations are typed as plain text and still get an
 "Open in Google Maps" link.

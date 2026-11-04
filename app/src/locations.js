@@ -1,4 +1,4 @@
-// Event locations (migration 49). A location is { name, address, lat, lng, placeId }: name is what people call the
+// Event locations (migration 50). A location is { name, address, lat, lng, placeId }: name is what people call the
 // place ("Eastside Leisure Centre"), address is Google's formatted address, lat/lng drop the map pin. Only name is
 // required; a location typed without the Google search has no pin.
 //

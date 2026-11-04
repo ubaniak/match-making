@@ -1,5 +1,5 @@
--- Migration 49: event locations on Google Maps, and a weigh-in location. Run after migration 48
--- (20261104070000_min_officials_chief_only.sql).
+-- Migration 50: event locations on Google Maps, and a weigh-in location. Run after migration 49
+-- (20261104080000_only_chiefs_invite_officials.sql, PR #92).
 --
 --   * The bout location keeps its name in events.venue and gains the address Google gives, the map
 --     pin (latitude and longitude) and Google's place id.

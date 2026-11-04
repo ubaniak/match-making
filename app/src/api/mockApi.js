@@ -10,7 +10,7 @@ import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
 import { eventRoles, rolesFlags, rolesOf, rolesText } from '../officialRoles'
 
-// The location columns list_public_events returns (migration 49).
+// The location columns list_public_events returns (migration 50).
 const LOCATION_KEYS = ['venue', 'venue_address', 'venue_lat', 'venue_lng', 'venue_place_id', 'weigh_in_venue', 'weigh_in_address', 'weigh_in_lat', 'weigh_in_lng', 'weigh_in_place_id']
 const pickLocations = (event) => Object.fromEntries(LOCATION_KEYS.map((k) => [k, event[k] ?? null]))
 
@@ -933,7 +933,7 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  // Mirrors migration 49: null puts the weigh-ins back at the bout location.
+  // Mirrors migration 50: null puts the weigh-ins back at the bout location.
   async saveWeighInLocation(eventId, location) {
     const current = data()
     const event = requireEditor(current, eventId)
