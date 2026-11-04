@@ -318,7 +318,8 @@ function Users() {
               setEmailing(null)
             }}
           />
-          {api.mode === 'supabase' && u.id && (
+          {/* Demo accounts are for Test as (header menu), not View as (Bhavek, 2026-11-04). */}
+          {api.mode === 'supabase' && u.id && !/@demo\.test$/i.test(u.email ?? '') && (
             <Button
               size="small"
               shape="circle"
