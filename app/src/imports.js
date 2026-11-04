@@ -172,12 +172,13 @@ export const importSpecs = {
     label: 'events',
     singular: 'event',
     columns: ['name', 'venue', 'start_date', 'end_date', 'owner_email', 'timezone'],
-    required: ['name', 'start_date', 'owner_email'],
+    required: ['name', 'venue', 'start_date', 'owner_email'],
     example: [
       ['Winter Box Cup', 'Eastside Community Centre', '2027-01-16', '2027-01-17', 'maria@example.com', 'America/Winnipeg'],
-      ['Spring Open', '', '2027-04-10', '', 'maria@example.com', ''],
+      ['Spring Open', 'Riverside Boxing Club, Winnipeg', '2027-04-10', '', 'maria@example.com', ''],
     ],
     notes: {
+      venue: 'the bout location; drop its map pin later with Edit details',
       start_date: 'like 2027-01-16',
       end_date: 'blank means a one-day event',
       owner_email: 'must have signed in',
@@ -187,6 +188,7 @@ export const importSpecs = {
     check(values, errors, { usersByEmail, defaultTimeZone }) {
       const name = (values.name ?? '').trim()
       if (!name) errors.push('Name is missing')
+      if (!(values.venue ?? '').trim()) errors.push('Venue (the bout location) is missing')
       const startDate = values.start_date ?? ''
       const endDate = values.end_date || startDate
       if (!startDate) errors.push('Start date is missing')
