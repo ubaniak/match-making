@@ -1045,21 +1045,7 @@ body {
   color: var(--text-muted);
 }
 
-/* Admin > Test data: "Test as another role". */
-.test-as {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-/* The yellow bar shown while a site Admin acts as a demo account. */
-.testing-bar .testing-bar-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Header "Test as" menu: each demo role on two lines. */
+/* Header "View as" picker: each person on two lines. */
 .test-as-item {
   padding: 4px 0;
   line-height: 1.35;
