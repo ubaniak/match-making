@@ -55,7 +55,7 @@ function boutCsvRows(event, data, athletes, days) {
     'Day', 'Bout', 'Session', 'Type', 'Status',
     'Red boxer', 'Red club', 'Red category', 'Red weigh-in',
     'Blue boxer', 'Blue club', 'Blue category', 'Blue weigh-in',
-    'Winner', 'Method', 'Result note', 'Red club decision', 'Blue club decision', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason', 'Needs discussion', 'Officials',
+    'Winner', 'Method', 'Result note', 'Red club decision', 'Blue club decision', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason', 'Needs discussion', 'Officials', 'Conflicts of interest',
   ]
   const rows = days.flatMap((day) => {
     const dayBouts = data.bouts.filter((b) => b.day === day)
@@ -74,7 +74,7 @@ function boutCsvRows(event, data, athletes, days) {
         said('red'), said('blue'), said('official'),
         b.approval_requested_at ? sentLabel(b.approval_requested_at) : '',
         b.override_reason ?? '', b.cancel_reason ?? '', b.status === 'cancelled' ? '' : b.review_reason ?? '',
-        officialsText(b),
+        officialsText(b), conflictsText(b),
       ]
     })
   })
@@ -84,6 +84,11 @@ function boutCsvRows(event, data, athletes, days) {
 // 'Grace Adeyemi (Referee, Judge); Rob Turner (Timekeeper)'
 function officialsText(bout) {
   return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${rolesText(o, '')})`).join('; ')
+}
+
+// 'Grace Adeyemi (coaches the red boxer); Rob Turner'
+function conflictsText(bout) {
+  return (bout.bout_conflicts ?? []).map((c) => `${personName(c.user)}${c.reason ? ` (${c.reason})` : ''}`).join('; ')
 }
 
 // The Bouts tab: the card, the weigh-in and results.
@@ -280,6 +285,7 @@ function Card({ event, data, rights, busy, run, publish }) {
           }))}
         />
       )}
+      {rights.seesConflicts && <ConflictsSummary bouts={shown} />}
       {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only a Chief Official can make or change bouts.</Muted>}
 
       {canMatch && (
@@ -528,6 +534,9 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
       )}
       {check && check.blocks.length === 0 && check.warnings.length === 0 && <FullRow><Text strong>These two are a good match.</Text></FullRow>}
       {bout && <FullRow><Muted>Re-matching clears the bout's approvals; both corners' club owners and a Chief Official approve it again.</Muted></FullRow>}
+      {bout?.bout_conflicts?.length > 0 && redId && blueId && ![bout.red_athlete_id, bout.blue_athlete_id].every((id) => [redId, blueId].includes(id)) && (
+        <FullRow><Muted>Matching different boxers clears the {bout.bout_conflicts.length} conflict{bout.bout_conflicts.length === 1 ? '' : 's'} of interest declared on this bout.</Muted></FullRow>
+      )}
     </FormCard>
   )
 }
@@ -559,6 +568,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
   const open = rights.cardOpen && !hasResult
 
   const type = boutTypeOf(bout)
+  const conflicts = bout.bout_conflicts ?? []
   const sparring = type === 'sparring'
   const overridden = Boolean(bout.override_reason)
   const overrider = officials.find((o) => o.user_id === bout.override_by)?.user
@@ -701,6 +711,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
           <Badge strong={type !== 'scored'}>{boutTypeLabels[type]}</Badge>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
           {review && <Badge strong>Needs discussion</Badge>}
+          {rights.seesConflicts && conflicts.length > 0 && <Badge strong>Conflict of interest ({conflicts.length})</Badge>}
           {bout.needs_supervisor && <Badge>U17 v U19: needs the official's approval</Badge>}
           {sendable(bout) && bout.approval_requested_at && <Badge muted title="Last sent for approval">Sent {sentLabel(bout.approval_requested_at)}</Badge>}
         </Space>
@@ -782,6 +793,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
       )}
 
       <BoutOfficials bout={bout} rights={rights} />
+      <BoutConflicts bout={bout} rights={rights} canChange={open && bout.status !== 'cancelled'} busy={busy} run={run} />
 
       <Space size={4} wrap>
         <Button size="small" onClick={() => setShowComments(!showComments)}>
@@ -883,6 +895,96 @@ function BoutOfficials({ bout, rights }) {
         ))}
       </Space>
     </div>
+  )
+}
+
+// Conflicts of interest (migration 53). Any official working the event declares one on a bout, with
+// an optional reason, and can take it back. The Chief Officials and site Admin see everyone's; an
+// official sees only their own. The Officials assignment plan rests a conflicted official on that bout.
+function BoutConflicts({ bout, rights, canChange, busy, run }) {
+  const conflicts = bout.bout_conflicts ?? []
+  const mine = conflicts.find((c) => c.user_id === rights.me)
+  const others = rights.seesConflicts ? conflicts.filter((c) => c.user_id !== rights.me) : []
+  const boutName = `${bout.red?.name ?? 'Red'} vs ${bout.blue?.name ?? 'Blue'}`
+
+  async function declare() {
+    const reason = await askText(
+      `Declare a conflict of interest on ${boutName}? The Chief Officials will see it and won't assign you to this bout. Give a reason (optional), for example "I coach the red boxer".`,
+      { okText: 'Declare conflict', placeholder: 'Reason (optional)' },
+    )
+    if (reason === null) return
+    run(() => api.declareBoutConflict(bout.id, reason))
+  }
+
+  async function takeBack() {
+    if (await askConfirm(`Take back your conflict of interest on ${boutName}? You could then be assigned to this bout.`, { okText: 'Take back' })) {
+      run(() => api.withdrawBoutConflict(bout.id))
+    }
+  }
+
+  const line = (c) => (
+    <li key={c.user_id}>
+      <Text strong>{c.user_id === rights.me ? 'You' : personName(c.user)}</Text>
+      {c.reason ? `: ${c.reason}` : <Text type="secondary"> (no reason given)</Text>}
+    </li>
+  )
+
+  if (!mine && others.length === 0) {
+    if (!rights.worksEvent || !canChange) return null
+    return (
+      <div className="bout-conflict-action">
+        <Button size="small" disabled={busy} onClick={declare}>Declare conflict of interest</Button>
+      </div>
+    )
+  }
+
+  return (
+    <Alert
+      type="warning"
+      showIcon={false}
+      className="gap"
+      title={rights.seesConflicts ? `Conflict of interest (${conflicts.length})` : 'You declared a conflict of interest'}
+      description={
+        <>
+          <ul className="bout-conflicts">
+            {mine && line(mine)}
+            {others.map(line)}
+          </ul>
+          {rights.seesConflicts && <Muted>The officials plan rests these officials on this bout.</Muted>}
+          {rights.worksEvent && canChange && (
+            <Space size={6} wrap style={{ marginTop: 8 }}>
+              {mine
+                ? <Button size="small" disabled={busy} onClick={takeBack}>Take back my conflict</Button>
+                : <Button size="small" disabled={busy} onClick={declare}>Declare conflict of interest</Button>}
+              {mine && <Button size="small" type="link" disabled={busy} onClick={declare}>Change reason</Button>}
+            </Space>
+          )}
+        </>
+      }
+    />
+  )
+}
+
+// For the Chief Officials while they match: which of the day's bouts have conflicts of interest.
+function ConflictsSummary({ bouts }) {
+  const flagged = bouts.map((b, i) => ({ n: i + 1, b })).filter(({ b }) => (b.bout_conflicts ?? []).length > 0)
+  if (!flagged.length) return null
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      className="gap"
+      title={`Conflicts of interest on ${flagged.length} bout${flagged.length === 1 ? '' : 's'} this day`}
+      description={
+        <ul className="bout-conflicts">
+          {flagged.map(({ n, b }) => (
+            <li key={b.id}>
+              <Text strong>Bout {n}</Text> ({b.red?.name ?? 'Red'} vs {b.blue?.name ?? 'Blue'}): {b.bout_conflicts.map((c) => personName(c.user)).join(', ')}
+            </li>
+          ))}
+        </ul>
+      }
+    />
   )
 }
 

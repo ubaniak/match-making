@@ -568,6 +568,23 @@ body {
   align-items: center;
 }
 
+/* Conflicts of interest (migration 53). */
+.bout-conflict-action {
+  margin: 8px 0;
+}
+
+.bout-conflicts {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+/* A conflicted official assigned a working role on the officials plan. */
+.plan-conflict {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+}
+
 .bout-role-picker {
   display: grid;
   gap: 8px;

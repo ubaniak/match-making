@@ -687,6 +687,7 @@ export const supabaseApi = {
         red_club_has_owner, blue_club_has_owner,
         approvals:bout_approvals(side, decision, note, override, decided_by, decided_at),
         bout_officials(user_id, judge, referee, supervisor, timekeeper, accepted_at, user:profiles!bout_officials_user_id_fkey(id, name, email)),
+        bout_conflicts(user_id, reason, created_at, user:profiles!bout_conflicts_user_id_fkey(id, name, email)),
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
       supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
@@ -704,6 +705,16 @@ export const supabaseApi = {
       bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
       weighIns: weighIns.data,
     }
+  },
+
+  // An official working the event declares a conflict of interest on a bout, or takes it back
+  // (migration 53). Only the Chief Officials, site Admins and the official see it.
+  async declareBoutConflict(boutId, reason) {
+    await rpc('declare_bout_conflict', { p_bout_id: boutId, p_reason: reason?.trim() || null })
+  },
+
+  async withdrawBoutConflict(boutId) {
+    await rpc('withdraw_bout_conflict', { p_bout_id: boutId })
   },
 
   // A corner's club owner takes their athlete out of the bout; the bout is cancelled (migration 52).

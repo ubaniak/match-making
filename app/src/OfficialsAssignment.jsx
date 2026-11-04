@@ -12,7 +12,7 @@ import { DEFAULT_TIME_ZONE, formatDay, formatShortDay, todayIso } from './dates'
 import { askConfirm } from './dialogs'
 import { eventRoles, rolesFlags } from './officialRoles'
 import {
-  HIGH_LEVEL, MIN_OFFICIALS_TO_RUN, boutProblems, generatePlan, planRoleLabel, planRoles, planToSlots,
+  HIGH_LEVEL, MIN_OFFICIALS_TO_RUN, boutProblems, conflictedOn, generatePlan, planRoleLabel, planRoles, planToSlots,
   plannedBouts, roleCounts, slotsToPlan,
 } from './officialPlan'
 import { Badge, ErrorAlert, Muted, Section, Text } from './ui'
@@ -169,8 +169,10 @@ function DayPlan({ event, day, bouts, planner, me }) {
   const editing = !approved && event.status === 'active'
   const tooFew = pool.length < MIN_OFFICIALS_TO_RUN
   const noSupervisor = !tooFew && !pool.some((o) => o.supervisor)
-  const problemsByBout = Object.fromEntries(bouts.map((b, i) => [b.id, boutProblems(draft[b.id], pool, i ? draft[bouts[i - 1].id] : null)]))
+  const problemsByBout = Object.fromEntries(bouts.map((b, i) => [b.id, boutProblems(draft[b.id], pool, i ? draft[bouts[i - 1].id] : null, b)]))
   const blocking = bouts.filter((b) => problemsByBout[b.id].some((p) => p.blocking)).length
+  const conflictBouts = bouts.filter((b) => conflictedOn(b).size > 0).length
+  const conflictsAssigned = bouts.filter((b) => problemsByBout[b.id].some((p) => p.conflict)).length
   const hasAny = bouts.some((b) => Object.keys(draft[b.id] ?? {}).length)
 
   async function makePlan() {
@@ -196,7 +198,7 @@ function DayPlan({ event, day, bouts, planner, me }) {
 
   async function approve() {
     const ok = await askConfirm(
-      `Approve the officials plan for ${formatDay(day)}? Every official working that night will be told and can see it, and it becomes who works each bout on the Bouts tab.`,
+      `Approve the officials plan for ${formatDay(day)}? Every official working that night will be told and can see it, and it becomes who works each bout on the Bouts tab.${conflictsAssigned ? ` ${conflictsAssigned} bout${conflictsAssigned === 1 ? ' has' : 's have'} an official working it who declared a conflict of interest.` : ''}`,
       { okText: 'Approve plan' },
     )
     if (!ok) return
@@ -233,6 +235,17 @@ function DayPlan({ event, day, bouts, planner, me }) {
         <Alert type="warning" showIcon className="gap" title="Nobody working this night ticked Supervisor. Tick it for someone below so every bout can have one." />
       )}
       {status}
+      {conflictBouts > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          className="gap"
+          title={`Officials declared a conflict of interest on ${conflictBouts} bout${conflictBouts === 1 ? '' : 's'} this night.`}
+          description={conflictsAssigned
+            ? `${conflictsAssigned} bout${conflictsAssigned === 1 ? ' has' : 's have'} a conflicted official working it. Change them to Rest, or approve anyway if you accept it.`
+            : 'Make plan rests them on those bouts. Their cells are marked below.'}
+        />
+      )}
 
       <DayOfficials event={event} pool={pool} plan={draft} canEdit={planner && event.status === 'active'} busy={busy} run={run} keepDraft={dirty} />
 
@@ -338,8 +351,15 @@ function PlanGrid({ event, bouts, pool, plan, problems, editing, onChange, me })
       width: 140,
       render: (_, b) => {
         const role = plan[b.id]?.[o.user_id]
-        if (!editing) return role ? <RoleTag role={role} /> : '—'
+        const conflict = (b.bout_conflicts ?? []).find((c) => c.user_id === o.user_id)
+        const flag = conflict && (
+          <Tooltip title={conflict.reason || 'No reason given'}>
+            <Text type="warning" className="plan-conflict">Conflict of interest</Text>
+          </Tooltip>
+        )
+        if (!editing) return <>{role ? <RoleTag role={role} /> : '—'}{flag}</>
         return (
+          <>
           <Select
             size="middle"
             aria-label={`${o.name} on ${boutName(b)}`}
@@ -350,6 +370,8 @@ function PlanGrid({ event, bouts, pool, plan, problems, editing, onChange, me })
             options={options.map((opt) => ({ ...opt, label: o[opt.value] || opt.value === 'rest' ? opt.label : `${opt.label} (not ticked)` }))}
             onChange={(value) => onChange(b.id, o.user_id, value)}
           />
+          {flag}
+          </>
         )
       },
     })),
@@ -363,7 +385,7 @@ function PlanGrid({ event, bouts, pool, plan, problems, editing, onChange, me })
       dataSource={bouts}
       pagination={false}
       scroll={{ x: 'max-content' }}
-      rowClassName={(b) => ((problems[b.id] ?? []).some((p) => p.blocking) ? 'row-error' : '')}
+      rowClassName={(b) => ((problems[b.id] ?? []).some((p) => p.blocking || p.conflict) ? 'row-error' : '')}
     />
   )
 }
