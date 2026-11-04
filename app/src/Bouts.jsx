@@ -9,7 +9,8 @@ import { categorise } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
 import { bestOpponents, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
-import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
+import { eventRoles, rolesFlags, rolesOf, rolesText } from './officialRoles'
+import { Alert, Button, Card as AntCard, Checkbox, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -29,8 +30,6 @@ const boutTypeHelp = {
   developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. The Chief Official or Deputy approves it.',
   sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
 }
-// How an official works a bout (migration 41). Every official who accepts a bout picks one.
-const boutRoleLabels = { judge: 'Judge only', ref_judge: 'Ref and Judge' }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
 const personName = (user) => (user ? user.name || user.email : '—')
 // Emailed links go straight to sign-in and then Home; the bare root is the public page.
@@ -78,9 +77,9 @@ function boutCsvRows(event, data, athletes, days) {
   return [header, ...rows]
 }
 
-// 'Grace Adeyemi (Ref and Judge); Rob Turner (Judge only)'
+// 'Grace Adeyemi (Referee, Judge); Rob Turner (Timekeeper)'
 function officialsText(bout) {
-  return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${boutRoleLabels[o.role] ?? o.role})`).join('; ')
+  return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${rolesText(o, '')})`).join('; ')
 }
 
 function categoryText(athlete, eventDate) {
@@ -841,27 +840,30 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   )
 }
 
-// Who is working the bout and as what (migration 41). An official working the bout's day accepts it
-// and must choose Judge only or Ref and Judge; they can change that or withdraw until the result.
-// The Owner, Chief Official or Deputy can take an official off the bout.
+// Who is working the bout and as what (migrations 41, 42). An official working the bout's day
+// accepts it and ticks which of their event roles they do on it (Referee, Judge, Supervisor,
+// Timekeeper); they can change that or withdraw until the result. The Owner, Chief Official or
+// Deputy can take an official off the bout.
 function BoutOfficials({ bout, rights, open, busy, run }) {
   const list = bout.bout_officials ?? []
   const mine = list.find((o) => o.user_id === rights.me)
-  const canWork = open && bout.status !== 'cancelled' && Boolean(rights.me)
-    && (Boolean(rights.officialRole) || rights.weighInDays.includes(bout.day))
+  const myRoles = eventRoles.filter((r) => rights.myRoles?.[r.key])
+  const worksDay = Boolean(rights.me) && (Boolean(rights.officialRole) || rights.weighInDays.includes(bout.day))
+  const canWork = open && bout.status !== 'cancelled' && worksDay
   const canRemove = open && (rights.owner || rights.official)
   const [picking, setPicking] = useState(false)
-  const [role, setRole] = useState(null)
+  const [roles, setRoles] = useState([])
   const pickerId = `bout-role-${bout.id}`
 
   function startPicking() {
-    setRole(mine?.role ?? null)
+    // A new pick starts with every event role ticked when there's only one to choose.
+    setRoles(mine ? rolesOf(mine).filter((k) => rights.myRoles?.[k]) : myRoles.length === 1 ? [myRoles[0].key] : [])
     setPicking(true)
   }
 
   async function accept() {
-    if (!role) return
-    if (await run(() => api.acceptBout(bout.id, role))) setPicking(false)
+    if (roles.length === 0) return
+    if (await run(() => api.acceptBout(bout.id, rolesFlags(roles)))) setPicking(false)
   }
 
   async function remove(o) {
@@ -880,7 +882,7 @@ function BoutOfficials({ bout, rights, open, busy, run }) {
         {list.length === 0 && <Text type="secondary">None yet</Text>}
         {list.map((o) => (
           <span key={o.user_id} className="bout-official">
-            <Badge strong={o.role === 'ref_judge'}>{personName(o.user)}{o.user_id === rights.me ? ' (you)' : ''} · {boutRoleLabels[o.role] ?? o.role}</Badge>
+            <Badge strong={Boolean(o.referee)}>{personName(o.user)}{o.user_id === rights.me ? ' (you)' : ''} · {rolesText(o, 'No role')}</Badge>
             {(canRemove || (o.user_id === rights.me && open)) && (
               <Button size="small" type="link" danger disabled={busy} onClick={() => remove(o)}>
                 {o.user_id === rights.me ? 'Withdraw' : 'Remove'}
@@ -888,25 +890,28 @@ function BoutOfficials({ bout, rights, open, busy, run }) {
             )}
           </span>
         ))}
-        {canWork && !picking && (
+        {canWork && !picking && myRoles.length > 0 && (
           <Button size="small" type={mine ? 'default' : 'primary'} disabled={busy} onClick={startPicking}>
-            {mine ? 'Change my role' : 'Accept bout'}
+            {mine ? 'Change my roles' : 'Accept bout'}
           </Button>
         )}
       </Space>
+      {canWork && myRoles.length === 0 && (
+        <Muted>Pick your event roles on the Officials tab before you accept bouts.</Muted>
+      )}
       {picking && (
         <div className="bout-role-picker" role="group" aria-labelledby={pickerId}>
-          <Text strong id={pickerId}>How will you work this bout?</Text>
-          <Radio.Group
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            options={Object.entries(boutRoleLabels).map(([value, label]) => ({ value, label }))}
+          <Text strong id={pickerId}>Which roles will you do on this bout?</Text>
+          <Checkbox.Group
+            value={roles}
+            onChange={setRoles}
+            options={myRoles.map((r) => ({ value: r.key, label: r.label }))}
           />
           <Space size={6} wrap>
-            <Button size="small" type="primary" disabled={busy || !role} onClick={accept}>{mine ? 'Save' : 'Accept bout'}</Button>
+            <Button size="small" type="primary" disabled={busy || roles.length === 0} onClick={accept}>{mine ? 'Save' : 'Accept bout'}</Button>
             <Button size="small" onClick={() => setPicking(false)}>Cancel</Button>
           </Space>
-          {!role && <Muted>Choose Judge only or Ref and Judge to accept.</Muted>}
+          {roles.length === 0 && <Muted>Pick at least one role to accept.</Muted>}
         </div>
       )}
     </div>

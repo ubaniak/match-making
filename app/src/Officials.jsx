@@ -8,6 +8,7 @@ import DataTable from './DataTable'
 import { api } from './api'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
+import { eventRoles, rolesFlags, rolesOf, rolesText } from './officialRoles'
 import { askConfirm } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
 import { sendWelcome } from './welcome'
@@ -68,8 +69,9 @@ function daysText(invitation, event) {
   }).join(', ')
 }
 
-// Accepting asks which days, and on days with more than one bout session, whole day or which
-// sessions. ask(event, invitation) resolves to { days, sessions } or null when cancelled.
+// Accepting asks which event roles the official will work (Judge, Referee, Supervisor, Timekeeper:
+// any mix, at least one), which days, and on days with more than one bout session, whole day or
+// which sessions. ask(event, invitation) resolves to { days, sessions, roles } or null when cancelled.
 // The event needs its days and sessions; pass { id } alone and they are loaded.
 function useAcceptDays() {
   const [asking, setAsking] = useState(null) // { event, all, picked: { [day]: 'all' | [times] }, resolve }
@@ -77,14 +79,15 @@ function useAcceptDays() {
     const event = eventOrId.days ? eventOrId : await api.getEvent(eventOrId.id)
     const all = daysBetween(event.start_date, event.end_date)
     const sessionsOf = (d) => event.days?.find((x) => x.day === d)?.sessions ?? []
-    if (all.length <= 1 && sessionsOf(all[0]).length <= 1) return { days: all, sessions: [] }
+    const pickDays = all.length > 1 || sessionsOf(all[0]).length > 1
     const picked = {}
     const days = invitation?.status === 'accepted' && invitation.days?.length ? invitation.days : all
     for (const d of days.filter((x) => all.includes(x))) {
       const times = (invitation?.sessions ?? []).filter((k) => k.startsWith(d)).map((k) => k.slice(11))
       picked[d] = times.length ? times : 'all'
     }
-    return new Promise((resolve) => setAsking({ event, all, sessionsOf, picked, resolve }))
+    const roles = invitation?.status === 'accepted' ? rolesOf(invitation) : []
+    return new Promise((resolve) => setAsking({ event, all, sessionsOf, picked, roles, pickDays, resolve }))
   }
   function close(value) {
     asking?.resolve(value)
@@ -93,15 +96,15 @@ function useAcceptDays() {
   function result() {
     const days = asking.all.filter((d) => asking.picked[d] && (asking.picked[d] === 'all' || asking.picked[d].length))
     const sessions = days.flatMap((d) => (asking.picked[d] === 'all' ? [] : asking.picked[d].map((t) => sessionKey(d, t))))
-    return { days, sessions }
+    return { days, sessions, roles: rolesFlags(asking.roles) }
   }
   const pick = (d, value) => setAsking({ ...asking, picked: { ...asking.picked, [d]: value } })
-  const ready = asking ? result().days.length > 0 : false
+  const ready = asking ? result().days.length > 0 && asking.roles.length > 0 : false
 
   const dialog = (
     <Modal
       open={Boolean(asking)}
-      title="When can you officiate?"
+      title={asking?.pickDays ? 'Your roles and days' : 'Your roles'}
       okText="Accept"
       okButtonProps={{ disabled: !ready }}
       onOk={() => close(result())}
@@ -109,6 +112,17 @@ function useAcceptDays() {
     >
       {asking && (
         <>
+          <fieldset className="role-picker">
+            <legend><Text strong>Which roles will you work?</Text> <Text type="secondary">Pick one or more.</Text></legend>
+            <Checkbox.Group
+              value={asking.roles}
+              onChange={(roles) => setAsking({ ...asking, roles })}
+              options={eventRoles.map((r) => ({ value: r.key, label: r.label }))}
+            />
+          </fieldset>
+          {asking.roles.length === 0 && <Muted>Pick at least one role to accept.</Muted>}
+          {asking.pickDays && (
+          <>
           <Muted>
             {asking.event.name} runs {formatDateRange(asking.event.start_date, asking.event.end_date)}. Pick the days you can
             work, and on a day with more than one bout session, the whole day or just some sessions. Working any part of a day
@@ -145,6 +159,8 @@ function useAcceptDays() {
               )
             })}
           </Space>
+          </>
+          )}
         </>
       )}
     </Modal>
@@ -236,7 +252,7 @@ function MyAnswer({ invitation, event, busy, act }) {
   const { ask, dialog } = useAcceptDays()
   async function accept() {
     const parts = await ask(event, invitation)
-    if (parts) act(() => api.respondToInvitation(invitation.id, true, parts.days, parts.sessions))
+    if (parts) act(() => api.respondToInvitation(invitation.id, true, parts.days, parts.sessions, parts.roles))
   }
   return (
     <AntCard size="small" className="form-card gap">
@@ -244,10 +260,13 @@ function MyAnswer({ invitation, event, busy, act }) {
       <Space wrap>
         <Text>You're invited to officiate this event.</Text>
         <AnswerBadge answer={answer} />
+        {answer === 'accepted' && <Text type="secondary">{rolesText(invitation)}</Text>}
         {answer === 'accepted' && choice && <Text type="secondary">{daysText(invitation, event)}</Text>}
         {invitation.respond_by && answer === 'pending' && <Text type="secondary">Please answer by {formatDay(invitation.respond_by)}.</Text>}
-        {open && (answer !== 'accepted' || choice) && (
-          <Button size="small" type={answer === 'accepted' ? 'default' : 'primary'} disabled={busy} onClick={accept}>{answer === 'accepted' ? 'Change days' : 'Accept'}</Button>
+        {open && (
+          <Button size="small" type={answer === 'accepted' ? 'default' : 'primary'} disabled={busy} onClick={accept}>
+            {answer === 'accepted' ? (choice ? 'Change days and roles' : 'Change roles') : 'Accept'}
+          </Button>
         )}
         {open && answer !== 'declined' && (
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
@@ -400,6 +419,10 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
           {roleOf(i.user_id) && <Badge strong>{officialLabels[roleOf(i.user_id)]}</Badge>}
         </Space>
       ),
+    },
+    {
+      title: 'Roles', key: 'roles', value: (i) => (i.status === 'accepted' ? rolesText(i, '') : ''),
+      render: (_, i) => (i.status === 'accepted' ? rolesText(i) : '—'),
     },
     (multiDay || event.days.some((d) => d.sessions.length > 1)) && {
       title: 'Days', key: 'days', value: (i) => (i.status === 'accepted' ? daysText(i, event) : ''),
@@ -621,7 +644,7 @@ export function MyInvitations({ onOpen }) {
     }
     setBusy(true)
     try {
-      await api.respondToInvitation(i.id, accept, parts?.days, parts?.sessions)
+      await api.respondToInvitation(i.id, accept, parts?.days, parts?.sessions, parts?.roles)
       await load()
     } catch (err) {
       setError(err.message)
@@ -642,6 +665,7 @@ export function MyInvitations({ onOpen }) {
       render: (_, i) => (
         <Space size={4} wrap>
           <AnswerBadge answer={answerOf(i, i.timezone)} />
+          {i.status === 'accepted' && <Text type="secondary">{rolesText(i)}</Text>}
           {i.status === 'accepted' && (i.start_date !== i.end_date || i.sessions?.length > 0) && <Text type="secondary">{daysText(i, eventOf(i))}</Text>}
         </Space>
       ),
@@ -655,7 +679,7 @@ export function MyInvitations({ onOpen }) {
         return (
           <Space>
             {current !== 'accepted' && <Button size="small" type="primary" disabled={busy} onClick={() => answer(i, true)}>Accept</Button>}
-            {current === 'accepted' && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days</Button>}
+            {current === 'accepted' && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days and roles</Button>}
             {current !== 'declined' && <Button size="small" disabled={busy} onClick={() => answer(i, false)}>Decline</Button>}
           </Space>
         )
@@ -667,7 +691,7 @@ export function MyInvitations({ onOpen }) {
     <Section title="Your invitations to officiate">
       {dialog}
       <ErrorAlert>{error}</ErrorAlert>
-      <Muted>Accept for the days, or the bout sessions, you can work. You can change your answer or your days until the event's first day.</Muted>
+      <Muted>Accept with the roles you'll work (Judge, Referee, Supervisor, Timekeeper) and the days, or bout sessions, you can work. You can change your answer, roles or days until the event's first day.</Muted>
       <DataTable rowKey="id" columns={columns} dataSource={shown} csvName="Invitations to officiate" />
     </Section>
   )

@@ -8,13 +8,14 @@ import { ageCategory, experienceCategory } from '../categories'
 import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
 import { dayProblems, effectiveStatus, hasProblems } from '../events'
 import { testClubs, testRoster } from './testRoster'
+import { eventRoles, rolesFlags, rolesOf, rolesText } from '../officialRoles'
 
 const ADMIN_EMAIL = (import.meta.env.VITE_MOCK_ADMIN_EMAIL || 'admin@matchmaking.test').toLowerCase()
 const ADMIN_PASSWORD = import.meta.env.VITE_MOCK_ADMIN_PASSWORD || 'letmein'
 const ADMIN_ID = 'mock-admin'
 
 const SESSION_KEY = 'mock-session'
-const DATA_KEY = 'mock-data-v10' // v10: officials accept for chosen days
+const DATA_KEY = 'mock-data-v11' // v11: officials pick event roles (Judge, Referee, Supervisor, Timekeeper)
 
 // Sample events dated from today, so there's always something upcoming.
 function seed() {
@@ -84,8 +85,8 @@ function seed() {
     ],
     lateEntries: [],
     officialInvitations: [
-      { id: 'invite-1', event_id: 'event-1', official_id: 'official-3', status: 'accepted', days: [start, addDays(start, 1)], respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
-      { id: 'invite-2', event_id: 'event-1', official_id: 'official-4', status: 'accepted', days: [start], respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
+      { id: 'invite-1', event_id: 'event-1', official_id: 'official-3', status: 'accepted', days: [start, addDays(start, 1)], referee: true, judge: true, supervisor: true, respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
+      { id: 'invite-2', event_id: 'event-1', official_id: 'official-4', status: 'accepted', days: [start], judge: true, timekeeper: true, respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
       { id: 'invite-3', event_id: 'event-1', official_id: 'official-1', status: 'declined', respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() },
       { id: 'invite-4', event_id: 'event-1', official_id: 'official-2', status: 'pending', respond_by: addDays(today, 7), invited_at: new Date().toISOString(), responded_at: null },
     ],
@@ -197,6 +198,12 @@ const acceptedOfficial = (current, eventId) => (current.officialInvitations ?? [
 // Mirrors my_official_days.
 const myDays = (current, eventId) => (current.officialInvitations ?? []).find((i) => i.event_id === eventId && i.status === 'accepted'
   && current.officials.find((o) => o.id === i.official_id)?.user_id === currentUserId())?.days ?? []
+// Mirrors my_event_roles: the signed-in user's event roles from their accepted invitation.
+const myEventRoles = (current, eventId) => {
+  const invite = (current.officialInvitations ?? []).find((i) => i.event_id === eventId && i.status === 'accepted'
+    && current.officials.find((o) => o.id === i.official_id)?.user_id === currentUserId())
+  return rolesFlags(rolesOf(invite))
+}
 const userAccepted = (current, eventId, userId) => (current.officialInvitations ?? []).some((i) => i.event_id === eventId && i.status === 'accepted'
   && current.officials.find((o) => o.id === i.official_id)?.user_id === userId)
 // Approved bouts for the public page, as migration 19's list_public_events: card numbers count every
@@ -409,7 +416,7 @@ function addHelperAccounts(current) {
     }
     for (const event of [one, multi]) {
       if (!current.officialInvitations.some((i) => i.event_id === event.id && i.official_id === official.id)) {
-        current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() })
+        current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), judge: true, referee: true, supervisor: true, timekeeper: true, respond_by: null, invited_at: new Date().toISOString(), responded_at: new Date().toISOString() })
       }
     }
   }
@@ -1063,7 +1070,7 @@ export const mockApi = {
     current.eventOfficials = current.eventOfficials ?? []
     for (const event of Object.values(events)) {
       current.eventMembers.push({ event_id: event.id, user_id: 'demo-event-owner', role: 'owner' })
-      current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), respond_by: null, invited_at: now(), responded_at: now() })
+      current.officialInvitations.push({ id: crypto.randomUUID(), event_id: event.id, official_id: official.id, status: 'accepted', days: event.days.map((d) => d.day), judge: true, referee: true, supervisor: true, timekeeper: true, respond_by: null, invited_at: now(), responded_at: now() })
       current.eventOfficials.push({ event_id: event.id, role: 'chief', user_id: 'demo-official' })
     }
     current.clubMembers.push({ club_id: clubIds['TEST North End Boxing'], user_id: 'demo-club-owner', role: 'owner', status: 'active' })
@@ -1458,7 +1465,10 @@ export const mockApi = {
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
         bout_officials: (b.bout_officials ?? []).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
       }))
-    return { officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId) }
+    return {
+      officials, bouts, weighIns: current.weighIns.filter((w) => w.event_id === eventId), acceptedDays: myDays(current, eventId),
+      myRoles: myEventRoles(current, eventId),
+    }
   },
 
   async setEventOfficial(eventId, role, userId) {
@@ -1579,7 +1589,8 @@ export const mockApi = {
     return sent
   },
 
-  async respondToInvitation(invitationId, accept, days, sessions) {
+  // roles: { judge, referee, supervisor, timekeeper }; accepting needs at least one (migration 42).
+  async respondToInvitation(invitationId, accept, days, sessions, roles) {
     const current = data()
     const invite = current.officialInvitations.find((i) => i.id === invitationId)
     if (!invite) throw new Error('That invitation has been cancelled')
@@ -1594,6 +1605,7 @@ export const mockApi = {
     let chosen = null
     let parts = null
     if (accept) {
+      if (!eventRoles.some((r) => roles?.[r.key])) throw new Error('Pick at least one role: Judge, Referee, Supervisor or Timekeeper')
       chosen = [...new Set(days?.length ? days : daysBetween(event.start_date, event.end_date))].sort()
       if (chosen.some((d) => d < event.start_date || d > event.end_date)) throw new Error('Pick days of the event')
       parts = [...new Set(sessions ?? [])].sort()
@@ -1604,11 +1616,17 @@ export const mockApi = {
     invite.status = accept ? 'accepted' : 'declined'
     invite.days = chosen
     invite.sessions = accept && parts.length ? parts : null
+    for (const r of eventRoles) invite[r.key] = Boolean(accept && roles?.[r.key])
     invite.responded_at = now()
-    if (!accept) current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === event.id && o.user_id === official.user_id))
+    if (!accept) {
+      current.eventOfficials = current.eventOfficials.filter((o) => !(o.event_id === event.id && o.user_id === official.user_id))
+      for (const b of current.bouts) {
+        if (b.event_id === event.id) b.bout_officials = (b.bout_officials ?? []).filter((o) => o.user_id !== official.user_id)
+      }
+    }
     resolveNotes(current, `invitation:${invite.id}`)
     notify(current, eventOwnerIds(current, event.id), 'invitation_answer', `${official.name} ${invite.status} ${event.name}`, {
-      body: accept ? `Days: ${chosen.map(label).join(', ')}` : null, eventId: event.id, tab: 'officials',
+      body: accept ? `Roles: ${rolesText(invite)} · Days: ${chosen.map(label).join(', ')}` : null, eventId: event.id, tab: 'officials',
     })
     write(DATA_KEY, current)
   },
@@ -1761,18 +1779,21 @@ export const mockApi = {
     write(DATA_KEY, current)
   },
 
-  // Mirrors migration 41: the CO or Deputy, or an official who accepted the bout's day, takes the
-  // bout as 'judge' (Judge only) or 'ref_judge' (Ref and Judge).
-  async acceptBout(boutId, role) {
+  // Mirrors migrations 41 and 42: the CO or Deputy, or an official who accepted the bout's day, takes
+  // the bout. roles: { judge, referee, supervisor, timekeeper }, each one of their event roles.
+  async acceptBout(boutId, roles) {
     const current = data()
     const bout = findBout(current, boutId)
-    if (!['judge', 'ref_judge'].includes(role)) throw new Error('Choose Judge only or Ref and Judge')
+    const picked = eventRoles.filter((r) => roles?.[r.key]).map((r) => r.key)
+    if (picked.length === 0) throw new Error('Pick at least one role for this bout')
     if (!officialRole(current, bout.event_id) && !myDays(current, bout.event_id).includes(bout.day)) throw new Error('Only officials working this day can accept the bout')
+    const mine = myEventRoles(current, bout.event_id)
+    if (picked.some((k) => !mine[k])) throw new Error('You can only take roles you chose when you accepted the event')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('Bouts can be accepted only while the event is Active')
     if (bout.status === 'cancelled') throw new Error('This bout is cancelled')
     if (bout.winner) throw new Error('This bout already has a result')
     const me = currentUserId()
-    bout.bout_officials = [...(bout.bout_officials ?? []).filter((o) => o.user_id !== me), { user_id: me, role, accepted_at: now() }]
+    bout.bout_officials = [...(bout.bout_officials ?? []).filter((o) => o.user_id !== me), { user_id: me, ...rolesFlags(picked), accepted_at: now() }]
     write(DATA_KEY, current)
   },
 
