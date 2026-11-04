@@ -1807,34 +1807,6 @@ export const mockApi = {
 
   // Mirrors migrations 41 and 42: the CO or Deputy, or an official who accepted the bout's day, takes
   // the bout. roles: { judge, referee, supervisor, timekeeper }, each one of their event roles.
-  async acceptBout(boutId, roles) {
-    const current = data()
-    const bout = findBout(current, boutId)
-    const picked = eventRoles.filter((r) => roles?.[r.key]).map((r) => r.key)
-    if (picked.length === 0) throw new Error('Pick at least one role for this bout')
-    if (!officialRole(current, bout.event_id) && !myDays(current, bout.event_id).includes(bout.day)) throw new Error('Only officials working this day can accept the bout')
-    const mine = myEventRoles(current, bout.event_id)
-    if (picked.some((k) => !mine[k])) throw new Error('You can only take roles you chose when you accepted the event')
-    if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('Bouts can be accepted only while the event is Active')
-    if (bout.status === 'cancelled') throw new Error('This bout is cancelled')
-    if (bout.winner) throw new Error('This bout already has a result')
-    const me = currentUserId()
-    bout.bout_officials = [...(bout.bout_officials ?? []).filter((o) => o.user_id !== me), { user_id: me, ...rolesFlags(picked), accepted_at: now() }]
-    write(DATA_KEY, current)
-  },
-
-  async withdrawFromBout(boutId, userId) {
-    const current = data()
-    const bout = findBout(current, boutId)
-    const who = userId || currentUserId()
-    if (who !== currentUserId() && !isOwnerOf(current, bout.event_id) && !isOfficial(current, bout.event_id)) {
-      throw new Error('Only the event\'s Owner or a Chief Official can take another official off a bout')
-    }
-    if (bout.winner && !isSiteAdmin()) throw new Error('This bout already has a result')
-    bout.bout_officials = (bout.bout_officials ?? []).filter((o) => o.user_id !== who)
-    write(DATA_KEY, current)
-  },
-
   async swapBoutCorners(boutId) {
     const current = data()
     const bout = findBout(current, boutId)

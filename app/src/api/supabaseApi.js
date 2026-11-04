@@ -706,23 +706,9 @@ export const supabaseApi = {
     }
   },
 
-  // An official takes a bout (migrations 41, 42). roles: { judge, referee, supervisor, timekeeper },
-  // each one of the roles they chose for the event.
-  async acceptBout(boutId, roles) {
-    await rpc('accept_bout', {
-      p_bout_id: boutId, p_judge: !!roles?.judge, p_referee: !!roles?.referee,
-      p_supervisor: !!roles?.supervisor, p_timekeeper: !!roles?.timekeeper,
-    })
-  },
-
-  // userId left out: the signed-in official withdraws. Otherwise the Owner, CO or Deputy removes them.
   // A corner's club owner takes their athlete out of the bout; the bout is cancelled (migration 52).
   async withdrawCorner(boutId, side, reason) {
     await rpc('withdraw_corner', { p_bout_id: boutId, p_side: side, p_reason: reason?.trim() || null })
-  },
-
-  async withdrawFromBout(boutId, userId) {
-    await rpc('withdraw_from_bout', { p_bout_id: boutId, p_user_id: userId || null })
   },
 
   // ---------------------------------------------------------------------------
