@@ -371,7 +371,6 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
     { title: 'Experience', key: 'bouts', value: (a) => a.bouts, render: (_, a) => formatBouts(a.bouts) },
     { title: 'BC number', key: 'bc', value: (a) => a.bc_number, render: (_, a) => dash(a.bc_number) },
     { title: 'Last medical', key: 'medical', value: (a) => a.last_medical, render: (_, a) => dash(a.last_medical) },
-    { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
     may.member && {
       key: 'actions',
       className: 'actions',
@@ -401,7 +400,6 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
       {may.manage && !editing && (
         <AthleteForm
           clubId={club.id}
-          users={users}
           title={`Add an athlete to ${club.name}`}
           onSave={async (record) => {
             await api.addAthlete(record)
@@ -428,7 +426,6 @@ function ClubAthletes({ club, clubs, users, may, onChange }) {
         <AthleteForm
           key={editingAthlete.id}
           athlete={editingAthlete}
-          users={users}
           onCancel={() => setEditing(null)}
           onSave={async (record) => {
             await api.updateAthlete(editingAthlete.id, record)
