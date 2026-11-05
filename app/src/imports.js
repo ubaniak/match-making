@@ -1,4 +1,5 @@
-import { athleteProblems, cleanText } from './athletes'
+import { api } from './api'
+import { athleteBcKey, athleteNameKey, athleteProblems, cleanText, duplicateAthleteText } from './athletes'
 import { daysBetween, MAX_EVENT_DAYS } from './dates'
 import { checkMatch } from './matching'
 
@@ -55,6 +56,34 @@ function findAthlete(list, name, club, errors, { what = 'athlete', notFound } = 
   return null
 }
 
+// An athlete can be in the system only once (migration 57). Flags a row that repeats an earlier
+// row of the same file: same name + date of birth, same BC number, or same email.
+function repeatedAthlete(athlete, errors, state) {
+  state.athleteLines ??= new Map()
+  const keys = [
+    athlete.name && athlete.date_of_birth && ['name and date of birth', `n:${athleteNameKey(athlete.name)}|${athlete.date_of_birth}`],
+    athleteBcKey(athlete.bc_number) && ['BC number', `b:${athleteBcKey(athlete.bc_number)}`],
+    athlete.invite_email && ['email', `e:${athlete.invite_email}`],
+  ].filter(Boolean)
+  const repeat = keys.find(([, key]) => state.athleteLines.has(key))
+  if (repeat) errors.push(`Same athlete as line ${state.athleteLines.get(repeat[1])} (same ${repeat[0]})`)
+  for (const [, key] of keys) if (!state.athleteLines.has(key)) state.athleteLines.set(key, state.line)
+}
+
+// Asks the database which rows are athletes already in the system, in any club. Returns
+// { line: problem } for the rows to skip.
+async function findExistingAthletes(rows) {
+  const ready = rows.filter((row) => row.errors.length === 0)
+  if (!ready.length) return {}
+  const matches = await api.findAthleteDuplicates(ready.map(({ value }) => ({ name: value.name, date_of_birth: value.date_of_birth, bc_number: value.bc_number })))
+  const problems = {}
+  for (const match of matches) {
+    const line = ready[match.row_index]?.line
+    if (line != null && !problems[line]) problems[line] = duplicateAthleteText(match)
+  }
+  return problems
+}
+
 // Older files may still say user or official: both are Members now, and official also puts them on the Officials list.
 const accountIds = { admin: 'admin', member: 'member', user: 'member', official: 'member' }
 const boutTypes = { scored: 'scored', developmental: 'developmental', sparring: 'sparring' }
@@ -87,7 +116,9 @@ export const importSpecs = {
       ['Jade Murphy', '', '2006-07-30', 'female', '51', '0', 'Eastside BC', '', ''],
     ],
     notes: { bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
-    check(values, errors, { clubsByName }) {
+    unique: () => null, // repeats are checked in check() below: same name + date of birth, BC number or email
+    findExisting: findExistingAthletes,
+    check(values, errors, { clubsByName }, state = {}) {
       checkEmail(values.email, errors)
 
       const athlete = {
@@ -106,6 +137,7 @@ export const importSpecs = {
       const club = clubName && clubsByName?.get(clubName.toLowerCase())
       if (club) athlete.club_id = club.id
       errors.push(...athleteProblems(athlete).map((p) => (p === 'Club is missing' && clubName ? `No club called "${clubName}". Create it on the Clubs page first` : p)))
+      repeatedAthlete(athlete, errors, state)
       return { ...athlete, weight_kg: Number(athlete.weight_kg), bouts: Number(athlete.bouts) }
     },
   },
@@ -121,9 +153,11 @@ export const importSpecs = {
       ['Jade Murphy', '', '2006-07-30', 'female', '51', '0', '', ''],
     ],
     notes: { gender: 'male or female', bouts: 'number of bouts boxed', bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
-    check(values, errors, context) {
+    unique: () => null,
+    findExisting: findExistingAthletes,
+    check(values, errors, context, state) {
       const club = { id: context.clubId, name: context.clubName }
-      return importSpecs.athletes.check({ ...values, club: club.name }, errors, { ...context, clubsByName: new Map([[lower(club.name), club]]) })
+      return importSpecs.athletes.check({ ...values, club: club.name }, errors, { ...context, clubsByName: new Map([[lower(club.name), club]]) }, state)
     },
   },
 
@@ -364,6 +398,7 @@ export function checkRecords(spec, columns, records, context) {
   const state = {} // for checks that depend on earlier rows, like an athlete boxing twice in a day
   const rows = records.map(({ line, values }) => {
     const errors = []
+    state.line = line
     const value = spec.check(values, errors, context ?? {}, state)
     const key = spec.unique ? spec.unique(values, value) : lower(values.email)
     if (key) {

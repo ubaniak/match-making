@@ -3,7 +3,7 @@
 // The password ships inside the page's JavaScript, so this is for demos, not for protecting anything.
 // The demo admin can also preview the app as one of the sample users (see viewAs).
 
-import { athleteProblems } from '../athletes'
+import { athleteProblems, duplicateAthleteText, findDuplicatesIn } from '../athletes'
 import { locationColumns } from '../locations'
 import { ageCategory, experienceCategory } from '../categories'
 import { DEFAULT_TIME_ZONE, addDays, daysBetween, todayIso } from '../dates'
@@ -325,6 +325,12 @@ const entriesOpen = (event) => eventOpen(event) && (!event.entry_deadline || new
 const stillRunning = (event) => ['requested', 'active'].includes(effectiveStatus(event))
 const now = () => new Date().toISOString()
 
+// Mirrors the unique indexes on athletes (migration 57).
+function refuseDuplicateAthlete(current, athlete, ignoreId = null) {
+  const [match] = findDuplicatesIn(current.athletes, [athlete], ignoreId, (id) => current.clubs.find((c) => c.id === id)?.name ?? null)
+  if (match) throw new Error(duplicateAthleteText(match))
+}
+
 // Mirrors check_entry. Returns the athlete's club.
 function checkEntry(current, event, athleteId) {
   const athlete = current.athletes.find((a) => a.id === athleteId)
@@ -631,6 +637,7 @@ export const mockApi = {
     if (problems.length) throw new Error(problems.join('. '))
     const current = data()
     if (!isSiteAdmin() && clubRole(current, athlete.club_id) !== 'owner') throw new Error('Only the club\'s Owners can add its athletes')
+    refuseDuplicateAthlete(current, athlete)
     current.athletes.push({ ...athlete, id: crypto.randomUUID(), user_id: null })
     write(DATA_KEY, current)
   },
@@ -643,8 +650,14 @@ export const mockApi = {
     if (fields.club_id && fields.club_id !== athlete.club_id && !isSiteAdmin()) throw new Error('Athletes change clubs through a transfer request')
     const problems = athleteProblems({ ...athlete, ...fields })
     if (problems.length) throw new Error(problems.join('. '))
+    refuseDuplicateAthlete(current, { ...athlete, ...fields }, athleteId)
     Object.assign(athlete, fields)
     write(DATA_KEY, current)
+  },
+
+  async findAthleteDuplicates(rows, ignoreId = null) {
+    const current = data()
+    return findDuplicatesIn(current.athletes, rows, ignoreId, (id) => current.clubs.find((c) => c.id === id)?.name ?? null)
   },
 
   // Mirrors check_athlete_delete (migration 13).
