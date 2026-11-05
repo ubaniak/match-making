@@ -5,7 +5,7 @@ import DataTable from './DataTable'
 import CsvImport from './CsvImport'
 import { api } from './api'
 import OfficialsAssignment from './OfficialsAssignment'
-import { EventBouts, EventOfficialsTab } from './Bouts'
+import { EventBouts, EventOfficialsTab, EventWeighIns } from './Bouts'
 import { useEventBouts } from './useEventBouts'
 import { MyInvitations } from './Officials'
 import { formatBouts, formatWeight, genderLabel } from './athletes'
@@ -578,6 +578,12 @@ function EventDetail({ id, email: initialEmail, initialTab, profile, siteAdmin, 
           />
         ),
       },
+      // Weigh-ins: weight, medical, DOB and experience checks, one day at a time.
+      bouts.seesBouts && {
+        key: 'weigh-ins',
+        label: 'Weigh-ins',
+        children: <EventWeighIns event={event} bouts={bouts} />,
+      },
       {
         key: 'officials',
         label: 'Officials',
@@ -726,7 +732,7 @@ function Dashboard({ event, may, siteAdmin, bouts, onOpenTab }) {
     may.seesClubs && { key: 'athletes', tab: 'clubs', title: 'Athletes', value: event.athletes.length, note: 'Entered' },
     bouts.seesBouts && { key: 'bouts', tab: 'bouts', title: 'Bouts', value: live.length, note: `${approved} approved · ${live.length - approved} waiting` },
     bouts.seesBouts && { key: 'results', tab: 'bouts', title: 'Results', value: results, note: `Of ${approved} approved bout${approved === 1 ? '' : 's'}` },
-    { key: 'days', tab: null, title: days === 1 ? 'Day' : 'Days', value: days, note: bouts.seesBouts ? `${weighIns} weigh-in${weighIns === 1 ? '' : 's'} recorded` : formatDateRange(event.start_date, event.end_date) },
+    { key: 'days', tab: bouts.seesBouts ? 'weigh-ins' : null, title: days === 1 ? 'Day' : 'Days', value: days, note: bouts.seesBouts ? `${weighIns} weigh-in${weighIns === 1 ? '' : 's'} recorded` : formatDateRange(event.start_date, event.end_date) },
   ].filter(Boolean)
 
   return (
