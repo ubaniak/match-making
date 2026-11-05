@@ -11,7 +11,7 @@ import { bestOpponents, checkForType, checkMatch, suggestMatches } from './match
 import { EventOfficials } from './Officials'
 import { rolesText } from './officialRoles'
 import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, ClearOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, ClearOutlined, InfoCircleOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
@@ -83,6 +83,13 @@ function boutCsvRows(event, data, athletes, days) {
 }
 
 // 'Grace Adeyemi (Referee, Judge); Rob Turner (Timekeeper)'
+// An athlete's bouts and date of birth, shown only when "Details" is on. Never on the public page.
+function detailsText(athlete) {
+  if (!athlete) return ''
+  const bouts = athlete.bouts == null || athlete.bouts === '' ? 'bouts not entered' : `${athlete.bouts} bout${Number(athlete.bouts) === 1 ? '' : 's'}`
+  return `${bouts} · born ${athlete.date_of_birth ?? 'not entered'}`
+}
+
 function officialsText(bout) {
   return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${rolesText(o, '')})`).join('; ')
 }
@@ -151,6 +158,7 @@ function Card({ event, data, rights, busy, run, publish }) {
   const days = daysBetween(event.start_date, event.end_date)
   const [day, setDay] = useState(days[0])
   const [rematch, setRematch] = useState(null) // the bout being re-matched
+  const [details, setDetails] = useState(false) // show each athlete's bouts and date of birth
   const athletes = useMemo(() => Object.fromEntries(event.athletes.map((a) => [a.id, a])), [event.athletes])
   const weighIns = data.weighIns.filter((w) => w.day === day)
   const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
@@ -260,6 +268,15 @@ function Card({ event, data, rights, busy, run, publish }) {
       title="Bouts"
       extra={
         <Space wrap>
+          <Button
+            icon={<InfoCircleOutlined />}
+            type={details ? 'primary' : 'default'}
+            aria-pressed={details}
+            title={details ? 'Hide bouts and dates of birth' : "Show each athlete's bouts and date of birth"}
+            onClick={() => setDetails(!details)}
+          >
+            Details{details ? ': on' : ''}
+          </Button>
           <DownloadCsvButton
             filename={`${event.name} bouts`}
             disabled={data.bouts.length === 0}
@@ -300,7 +317,7 @@ function Card({ event, data, rights, busy, run, publish }) {
       {canMatch && (
         <MatchForm
           key={`${day}-${rematch?.id ?? 'new'}`}
-          event={event} day={day} bout={rematch} weights={weights} busy={busy} canOverride={rights.official}
+          event={event} day={day} bout={rematch} weights={weights} busy={busy} canOverride={rights.official} details={details}
           taken={new Set(live.filter((b) => b.id !== rematch?.id).flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]))}
           onCancel={() => setRematch(null)}
           onSave={async (fields) => {
@@ -327,7 +344,7 @@ function Card({ event, data, rights, busy, run, publish }) {
                   {(handle) => (
                     <BoutRow
                       bout={b} index={i} count={shown.length} event={event} athletes={athletes} weights={weights}
-                      rights={rights} weighInStarted={weighInStarted} canMatch={canMatch} canSend={canSend} canOrder={canOrder} handle={handle} sessions={sessions} busy={busy} run={run} officials={data.officials}
+                      rights={rights} details={details} weighInStarted={weighInStarted} canMatch={canMatch} canSend={canSend} canOrder={canOrder} handle={handle} sessions={sessions} busy={busy} run={run} officials={data.officials}
                       onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onMoveTo={(to) => moveTo(b, to)}
                       onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
                     />
@@ -484,7 +501,7 @@ function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
   )
 }
 
-function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCancel, onSave }) {
+function MatchForm({ event, day, bout, weights, taken, busy, canOverride, details = false, onCancel, onSave }) {
   const [redId, setRedId] = useState(bout?.red_athlete_id ?? '')
   const [blueId, setBlueId] = useState(bout?.blue_athlete_id ?? '')
   const [boutType, setBoutType] = useState(boutTypeOf(bout))
@@ -494,7 +511,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
   const blue = byId[blueId]
   const check = red && blue ? checkForType(checkMatch(red, blue, event.start_date, weights), boutType) : null
   const [bestOnly, setBestOnly] = useState(false)
-  const label = (a, note) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${note ? ` (${note})` : ''}`
+  const label = (a, note) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${details ? ` · ${detailsText(a)}` : ''}${note ? ` (${note})` : ''}`
   const plain = (other) => event.athletes.filter((a) => a.id !== other).map((a) => {
     const busyThatDay = taken.has(a.id)
     return { value: a.id, disabled: busyThatDay, label: label(a, busyThatDay && 'already boxing this day') }
@@ -610,6 +627,14 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
       <Field label={<span className="corner-label blue">Blue corner</span>}>
         <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={blueOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
+      {details && (red || blue) && (
+        <FullRow>
+          <Space direction="vertical" size={0}>
+            {red && <Text><span className="corner-label red">Red</span> {red.name}: {detailsText(red)}</Text>}
+            {blue && <Text><span className="corner-label blue">Blue</span> {blue.name}: {detailsText(blue)}</Text>}
+          </Space>
+        </FullRow>
+      )}
       {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
       {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
       {blocked && check.hard.length === 0 && boutType !== 'developmental' && (
@@ -662,7 +687,7 @@ function SortableBout({ id, disabled, children }) {
   )
 }
 
-function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted = false, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
+function BoutRow({ bout, index, count, event, athletes, weights, details = false, weighInStarted = false, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState('')
   const [result, setResult] = useState(null) // { winner, method, note } while recording
@@ -753,6 +778,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
       <Text strong>{athlete?.name ?? fallback?.name ?? 'Not shown'}</Text>
       <Text type="secondary">{club?.name ?? '—'}</Text>
       {athlete && <Text type="secondary">{categoryText(athlete, event.start_date)}{weights[athlete.id] != null ? ` · weighed ${formatWeight(weights[athlete.id])}` : ''}</Text>}
+      {details && athlete && <Text>{detailsText(athlete)}</Text>}
       {bout.winner === side && <span><Badge strong>Winner · {methodLabels[bout.method]}</Badge></span>}
     </div>
   )
