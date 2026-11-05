@@ -6,7 +6,7 @@
 //                      weigh-in and bout times and the inviter's optional notes. Called by a site
 //                      Admin or an official on the event right after inviting.
 //   { event_id, club_id, notes? }
-//                      emails a club's Owners that the club is in the event, with the same details.
+//                      emails a club's Owners that the club is invited to (or is in) the event, with the same details.
 //                      Called by the event's Owner or a site Admin right after inviting the club.
 //   { bout_ids }       "Send for approval": emails everyone who still has to approve those bouts
 //                      (each corner's club Owners, the Chief Official and Deputy), one email per
@@ -216,7 +216,7 @@ const longDate = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-CA', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 
 // The official's invitation. official_invitation_email returns nothing unless the caller is a site
-// Admin or an official on the event. Its timezone and schedule columns arrive with migration 32;
+// Admin or the event's Chief Officials. Its timezone and schedule columns arrive with migration 59;
 // before that the email just leaves the times out.
 // deno-lint-ignore no-explicit-any
 async function sendInvitation(supabase: any, invitationId: string, notes: string) {
@@ -254,7 +254,8 @@ ${para('Sign in with this email address and open Events to accept or decline. On
   return await send(invite.email, `Officiating at ${invite.event_name}`, text, html)
 }
 
-// A club invited to an event (it's in straight away). club_invitation_email (migration 32) returns
+// A club invited to an event: one of its Owners must accept before it's in (migration 36). A club
+// the event's Owner created is in straight away. club_invitation_email (migration 59) returns
 // one row per active club Owner, and nothing unless the caller is the event's Owner or a site Admin.
 // deno-lint-ignore no-explicit-any
 async function sendClubInvitation(supabase: any, eventId: string, clubId: string, notes: string) {
@@ -269,7 +270,11 @@ async function sendClubInvitation(supabase: any, eventId: string, clubId: string
   const details = eventDetails(first)
   const emails = owners.map((o) => {
     const greeting = o.owner_name ? `Hi ${o.owner_name},` : 'Hi,'
-    const intro = `${o.club_name} is invited to ${o.event_name} and is in. You can enter your athletes now.`
+    const invited = o.club_status === 'invited'
+    const next = invited
+      ? 'One of the club\'s owners needs to accept the invitation before you can enter athletes.'
+      : 'You can enter your athletes now.'
+    const intro = `${o.club_name} is invited to ${o.event_name}${invited ? '.' : ' and is in.'} ${next}`
     const text = [
       greeting,
       '',
@@ -278,17 +283,19 @@ async function sendClubInvitation(supabase: any, eventId: string, clubId: string
       ...details.text,
       ...notesText(notes),
       '',
-      `Sign in, open Events and choose ${o.event_name} to enter athletes: ${site}`,
+      invited
+        ? `Sign in and open Events to accept or decline: ${site}`
+        : `Sign in, open Events and choose ${o.event_name} to enter athletes: ${site}`,
     ].join('\n')
     const html = layout({
       preview: `${o.club_name} is invited to ${o.event_name}`,
       heading: 'Your club is invited',
       body: `${para(escape(greeting))}
-${para(`<strong>${escape(o.club_name)}</strong> is invited to <strong>${escape(o.event_name)}</strong> and is in. You can enter your athletes now.`)}
+${para(`<strong>${escape(o.club_name)}</strong> is invited to <strong>${escape(o.event_name)}</strong>${invited ? '.' : ' and is in.'} ${escape(next)}`)}
 ${details.html}
 ${notesHtml(notes)}
-${para(`Sign in, open Events and choose ${escape(o.event_name)} to enter your athletes.`)}`,
-      button: { label: 'Enter your athletes', href: site },
+${para(invited ? 'Sign in and open Events to accept or decline.' : `Sign in, open Events and choose ${escape(o.event_name)} to enter your athletes.`)}`,
+      button: invited ? { label: 'Accept or decline', href: site } : { label: 'Enter your athletes', href: site },
     })
     return { to: o.email, subject: `${o.club_name} is invited to ${o.event_name}`, text, html }
   })

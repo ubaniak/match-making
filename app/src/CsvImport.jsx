@@ -17,13 +17,30 @@ export default function CsvImport({ kind, context, importRow, onDone, title, tem
   const [check, setCheck] = useState(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState(null)
+  const [looking, setLooking] = useState(false)
+  const [lookError, setLookError] = useState(null)
 
   async function chooseFile(file) {
     if (!file) return
     const { columns, records } = rowsToRecords(parseCsv(await file.text()))
     setFileName(file.name)
     setResult(null)
-    setCheck(checkRecords(spec, columns, records, context))
+    const checked = checkRecords(spec, columns, records, context)
+    // Some imports also ask the database, e.g. athletes already in another club.
+    if (spec.findExisting && checked.missingColumns.length === 0) {
+      setCheck(null)
+      setLooking(true)
+      try {
+        const existing = await spec.findExisting(checked.rows, context)
+        for (const row of checked.rows) if (existing[row.line]) row.errors.push(existing[row.line])
+        setLookError(null)
+      } catch (err) {
+        setLookError(`Couldn't check for athletes already in the system: ${err.message}. The database will still refuse them when you add.`)
+      } finally {
+        setLooking(false)
+      }
+    } else setLookError(null)
+    setCheck(checked)
   }
 
   async function runImport() {
@@ -41,7 +58,8 @@ export default function CsvImport({ kind, context, importRow, onDone, title, tem
       }
     }
     setImporting(false)
-    setResult({ added: ready.length - failed.length, failed, notes, skipped: check.rows.length - ready.length })
+    const skipped = check.rows.filter((row) => row.errors.length > 0).map((row) => ({ line: row.line, name: describe(row.values), message: row.errors.join('; ') }))
+    setResult({ added: ready.length - failed.length, failed, notes, skipped })
     setCheck(null)
     await onDone?.()
   }
@@ -79,9 +97,11 @@ export default function CsvImport({ kind, context, importRow, onDone, title, tem
           Download template
         </Button>
         <Upload accept=".csv,text/csv" showUploadList={false} beforeUpload={(file) => { chooseFile(file); return false }}>
-          <Button icon={<UploadOutlined />}>Choose CSV file</Button>
+          <Button icon={<UploadOutlined />} loading={looking}>{looking ? 'Checking…' : 'Choose CSV file'}</Button>
         </Upload>
       </Space>
+
+      {lookError && check && <WarningAlert>{lookError}</WarningAlert>}
 
       {check?.missingColumns.length > 0 && (
         <ErrorAlert>
@@ -118,8 +138,16 @@ export default function CsvImport({ kind, context, importRow, onDone, title, tem
         <>
           <SuccessAlert>
             Added {count(result.added, spec)}.
-            {result.skipped > 0 && ` Skipped ${result.skipped} with problems.`}
+            {result.skipped.length > 0 && ` Skipped ${result.skipped.length} with problems (listed below).`}
           </SuccessAlert>
+          {result.skipped.length > 0 && (
+            <WarningAlert>
+              Not added:
+              <ul style={{ margin: 0 }}>
+                {result.skipped.map((s) => <li key={s.line}>Line {s.line}{s.name ? ` (${s.name})` : ''}: {s.message}</li>)}
+              </ul>
+            </WarningAlert>
+          )}
           {result.notes.length > 0 && (
             <WarningAlert>
               Added, but check these:

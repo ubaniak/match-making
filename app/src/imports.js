@@ -1,4 +1,5 @@
-import { athleteProblems } from './athletes'
+import { api } from './api'
+import { athleteBcKey, athleteNameKey, athleteProblems, cleanText, duplicateAthleteText } from './athletes'
 import { daysBetween, MAX_EVENT_DAYS } from './dates'
 import { checkMatch } from './matching'
 
@@ -55,62 +56,88 @@ function findAthlete(list, name, club, errors, { what = 'athlete', notFound } = 
   return null
 }
 
-const accountIds = { admin: 'admin', user: 'user', official: 'official', public: 'public' }
+// An athlete can be in the system only once (migration 57). Flags a row that repeats an earlier
+// row of the same file: same name + date of birth, same BC number, or same email.
+function repeatedAthlete(athlete, errors, state) {
+  state.athleteLines ??= new Map()
+  const keys = [
+    athlete.name && athlete.date_of_birth && ['name and date of birth', `n:${athleteNameKey(athlete.name)}|${athlete.date_of_birth}`],
+    athleteBcKey(athlete.bc_number) && ['BC number', `b:${athleteBcKey(athlete.bc_number)}`],
+    athlete.invite_email && ['email', `e:${athlete.invite_email}`],
+  ].filter(Boolean)
+  const repeat = keys.find(([, key]) => state.athleteLines.has(key))
+  if (repeat) errors.push(`Same athlete as line ${state.athleteLines.get(repeat[1])} (same ${repeat[0]})`)
+  for (const [, key] of keys) if (!state.athleteLines.has(key)) state.athleteLines.set(key, state.line)
+}
+
+// Asks the database which rows are athletes already in the system, in any club. Returns
+// { line: problem } for the rows to skip.
+async function findExistingAthletes(rows) {
+  const ready = rows.filter((row) => row.errors.length === 0)
+  if (!ready.length) return {}
+  const matches = await api.findAthleteDuplicates(ready.map(({ value }) => ({ name: value.name, date_of_birth: value.date_of_birth, bc_number: value.bc_number })))
+  const problems = {}
+  for (const match of matches) {
+    const line = ready[match.row_index]?.line
+    if (line != null && !problems[line]) problems[line] = duplicateAthleteText(match)
+  }
+  return problems
+}
+
+// Older files may still say user or official: both are Members now, and official also puts them on the Officials list.
+const accountIds = { admin: 'admin', member: 'member', user: 'member', official: 'member' }
 const boutTypes = { scored: 'scored', developmental: 'developmental', sparring: 'sparring' }
 
 export const importSpecs = {
   users: {
     label: 'users',
     singular: 'user',
-    columns: ['name', 'email', 'account'],
+    columns: ['name', 'email', 'account', 'official'],
     required: ['name', 'email'],
-    example: [['Maria Lopez', 'maria@example.com', 'user'], ['Pat Kim', 'pat@example.com', 'official']],
-    notes: { account: 'admin, user, official or public; blank means user' },
+    example: [['Maria Lopez', 'maria@example.com', 'member', ''], ['Pat Kim', 'pat@example.com', 'member', 'yes']],
+    notes: { account: 'admin or member; blank means member', official: 'yes adds them to the Officials list' },
     check(values, errors) {
       if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors, { required: true })
-      const account = lower(values.account) || 'user'
-      if (!accountIds[account]) errors.push(`Account "${values.account}" should be admin, user, official or public`)
-      return { name: values.name, email: lower(values.email), roleId: accountIds[account] ?? 'user' }
+      const account = lower(values.account) || 'member'
+      if (!accountIds[account]) errors.push(`Account "${values.account}" should be admin or member`)
+      const official = account === 'official' || ['yes', 'y', 'true', '1'].includes(lower(values.official))
+      return { name: values.name, email: lower(values.email), roleId: accountIds[account] ?? 'member', official }
     },
   },
 
   athletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
+    columns: ['name', 'email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club', 'bc_number', 'last_medical'],
     required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'club'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC'],
-      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0', 'Eastside BC'],
+      ['Ali Hassan', 'ali@example.com', '2004-03-12', 'male', '60.5', '12', 'Eastside BC', 'BC-123456', '2026-09-15'],
+      ['Jade Murphy', '', '2006-07-30', 'female', '51', '0', 'Eastside BC', '', ''],
     ],
-    check(values, errors, { usersByEmail, clubsByName }) {
+    notes: { bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
+    unique: () => null, // repeats are checked in check() below: same name + date of birth, BC number or email
+    findExisting: findExistingAthletes,
+    check(values, errors, { clubsByName }, state = {}) {
       checkEmail(values.email, errors)
-
-      let coachId = null
-      const coachEmail = (values.coach_email ?? '').toLowerCase()
-      if (coachEmail) {
-        const coach = usersByEmail.get(coachEmail)
-        if (!coach) errors.push(`No user with email ${coachEmail}`)
-        else if (!coach.id) errors.push(`${coachEmail} hasn't signed in yet, so athletes can't be assigned to them`)
-        else coachId = coach.id
-      }
 
       const athlete = {
         name: values.name ?? '',
         invite_email: (values.email ?? '').toLowerCase() || null,
-        coach_id: coachId,
         date_of_birth: values.date_of_birth ?? '',
         gender: { m: 'male', f: 'female' }[(values.gender ?? '').toLowerCase()] ?? (values.gender ?? '').toLowerCase(),
         weight_kg: values.weight_kg ?? '',
         bouts: values.bouts ?? '',
         club_id: null,
+        bc_number: cleanText(values.bc_number),
+        last_medical: (values.last_medical ?? '').trim() || null,
       }
       // The club must already exist; match its name ignoring case.
       const clubName = (values.club ?? '').trim()
       const club = clubName && clubsByName?.get(clubName.toLowerCase())
       if (club) athlete.club_id = club.id
       errors.push(...athleteProblems(athlete).map((p) => (p === 'Club is missing' && clubName ? `No club called "${clubName}". Create it on the Clubs page first` : p)))
+      repeatedAthlete(athlete, errors, state)
       return { ...athlete, weight_kg: Number(athlete.weight_kg), bouts: Number(athlete.bouts) }
     },
   },
@@ -119,16 +146,18 @@ export const importSpecs = {
   clubAthletes: {
     label: 'athletes',
     singular: 'athlete',
-    columns: ['name', 'email', 'coach_email', 'date_of_birth', 'gender', 'weight_kg', 'bouts'],
+    columns: ['name', 'email', 'date_of_birth', 'gender', 'weight_kg', 'bouts', 'bc_number', 'last_medical'],
     required: ['name', 'date_of_birth', 'gender', 'weight_kg', 'bouts'],
     example: [
-      ['Ali Hassan', 'ali@example.com', 'maria@example.com', '2004-03-12', 'male', '60.5', '12'],
-      ['Jade Murphy', '', '', '2006-07-30', 'female', '51', '0'],
+      ['Ali Hassan', 'ali@example.com', '2004-03-12', 'male', '60.5', '12', 'BC-123456', '2026-09-15'],
+      ['Jade Murphy', '', '2006-07-30', 'female', '51', '0', '', ''],
     ],
-    notes: { gender: 'male or female', bouts: 'number of bouts boxed' },
-    check(values, errors, context) {
+    notes: { gender: 'male or female', bouts: 'number of bouts boxed', bc_number: 'Boxing Canada registration number, optional', last_medical: 'date of last medical, optional' },
+    unique: () => null,
+    findExisting: findExistingAthletes,
+    check(values, errors, context, state) {
       const club = { id: context.clubId, name: context.clubName }
-      return importSpecs.athletes.check({ ...values, club: club.name }, errors, { ...context, clubsByName: new Map([[lower(club.name), club]]) })
+      return importSpecs.athletes.check({ ...values, club: club.name }, errors, { ...context, clubsByName: new Map([[lower(club.name), club]]) }, state)
     },
   },
 
@@ -177,12 +206,13 @@ export const importSpecs = {
     label: 'events',
     singular: 'event',
     columns: ['name', 'venue', 'start_date', 'end_date', 'owner_email', 'timezone'],
-    required: ['name', 'start_date', 'owner_email'],
+    required: ['name', 'venue', 'start_date', 'owner_email'],
     example: [
       ['Winter Box Cup', 'Eastside Community Centre', '2027-01-16', '2027-01-17', 'maria@example.com', 'America/Winnipeg'],
-      ['Spring Open', '', '2027-04-10', '', 'maria@example.com', ''],
+      ['Spring Open', 'Riverside Boxing Club, Winnipeg', '2027-04-10', '', 'maria@example.com', ''],
     ],
     notes: {
+      venue: 'the bout location; drop its map pin later with Edit details',
       start_date: 'like 2027-01-16',
       end_date: 'blank means a one-day event',
       owner_email: 'must have signed in',
@@ -192,6 +222,7 @@ export const importSpecs = {
     check(values, errors, { usersByEmail, defaultTimeZone }) {
       const name = (values.name ?? '').trim()
       if (!name) errors.push('Name is missing')
+      if (!(values.venue ?? '').trim()) errors.push('Venue (the bout location) is missing')
       const startDate = values.start_date ?? ''
       const endDate = values.end_date || startDate
       if (!startDate) errors.push('Start date is missing')
@@ -208,21 +239,7 @@ export const importSpecs = {
     },
   },
 
-  // Viewers on an event.
-  eventViewers: {
-    label: 'viewers',
-    singular: 'viewer',
-    columns: ['email'],
-    required: ['email'],
-    example: [['sam@example.com']],
-    describe: (values) => values.email,
-    check(values, errors, { usersByEmail, memberIds }) {
-      checkEmail(values.email, errors, { required: true })
-      const user = values.email && EMAIL.test(values.email) ? activeUser(values.email, usersByEmail, errors) : null
-      if (user && memberIds?.has(user.id)) errors.push(`${lower(values.email)} is already on this event`)
-      return { userId: user?.id }
-    },
-  },
+
 
   // Clubs in an event: an existing club is invited; a new one is made with its owners and joins.
   eventClubs: {
@@ -243,6 +260,7 @@ export const importSpecs = {
       const club = clubsByName?.get(lower(name))
       if (club) {
         if (statusByClub?.[club.id] === 'accepted') errors.push(`${club.name} is already in this event`)
+        else if (statusByClub?.[club.id] === 'invited') errors.push(`${club.name} is already invited`)
         return { clubId: club.id }
       }
       const emails = emailList(values.owner_emails)
@@ -320,7 +338,7 @@ export const importSpecs = {
       if (!day && days.length === 1) day = days[0]
       if (!day) errors.push('Day is missing')
       else if (!days.includes(day)) errors.push(`Day "${day}" isn't a day of this event (${days[0]}${days.length > 1 ? ` to ${days[days.length - 1]}` : ''})`)
-      else if (lockedDays?.has(day)) errors.push(`The weigh-in for ${day} has started, so only the Chief Official or Deputy can make bouts that day`)
+      else if (lockedDays?.has(day)) errors.push(`The weigh-in for ${day} has started, so only a Chief Official can make bouts that day`)
 
       const boutType = boutTypes[lower(values.bout_type) || 'scored']
       if (!boutType) errors.push(`Bout type "${values.bout_type}" should be scored, developmental or sparring`)
@@ -347,15 +365,22 @@ export const importSpecs = {
   officials: {
     label: 'officials',
     singular: 'official',
-    columns: ['name', 'email', 'qualifications'],
+    columns: ['name', 'email', 'phone', 'level', 'bc_number', 'qualifications'],
     required: ['name', 'email'],
-    example: [['Pat Kim', 'pat@example.com', 'Level 2 referee']],
+    example: [['Pat Kim', 'pat@example.com', '204-555-0134', '2', 'BC-654321', 'Referee']],
+    notes: { level: 'a whole number, optional', bc_number: 'Boxing Canada registration number, optional' },
     check(values, errors) {
       if (!values.name) errors.push('Name is missing')
       checkEmail(values.email, errors, { required: true })
+      const levelText = (values.level ?? '').trim()
+      const level = levelText === '' ? null : Number(levelText)
+      if (level != null && !(Number.isInteger(level) && level >= 0 && level <= 100)) errors.push(`Level "${levelText}" should be a whole number`)
       return {
         name: values.name,
         invite_email: (values.email ?? '').toLowerCase(),
+        phone: cleanText(values.phone),
+        level,
+        bc_number: cleanText(values.bc_number),
         qualifications: values.qualifications || null,
       }
     },
@@ -373,6 +398,7 @@ export function checkRecords(spec, columns, records, context) {
   const state = {} // for checks that depend on earlier rows, like an athlete boxing twice in a day
   const rows = records.map(({ line, values }) => {
     const errors = []
+    state.line = line
     const value = spec.check(values, errors, context ?? {}, state)
     const key = spec.unique ? spec.unique(values, value) : lower(values.email)
     if (key) {

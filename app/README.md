@@ -83,7 +83,7 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
   - Only a **site Admin** creates an event (name, dates, optional location, Owner). It starts as **Requested** and the Owner is emailed "You have Requested an event" (see [Owner emails](#owner-emails)).
   - The **Owner** edits the details, uploads an optional poster, and sets each day's times: one weigh-in (start and end, at least 2 hours, ending at least 3 hours before that day's first bout) and one or more bout sessions. Days can be left without bouts. The app refuses times that break the rules.
   - A site Admin **approves** the event (Active) at any time, **cancels** it, or **marks it Done**. Events also turn Done by themselves the day after their end date. Only site Admins change the Owner; the old Owner stays on as a Viewer.
-  - Once an event is **Active**, the Owner (or a site Admin) **invites clubs**, and club owners can **ask to join**; the Owner accepts or declines. The Owner can also **create a club** right in the event and **add or remove its club owners** (no site Admin approval needed; a club keeps at least one owner). Club owners then **enter their own athletes** straight away, optionally suggesting an opponent by name and club, and can **withdraw** them any time before the event is Done.
+  - Once an event is **Active**, the Owner (or a site Admin) **invites clubs**, and the club is in once one of its owners **accepts** the invitation (or declines it); club owners can also **ask to join**, and the Owner accepts or declines. Accepting enters no athletes: only the athletes a club enters take part. The Owner can also **create a club** right in the event and **add or remove its club owners** (no site Admin approval needed; a club keeps at least one owner). Club owners then **enter their own athletes** straight away, optionally suggesting an opponent by name and club, and can **withdraw** them any time before the event is Done.
   - The Owner can set an optional **entry deadline**. After it, club owners send a **late-entry request** instead, which the Owner accepts or declines.
   - Every signed-in user can see Active and Done events. Entries are seen only by the Owner, site Admins and members of clubs that are in. The Owner can also add **Viewers**, who see the event but not its entries. There is no event-level Admin.
   - Once an event is **Active**, a **site Admin** or any **official on the event** (including the Chief Official and Deputy) **invites officials** from the Officials list, or adds someone new by name and email (they get an Official account and the welcome email first, like Admin > Users), with an optional respond-by date. Each official is emailed (see [Owner emails](#owner-emails)) and accepts (for the days or bout sessions they can work) or declines under "Your invitations to officiate" on the Events page, or on the event itself; they can change their answer until the event's first day. The event shows how many accepted, declined and haven't answered, with a list of each, to the Owner, site Admins and the event's officials. Anyone who can invite can resend; a site Admin or the Chief Official can cancel or remove. Officials can't ask to join; they must be invited.
@@ -94,6 +94,10 @@ Supabase's built-in email sender only allows a few emails an hour, which is fine
 - Anyone else who signs in gets the Public role and sees a holding page until an Admin adds them.
 
 The rules are enforced by row-level security in the database, not just hidden in the app.
+
+## Who can sign in
+
+Only invited people can sign in (migration `20261103020000_reject_uninvited_sign_ins.sql`). An email is let in if it already has an account, was added under Admin > Users (or as a new official on an event), is on the Officials list, or is a `@demo.test` test account. Anyone else is told straight away that they haven't been invited, no email is sent, and no account is created; this covers Google sign-in too. To let someone in, add them in Admin > Users first.
 
 ## Sign-in emails
 
@@ -126,9 +130,32 @@ The "Continue with Google" button stays hidden until you finish these steps. Inv
 
 Google sign-in sends no email, so it isn't affected by the email rate limit.
 
+## Maps
+
+Event locations are a place search with a map pin (migrations 50 and 54). Each event has a bout location and a
+weigh-in location; the weigh-ins are at the bout location unless the Owner or a site Admin picks another place with
+the day times. New events must have a pinned bout location.
+
+**By default the map is free OpenStreetMap: nothing to set up.** Tiles come from tile.openstreetmap.org, drawn with
+Leaflet (react-leaflet), and the search is Photon (photon.komoot.io, OpenStreetMap data). No key, account or card.
+Both are free shared services meant for light use, which a club site is; the map shows the required OpenStreetMap
+credit. Every location also gets an "Open in Google Maps" link, which is free.
+
+**Optional: Google Maps instead.** Google's search knows more small venues but needs a billing account (it stays
+inside the free monthly allowance at this size). To switch:
+
+1. At https://console.cloud.google.com/ create a project, add billing, and enable **Maps JavaScript API** and
+   **Places API (New)**.
+2. APIs & Services > Credentials > Create credentials > API key. Restrict it to websites `https://ubaniak.github.io/*`
+   (and `http://localhost:5173/*`) and to those two APIs.
+3. In GitHub, Settings > Secrets and variables > Actions > Variables, add `VITE_GOOGLE_MAPS_API_KEY`, then rerun the
+   Deploy to GitHub Pages workflow. Optional: a Map ID from Map management as `VITE_GOOGLE_MAPS_MAP_ID`.
+
+Remove the variable and redeploy to go back to OpenStreetMap.
+
 ## Owner emails
 
-When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations and club Owners that their club is in an event (both with the event's dates, venue, each day's weigh-in and bout times in the event's time zone, and the optional notes typed on the invite form; migration 32), sends bouts for approval, and welcomes people a site Admin adds on Admin > Users or an official adds to an event (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
+When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations and club Owners that their club is in an event (both with the event's dates, venue, each day's weigh-in and bout times in the event's time zone, and the optional notes typed on the invite form; migration 59), sends bouts for approval, and welcomes people a site Admin adds on Admin > Users or an official adds to an event (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
 
 It sends through a Gmail account for now, so no domain is needed:
 

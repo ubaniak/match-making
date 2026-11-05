@@ -1,4 +1,4 @@
--- Migration 32: invite emails carry the event's schedule.
+-- Migration 59 (was 32 before it was renumbered to run after 58): invite emails carry the event's schedule.
 -- Club and official invitation emails now list the event's name, dates, venue, each day's weigh-in
 -- and bout times (in the event's own time zone), and an optional note from whoever invited.
 -- The note isn't stored; the app sends it with the email request.
@@ -28,7 +28,8 @@ $$;
 revoke execute on function public.event_email_schedule(uuid) from public, anon, authenticated;
 
 -- The official's invitation email, now with the time zone and schedule. Same rule as before:
--- returns nothing unless the caller is a site Admin or an official on the event (migration 24).
+-- returns nothing unless can_add_officials allows the caller (a site Admin or the event's Chief
+-- Officials, migration 49).
 -- The return type changes, so the old function is dropped first.
 drop function if exists public.official_invitation_email(uuid);
 create function public.official_invitation_email(p_invitation_id uuid)
@@ -58,12 +59,15 @@ $$;
 revoke execute on function public.official_invitation_email(uuid) from public, anon;
 grant execute on function public.official_invitation_email(uuid) to authenticated;
 
--- A club's invitation email: one row per active owner of a club that is in the event. Returns
--- nothing unless the caller is the event's Owner or a site Admin (the people who invite clubs).
-create or replace function public.club_invitation_email(p_event_id uuid, p_club_id uuid)
+-- A club's invitation email: one row per active owner of a club that is invited to the event
+-- (club_status 'invited': an owner must accept first, migration 36) or already in it
+-- ('accepted'). Returns nothing unless the caller is the event's Owner or a site Admin (the
+-- people who invite clubs). Dropped first so the return type can change on a re-run.
+drop function if exists public.club_invitation_email(uuid, uuid);
+create function public.club_invitation_email(p_event_id uuid, p_club_id uuid)
 returns table (
   owner_name text, email text, club_name text, event_name text, venue text, start_date date, end_date date,
-  timezone text, schedule jsonb
+  timezone text, schedule jsonb, club_status text
 )
 language plpgsql stable security definer set search_path = public
 as $$
@@ -73,13 +77,13 @@ begin
   end if;
   return query
     select p.name, p.email, c.name, e.name, e.venue, e.start_date, e.end_date,
-      e.timezone, public.event_email_schedule(e.id)
+      e.timezone, public.event_email_schedule(e.id), ec.status
     from public.event_clubs ec
     join public.events e on e.id = ec.event_id
     join public.clubs c on c.id = ec.club_id
     join public.club_members m on m.club_id = c.id and m.role = 'owner' and m.status = 'active'
     join public.profiles p on p.id = m.user_id
-    where ec.event_id = p_event_id and ec.club_id = p_club_id and ec.status = 'accepted'
+    where ec.event_id = p_event_id and ec.club_id = p_club_id and ec.status in ('invited', 'accepted')
       and p.email is not null;
 end;
 $$;

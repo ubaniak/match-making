@@ -11,7 +11,7 @@ export default function WelcomeNotice({ welcome, onDismiss }) {
   const body = [
     `Hi ${welcome.name || ''},`.trim(),
     '',
-    `You've been added to Match Making as ${accountAs[welcome.roleId] ?? 'a User'}.`,
+    `You've been added to Match Making as ${accountAs[welcome.roleId] ?? 'a Member'}.`,
     '',
     `To sign in, open ${siteUrl()} and enter this email address (${welcome.email}). You'll get a 6-digit code by email to type in. There's no password.`,
   ].join('\n')

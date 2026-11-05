@@ -5,28 +5,30 @@ import CsvImport from './CsvImport'
 import DataTable, { DownloadCsvButton } from './DataTable'
 import { api } from './api'
 import { formatWeight } from './athletes'
-import { categorise } from './categories'
+import { ageCategory, categoryText, experienceCategory } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
-import { bestOpponents, checkMatch } from './matching'
+import { bestOpponents, checkMatch, suggestMatches } from './matching'
 import { EventOfficials } from './Officials'
+import { rolesText } from './officialRoles'
 import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, ClearOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { askConfirm, askText } from './dialogs'
-import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
+import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, NumberInput, Pick, Section, Text, Title } from './ui'
 
 const statusLabels = { pending: 'Waiting for approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled' }
+const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Chief Official' }
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
 // Bout types (migration 25). Scored follows every rule; Developmental lets the Chief Official or
 // Deputy override a rule break with a reason; Sparring follows the rules but needs no approval.
 const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparring: 'Sparring' }
 const boutTypeHelp = {
-  scored: 'Must follow every match rule. The Chief Official or Deputy approves it.',
-  developmental: 'The match rules apply, but the Chief Official or Deputy can override them with a reason. The Chief Official or Deputy approves it.',
+  scored: 'Must follow every match rule. Both corners\' club owners and a Chief Official approve it.',
+  developmental: 'The match rules apply, but a Chief Official can override them with a reason. Both corners\' club owners and a Chief Official approve it.',
   sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
 }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
@@ -53,32 +55,40 @@ function boutCsvRows(event, data, athletes, days) {
     'Day', 'Bout', 'Session', 'Type', 'Status',
     'Red boxer', 'Red club', 'Red category', 'Red weigh-in',
     'Blue boxer', 'Blue club', 'Blue category', 'Blue weigh-in',
-    'Winner', 'Method', 'Result note', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason',
+    'Winner', 'Method', 'Result note', 'Red club decision', 'Blue club decision', 'Official decision', 'Sent for approval', 'Rules overridden', 'Cancel reason', 'Needs discussion', 'Officials', 'Conflicts of interest',
   ]
   const rows = days.flatMap((day) => {
     const dayBouts = data.bouts.filter((b) => b.day === day)
     const live = dayBouts.filter((b) => b.status !== 'cancelled').sort((a, b) => a.position - b.position)
     const cancelled = dayBouts.filter((b) => b.status === 'cancelled')
     return [...live, ...cancelled].map((b) => {
-      const decision = b.approvals.find((a) => a.side === 'official')
+      const said = (sideName) => {
+        const a = b.approvals.find((x) => x.side === sideName)
+        return a ? `${a.decision === 'approved' ? 'Approved' : 'Rejected'}${a.override ? ' by an official' : ''}${a.note ? `: ${a.note}` : ''}` : ''
+      }
       return [
         day, b.status === 'cancelled' ? '' : live.indexOf(b) + 1, b.session_starts_at?.slice(0, 5) ?? '',
         boutTypeLabels[boutTypeOf(b)], statusLabels[b.status] ?? b.status,
         ...side(b, 'red'), ...side(b, 'blue'),
         b.winner ? (b.winner === 'red' ? 'Red' : 'Blue') : '', b.method ? methodLabels[b.method] ?? b.method : '', b.result_note ?? '',
-        decision ? `${decision.decision === 'approved' ? 'Approved' : 'Rejected'}${decision.note ? `: ${decision.note}` : ''}` : '',
+        said('red'), said('blue'), said('official'),
         b.approval_requested_at ? sentLabel(b.approval_requested_at) : '',
-        b.override_reason ?? '', b.cancel_reason ?? '',
+        b.override_reason ?? '', b.cancel_reason ?? '', b.status === 'cancelled' ? '' : b.review_reason ?? '',
+        officialsText(b), conflictsText(b),
       ]
     })
   })
   return [header, ...rows]
 }
 
-function categoryText(athlete, eventDate) {
-  if (!athlete?.date_of_birth) return ''
-  const c = categorise(athlete, eventDate)
-  return [c.age?.label, c.weight?.label, c.experience?.label].filter(Boolean).join(' · ')
+// 'Grace Adeyemi (Referee, Judge); Rob Turner (Timekeeper)'
+function officialsText(bout) {
+  return (bout.bout_officials ?? []).map((o) => `${personName(o.user)} (${rolesText(o, '')})`).join('; ')
+}
+
+// 'Grace Adeyemi (coaches the red boxer); Rob Turner'
+function conflictsText(bout) {
+  return (bout.bout_conflicts ?? []).map((c) => `${personName(c.user)}${c.reason ? ` (${c.reason})` : ''}`).join('; ')
 }
 
 // The Bouts tab: the card, the weigh-in and results.
@@ -122,12 +132,12 @@ function PublicBoutsSwitch({ event, data, publish }) {
 }
 
 // The Officials tab.
-export function EventOfficialsTab({ event, may, profile, bouts }) {
+export function EventOfficialsTab({ event, may, profile, bouts, onEventChange }) {
   if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
   return (
     <>
       <ErrorAlert>{bouts.error}</ErrorAlert>
-      <EventOfficials event={event} may={may} profile={profile} officials={bouts.data.officials} busy={bouts.busy} run={bouts.run} />
+      <EventOfficials event={event} may={may} profile={profile} officials={bouts.data.officials} busy={bouts.busy} run={bouts.run} onEventChange={onEventChange} />
     </>
   )
 }
@@ -196,7 +206,7 @@ function Card({ event, data, rights, busy, run, publish }) {
     const what = unsent.length
       ? `Send ${list.length} bout${list.length === 1 ? '' : 's'} that ${list.length === 1 ? "hasn't" : "haven't"} been sent yet for approval?`
       : `Every waiting bout has been sent already. Send a reminder for all ${list.length}?`
-    if (await askConfirm(`${what} The Chief Official and Deputy each get one email listing the bouts.`, { okText: 'Send' })) {
+    if (await askConfirm(`${what} Each club owner and Chief Official still to approve gets one email listing their bouts.`, { okText: 'Send' })) {
       sendForApproval(list)
     }
   }
@@ -275,7 +285,16 @@ function Card({ event, data, rights, busy, run, publish }) {
           }))}
         />
       )}
-      {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only the Chief Official or Deputy can make or change bouts.</Muted>}
+      {rights.seesConflicts && <ConflictsSummary bouts={shown} />}
+      {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only a Chief Official can make or change bouts.</Muted>}
+
+      {canMatch && !rematch && (
+        <SuggestedMatches
+          event={event} day={day} weights={weights} busy={busy}
+          taken={new Set(live.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]))}
+          onAdd={(fields) => run(() => api.saveBout({ ...fields, eventId: event.id, day }))}
+        />
+      )}
 
       {canMatch && (
         <MatchForm
@@ -307,7 +326,7 @@ function Card({ event, data, rights, busy, run, publish }) {
                   {(handle) => (
                     <BoutRow
                       bout={b} index={i} count={shown.length} event={event} athletes={athletes} weights={weights}
-                      rights={rights} canMatch={canMatch} canSend={canSend} canOrder={canOrder} handle={handle} sessions={sessions} busy={busy} run={run} officials={data.officials}
+                      rights={rights} weighInStarted={weighInStarted} canMatch={canMatch} canSend={canSend} canOrder={canOrder} handle={handle} sessions={sessions} busy={busy} run={run} officials={data.officials}
                       onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onMoveTo={(to) => moveTo(b, to)}
                       onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
                     />
@@ -337,7 +356,7 @@ function Card({ event, data, rights, busy, run, publish }) {
       )}
 
       {canWeighIn && (
-        <WeighIn event={event} day={day} bouts={live} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
+        <WeighIn event={event} day={day} bouts={live} allBouts={dayBouts} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
       )}
       {!canWeighIn && weighIns.length > 0 && (
         <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
@@ -357,7 +376,7 @@ function BoutsImport({ event, data, days, official, run }) {
   for (const b of live) (takenByDay[b.day] ??= []).push(b.red_athlete_id, b.blue_athlete_id)
   const weightsByDay = {}
   for (const w of data.weighIns) if (w.weight_kg != null) (weightsByDay[w.day] ??= {})[w.athlete_id] = Number(w.weight_kg)
-  // Once a day's weigh-in has started, only the Chief Official or Deputy makes bouts that day.
+  // Once a day's weigh-in has started, only a Chief Official makes bouts that day.
   const lockedDays = new Set(official ? [] : data.weighIns.map((w) => w.day))
   return (
     <CsvImport
@@ -374,6 +393,93 @@ function BoutsImport({ event, data, days, official, run }) {
         Rows that break the match rules are skipped; make those on the form, where a Developmental bout can be overridden with a reason.
       </Muted>
     </CsvImport>
+  )
+}
+
+// "Suggested matches": the app pairs up the athletes who are free this day (suggestMatches in
+// matching.js, the same rules as Best match) and the Owner or a Chief Official adds each pairing as
+// a Scored bout with one click. When an athlete fits more than one opponent, a dropdown picks which.
+function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
+  const takenKey = [...taken].sort().join(',')
+  const weightsKey = JSON.stringify(weights)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pairs = useMemo(() => suggestMatches(event.athletes, event.start_date, weights, taken), [event.athletes, event.start_date, takenKey, weightsKey])
+  const [chosen, setChosen] = useState({}) // { [athleteId]: opponentId }
+  const [adding, setAdding] = useState(null)
+  if (pairs.length === 0) return null
+  // Who each athlete is paired with in another row, so a dropdown can say so.
+  const pickedFor = Object.fromEntries(pairs.filter((p) => !p.pick.taken).flatMap((p) => [[p.pick.athlete.id, p.athlete], [p.athlete.id, p.pick.athlete]]))
+  const note = (m) => [
+    m.clubsPick && "club's pick",
+    m.check.needsSupervisor ? 'needs the Chief Official' : m.check.warnings.length ? `${m.check.warnings.length} warning${m.check.warnings.length === 1 ? '' : 's'}` : 'good match',
+  ].filter(Boolean).join(', ')
+  const who = (a) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}`
+
+  async function add(pair, match) {
+    setAdding(pair.athlete.id)
+    const ok = await onAdd({
+      redId: pair.athlete.id, blueId: match.athlete.id, needsSupervisor: match.check.needsSupervisor, warnings: match.check.warnings, boutType: 'scored',
+    })
+    setAdding(null)
+    if (ok) setChosen((c) => Object.fromEntries(Object.entries(c).filter(([id]) => id !== pair.athlete.id)))
+  }
+
+  return (
+    <FormCard title={`Suggested matches for ${formatDay(day)} (${pairs.length})`} className="suggested-matches">
+      <FullRow>
+        <Muted>
+          Athletes entered in this event who fit each other under the match rules, from different clubs and not boxing yet this day.
+          Click Add to make it a Scored bout (red corner first). Where an athlete fits more than one opponent, choose one from the list.
+        </Muted>
+      </FullRow>
+      {pairs.map((pair) => {
+        const match = pair.opponents.find((m) => m.athlete.id === chosen[pair.athlete.id]) ?? pair.pick
+        const options = pair.opponents.map((m) => {
+          const other = pickedFor[m.athlete.id]
+          const elsewhere = other && other.id !== pair.athlete.id ? `, suggested with ${other.name}` : ''
+          return { value: m.athlete.id, label: `${who(m.athlete)} (${note(m)}${elsewhere})` }
+        })
+        return (
+          <FullRow key={pair.athlete.id}>
+            <div className="suggested-match">
+              <div className="suggested-match-side">
+                <span className="corner-label red">Red</span> <Text strong>{pair.athlete.name}</Text>
+                <br /><Muted block={false}>{pair.athlete.club ?? '—'} · {categoryText(pair.athlete, event.start_date)}</Muted>
+              </div>
+              <div className="suggested-match-side">
+                <span className="corner-label blue">Blue</span>{' '}
+                {pair.opponents.length > 1 ? (
+                  <>
+                    <Muted block={false}>{pair.opponents.length} possible opponents</Muted>
+                    <Pick
+                      aria-label={`Opponent for ${pair.athlete.name}`}
+                      value={match.athlete.id}
+                      onChange={(id) => setChosen((c) => ({ ...c, [pair.athlete.id]: id }))}
+                      options={options}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text strong>{match.athlete.name}</Text>
+                    <br /><Muted block={false}>{match.athlete.club ?? '—'} · {categoryText(match.athlete, event.start_date)}</Muted>
+                  </>
+                )}
+              </div>
+              <Button type="primary" disabled={busy} loading={adding === pair.athlete.id} onClick={() => add(pair, match)}>
+                Add
+              </Button>
+              <div className="suggested-match-note">
+                <Muted block={false}>
+                  {match.clubsPick && "The club suggested this opponent. "}
+                  {pickedFor[match.athlete.id] && pickedFor[match.athlete.id].id !== pair.athlete.id && `${match.athlete.name} is also suggested with ${pickedFor[match.athlete.id].name}; adding this bout replaces that suggestion. `}
+                  {match.check.warnings.length ? `Check before approving: ${match.check.warnings.join('; ')}.` : 'A good match.'}
+                </Muted>
+              </div>
+            </div>
+          </FullRow>
+        )
+      })}
+    </FormCard>
   )
 }
 
@@ -483,13 +589,22 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
         <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={redOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
       <FullRow>
-        <Button
-          icon={<SwapOutlined rotate={90} />}
-          disabled={!redId && !blueId}
-          onClick={() => { setRedId(blueId); setBlueId(redId) }}
-        >
-          Swap corner
-        </Button>
+        <Space wrap>
+          <Button
+            icon={<SwapOutlined rotate={90} />}
+            disabled={!redId && !blueId}
+            onClick={() => { setRedId(blueId); setBlueId(redId) }}
+          >
+            Swap corner
+          </Button>
+          <Button
+            icon={<ClearOutlined />}
+            disabled={!redId && !blueId}
+            onClick={() => { setRedId(''); setBlueId(''); setReason('') }}
+          >
+            Clear athletes
+          </Button>
+        </Space>
       </FullRow>
       <Field label={<span className="corner-label blue">Blue corner</span>}>
         <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={blueOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
@@ -497,13 +612,13 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
       {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
       {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
       {blocked && check.hard.length === 0 && boutType !== 'developmental' && (
-        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Developmental bout can, if the Chief Official or Deputy overrides them with a reason.</Muted></FullRow>
+        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Developmental bout can, if a Chief Official overrides them with a reason.</Muted></FullRow>
       )}
       {blocked && boutType === 'developmental' && check.hard.length > 0 && (
         <FullRow><Muted>No one can override this, even on a Developmental bout.</Muted></FullRow>
       )}
       {overridable && !canOverride && (
-        <FullRow><Muted>Only the Chief Official or Deputy can override the match rules. Ask them to make this bout.</Muted></FullRow>
+        <FullRow><Muted>Only a Chief Official can override the match rules. Ask them to make this bout.</Muted></FullRow>
       )}
       {overriding && (
         <FullRow>
@@ -522,7 +637,10 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
         <FullRow><Text>Check before approving: {check.warnings.join('; ')}.</Text></FullRow>
       )}
       {check && check.blocks.length === 0 && check.warnings.length === 0 && <FullRow><Text strong>These two are a good match.</Text></FullRow>}
-      {bout && <FullRow><Muted>Re-matching clears the bout's approval; the Chief Official or Deputy approves it again.</Muted></FullRow>}
+      {bout && <FullRow><Muted>Re-matching clears the bout's approvals; both corners' club owners and a Chief Official approve it again.</Muted></FullRow>}
+      {bout?.bout_conflicts?.length > 0 && redId && blueId && ![bout.red_athlete_id, bout.blue_athlete_id].every((id) => [redId, blueId].includes(id)) && (
+        <FullRow><Muted>Matching different boxers clears the {bout.bout_conflicts.length} conflict{bout.bout_conflicts.length === 1 ? '' : 's'} of interest declared on this bout.</Muted></FullRow>
+      )}
     </FormCard>
   )
 }
@@ -543,7 +661,7 @@ function SortableBout({ id, disabled, children }) {
   )
 }
 
-function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
+function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted = false, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState('')
   const [result, setResult] = useState(null) // { winner, method, note } while recording
@@ -554,6 +672,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   const open = rights.cardOpen && !hasResult
 
   const type = boutTypeOf(bout)
+  const conflicts = bout.bout_conflicts ?? []
   const sparring = type === 'sparring'
   const overridden = Boolean(bout.override_reason)
   const overrider = officials.find((o) => o.user_id === bout.override_by)?.user
@@ -563,23 +682,52 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   const recheck = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
   const newBlocks = recheck ? recheck.blocks.filter((b) => !(bout.override_blocks ?? []).includes(b)) : []
 
-  // Only the event's Chief Official or Deputy (or a site Admin) approves or rejects a bout.
-  const canDecide = open && rights.official
-  const decision = approval.official
+  // Each corner's club owners and a Chief Official approve (migration 52). A corner whose club has
+  // no owner doesn't need approving. After the weigh-in starts a Chief Official can decide for a
+  // corner; a site Admin can decide any side. One club in both corners approves once for both.
+  const clubOf = (side) => (side === 'red' ? bout.red_club_id : bout.blue_club_id)
+  const hasOwner = (side) => (side === 'red' ? bout.red_club_has_owner : bout.blue_club_has_owner) !== false
+  const sameClub = Boolean(bout.red_club_id) && bout.red_club_id === bout.blue_club_id
+  const canDecide = (side) => {
+    if (!open) return false
+    if (side === 'official') return rights.official
+    return rights.siteAdmin || rights.ownedClubs.has(clubOf(side)) || ((bout.after_weigh_in || weighInStarted) && Boolean(rights.officialRole))
+  }
+  // The corner (or corners) the signed-in user can withdraw their athlete from.
+  const myCorners = ['red', 'blue'].filter((side) => rights.ownedClubs.has(clubOf(side)))
+  const canWithdraw = rights.cardOpen && !hasResult && bout.status !== 'cancelled' && myCorners.length > 0
 
-  async function decide(approve) {
+  async function decide(side, approve) {
     let note = null
     if (!approve) {
       note = await askText('Why are you rejecting this bout? (optional)', { okText: 'Reject' })
       if (note === null) return
     }
-    run(() => api.decideBout(bout.id, 'official', approve, note))
+    run(() => api.decideBout(bout.id, side, approve, note))
+  }
+
+  async function withdraw() {
+    const side = myCorners[0]
+    const athlete = side === 'red' ? bout.red?.name : bout.blue?.name
+    const reason = await askText(`Withdraw ${athlete ?? 'your athlete'} from this bout? The bout is cancelled and the other club and the officials are told. Give a reason (optional).`, { okText: 'Withdraw' })
+    if (reason === null) return
+    run(() => api.withdrawCorner(bout.id, side, reason))
   }
 
   async function cancel() {
     const reason = await askText(`Take ${bout.red?.name} vs ${bout.blue?.name} off the card? Give a reason (optional).`, { okText: 'Cancel bout' })
     if (reason === null) return
     run(() => api.cancelBout(bout.id, reason))
+  }
+
+  // A failed medical, a no-show or a weight that no longer fits flags the bout (migration 35). Only
+  // a Chief Official settles it: keep the bout or cancel it.
+  const review = !hasResult && bout.status !== 'cancelled' ? bout.review_reason : null
+
+  async function keep() {
+    if (await askConfirm(`Keep ${bout.red?.name} vs ${bout.blue?.name} on the card? The "needs discussion" flag is cleared.`, { okText: 'Keep bout' })) {
+      run(() => api.clearBoutReview(bout.id))
+    }
   }
 
   async function clearResult() {
@@ -666,6 +814,8 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           <span>Bout {index + 1}</span>
           <Badge strong={type !== 'scored'}>{boutTypeLabels[type]}</Badge>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
+          {review && <Badge strong>Needs discussion</Badge>}
+          {rights.seesConflicts && conflicts.length > 0 && <Badge strong>Conflict of interest ({conflicts.length})</Badge>}
           {bout.needs_supervisor && <Badge>U17 v U19: needs the official's approval</Badge>}
           {sendable(bout) && bout.approval_requested_at && <Badge muted title="Last sent for approval">Sent {sentLabel(bout.approval_requested_at)}</Badge>}
         </Space>
@@ -692,7 +842,28 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
           }
         />
       )}
-      {newBlocks.length > 0 && !hasResult && (
+      {review && (
+        <Alert
+          type="warning"
+          showIcon={false}
+          className="gap"
+          title="Needs discussion"
+          description={
+            <>
+              <div>{review}</div>
+              {rights.official && open ? (
+                <Space size={6} wrap style={{ marginTop: 8 }}>
+                  <Button size="small" disabled={busy} onClick={keep}>Keep bout</Button>
+                  <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>
+                </Space>
+              ) : (
+                <Muted>A Chief Official decides whether to keep or cancel this bout.</Muted>
+              )}
+            </>
+          }
+        />
+      )}
+      {newBlocks.length > 0 && !hasResult && !review && (
         <ErrorAlert>After the weigh-in this bout no longer fits: {newBlocks.join(' ')}</ErrorAlert>
       )}
       {bout.result_note && <Muted>Result note: {bout.result_note}</Muted>}
@@ -701,20 +872,32 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
         <Muted>Sparring: no approval needed.</Muted>
       ) : (
       <ul className="approvals">
-        <li>
-          <Space size={6} wrap>
-            <span>Chief Official or Deputy:</span>
-            {decision ? (
-              <span>{decision.decision === 'approved' ? 'Approved' : 'Rejected'}{decision.note ? ` (“${decision.note}”)` : ''}</span>
-            ) : (
-              <Text type="secondary">Waiting</Text>
-            )}
-            {canDecide && decision?.decision !== 'approved' && <Button size="small" type="link" disabled={busy} onClick={() => decide(true)}>Approve</Button>}
-            {canDecide && decision?.decision !== 'rejected' && <Button size="small" type="link" danger disabled={busy} onClick={() => decide(false)}>Reject</Button>}
-          </Space>
-        </li>
+        {['red', 'blue', 'official'].filter((side) => !(sameClub && side === 'blue')).map((side) => {
+          const a = approval[side]
+          const skipped = side !== 'official' && !a && !hasOwner(side)
+          const label = sameClub && side === 'red' ? `Both corners (${bout.red_club?.name ?? 'same club'})` : sideLabels[side]
+          return (
+            <li key={side}>
+              <Space size={6} wrap>
+                <span className={side === 'official' || sameClub ? undefined : `corner-label ${side}`}>{label}:</span>
+                {a ? (
+                  <span>{a.decision === 'approved' ? 'Approved' : 'Rejected'}{a.override ? ' by an official' : ''}{a.note ? ` (“${a.note}”)` : ''}</span>
+                ) : skipped ? (
+                  <Text type="secondary">No club owner, so not needed</Text>
+                ) : (
+                  <Text type="secondary">Waiting</Text>
+                )}
+                {!skipped && canDecide(side) && a?.decision !== 'approved' && <Button size="small" type="link" disabled={busy} onClick={() => decide(side, true)}>Approve</Button>}
+                {!skipped && canDecide(side) && a?.decision !== 'rejected' && <Button size="small" type="link" danger disabled={busy} onClick={() => decide(side, false)}>Reject</Button>}
+              </Space>
+            </li>
+          )
+        })}
       </ul>
       )}
+
+      <BoutOfficials bout={bout} rights={rights} />
+      <BoutConflicts bout={bout} rights={rights} canChange={open && bout.status !== 'cancelled'} busy={busy} run={run} />
 
       <Space size={4} wrap>
         <Button size="small" onClick={() => setShowComments(!showComments)}>
@@ -731,9 +914,10 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
             Swap corners
           </Button>
         )}
-        {canMatch && !hasResult && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
+        {canMatch && !hasResult && !review && <Button size="small" danger disabled={busy} onClick={cancel}>Cancel bout</Button>}
+        {canWithdraw && <Button size="small" danger disabled={busy} onClick={withdraw}>Withdraw my athlete</Button>}
         {rights.official && bout.status === 'approved' && !result && (
-          <Button size="small" type="primary" disabled={busy} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>
+          <Button size="small" type="primary" disabled={busy || Boolean(review)} title={review ? 'Keep or cancel this bout first' : undefined} onClick={() => setResult({ winner: bout.winner ?? '', method: bout.method ?? '', note: bout.result_note ?? '' })}>
             {hasResult ? 'Change result' : 'Record result'}
           </Button>
         )}
@@ -799,11 +983,120 @@ function BoutRow({ bout, index, count, event, athletes, weights, rights, canMatc
   )
 }
 
+// Who is working the bout and as what. The Chief Official plans this on the Officials assignment
+// tab; approving the plan copies it onto the bouts, so cards only show it read-only.
+function BoutOfficials({ bout, rights }) {
+  const list = bout.bout_officials ?? []
+  if (list.length === 0) return null
+  return (
+    <div className="bout-officials">
+      <Space size={6} wrap>
+        <span>Officials:</span>
+        {list.map((o) => (
+          <span key={o.user_id} className="bout-official">
+            <Badge strong={Boolean(o.referee)}>{personName(o.user)}{o.user_id === rights.me ? ' (you)' : ''} · {rolesText(o, 'No role')}</Badge>
+          </span>
+        ))}
+      </Space>
+    </div>
+  )
+}
+
+// Conflicts of interest (migration 53). Any official working the event declares one on a bout, with
+// an optional reason, and can take it back. The Chief Officials and site Admin see everyone's; an
+// official sees only their own. The Officials assignment plan rests a conflicted official on that bout.
+function BoutConflicts({ bout, rights, canChange, busy, run }) {
+  const conflicts = bout.bout_conflicts ?? []
+  const mine = conflicts.find((c) => c.user_id === rights.me)
+  const others = rights.seesConflicts ? conflicts.filter((c) => c.user_id !== rights.me) : []
+  const boutName = `${bout.red?.name ?? 'Red'} vs ${bout.blue?.name ?? 'Blue'}`
+
+  async function declare() {
+    const reason = await askText(
+      `Declare a conflict of interest on ${boutName}? The Chief Officials will see it and won't assign you to this bout. Give a reason (optional), for example "I coach the red boxer".`,
+      { okText: 'Declare conflict', placeholder: 'Reason (optional)' },
+    )
+    if (reason === null) return
+    run(() => api.declareBoutConflict(bout.id, reason))
+  }
+
+  async function takeBack() {
+    if (await askConfirm(`Take back your conflict of interest on ${boutName}? You could then be assigned to this bout.`, { okText: 'Take back' })) {
+      run(() => api.withdrawBoutConflict(bout.id))
+    }
+  }
+
+  const line = (c) => (
+    <li key={c.user_id}>
+      <Text strong>{c.user_id === rights.me ? 'You' : personName(c.user)}</Text>
+      {c.reason ? `: ${c.reason}` : <Text type="secondary"> (no reason given)</Text>}
+    </li>
+  )
+
+  if (!mine && others.length === 0) {
+    if (!rights.worksEvent || !canChange) return null
+    return (
+      <div className="bout-conflict-action">
+        <Button size="small" disabled={busy} onClick={declare}>Declare conflict of interest</Button>
+      </div>
+    )
+  }
+
+  return (
+    <Alert
+      type="warning"
+      showIcon={false}
+      className="gap"
+      title={rights.seesConflicts ? `Conflict of interest (${conflicts.length})` : 'You declared a conflict of interest'}
+      description={
+        <>
+          <ul className="bout-conflicts">
+            {mine && line(mine)}
+            {others.map(line)}
+          </ul>
+          {rights.seesConflicts && <Muted>The officials plan rests these officials on this bout.</Muted>}
+          {rights.worksEvent && canChange && (
+            <Space size={6} wrap style={{ marginTop: 8 }}>
+              {mine
+                ? <Button size="small" disabled={busy} onClick={takeBack}>Take back my conflict</Button>
+                : <Button size="small" disabled={busy} onClick={declare}>Declare conflict of interest</Button>}
+              {mine && <Button size="small" type="link" disabled={busy} onClick={declare}>Change reason</Button>}
+            </Space>
+          )}
+        </>
+      }
+    />
+  )
+}
+
+// For the Chief Officials while they match: which of the day's bouts have conflicts of interest.
+function ConflictsSummary({ bouts }) {
+  const flagged = bouts.map((b, i) => ({ n: i + 1, b })).filter(({ b }) => (b.bout_conflicts ?? []).length > 0)
+  if (!flagged.length) return null
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      className="gap"
+      title={`Conflicts of interest on ${flagged.length} bout${flagged.length === 1 ? '' : 's'} this day`}
+      description={
+        <ul className="bout-conflicts">
+          {flagged.map(({ n, b }) => (
+            <li key={b.id}>
+              <Text strong>Bout {n}</Text> ({b.red?.name ?? 'Red'} vs {b.blue?.name ?? 'Blue'}): {b.bout_conflicts.map((c) => personName(c.user)).join(', ')}
+            </li>
+          ))}
+        </ul>
+      }
+    />
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Send for approval
 // ---------------------------------------------------------------------------
 
-const approvalSideText = { official: 'official approval' }
+const approvalSideText = { red: 'red corner', blue: 'blue corner', official: 'official approval' }
 
 // One entry per person: { name, email, event, bouts: [{ line, sides }] }, each bout listed once.
 function groupByPerson(rows) {
@@ -820,14 +1113,25 @@ function groupByPerson(rows) {
   return [...people.values()].map((p) => ({ ...p, bouts: [...p.bouts.values()] }))
 }
 
-// Approvals still needed that nobody could be told about: no Chief Official or Deputy yet, or
+// Approvals still needed that nobody could be told about: no Chief Official yet, or
 // they have no email.
 function missingApprovers(list, rows, officials) {
-  const told = new Set(rows.map((r) => r.bout_id))
+  const told = new Set(rows.map((r) => `${r.bout_id}:${r.side}`))
   const notes = new Set()
   for (const b of list.filter(sendable)) {
-    if (!told.has(b.id)) {
-      notes.add(officials.length ? 'the Chief Official and Deputy have no email' : 'the event has no Chief Official or Deputy yet')
+    const approved = new Set(b.approvals.filter((a) => a.decision === 'approved').map((a) => a.side))
+    const sameClub = Boolean(b.red_club_id) && b.red_club_id === b.blue_club_id
+    for (const side of ['red', 'blue']) {
+      // Corners with no club owner don't need approving (migration 52).
+      if (sameClub && side === 'blue') continue
+      if ((side === 'red' ? b.red_club_has_owner : b.blue_club_has_owner) === false) continue
+      if (!approved.has(side) && !told.has(`${b.id}:${side}`)) {
+        const club = side === 'red' ? b.red_club?.name : b.blue_club?.name
+        notes.add(club ? `${club}'s club owners have no email` : 'an athlete has no club')
+      }
+    }
+    if (!approved.has('official') && !told.has(`${b.id}:official`)) {
+      notes.add(officials.length ? 'the Chief Officials have no email' : 'the event has no Chief Official yet')
     }
   }
   return [...notes]
@@ -889,41 +1193,88 @@ function SendNotice({ notice, onDismiss }) {
 // Weigh-in (CO and Deputy)
 // ---------------------------------------------------------------------------
 
-function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
+function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run }) {
   const recorded = Object.fromEntries(weighIns.map((w) => [w.athlete_id, w]))
-  // Everyone boxing that day, plus anyone already weighed in.
-  const ids = [...new Set([...bouts.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]), ...weighIns.map((w) => w.athlete_id)])]
+  // Everyone matched that day (even on a bout since cancelled, so both opponents can still weigh
+  // in), plus anyone already weighed in.
+  const ids = [...new Set([...allBouts.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]), ...weighIns.map((w) => w.athlete_id)])]
   const rows = ids.map((id) => athletes[id]).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
 
   async function save(athlete, form) {
+    // A correction to the date of birth or bouts fixes the athlete's record (migration 55).
+    const dobFixed = form.dobCheck === 'corrected' && form.dob && form.dob !== athlete.date_of_birth
+    const boutsFixed = form.experienceCheck === 'corrected' && form.bouts !== '' && Number(form.bouts) !== Number(athlete.bouts)
+    const fixed = { ...athlete, date_of_birth: dobFixed ? form.dob : athlete.date_of_birth, bouts: boutsFixed ? Number(form.bouts) : athlete.bouts }
     await run(async () => {
-      await api.recordWeighIn({ eventId: event.id, day, athleteId: athlete.id, weightKg: form.weight, medical: form.medical, note: form.note })
+      await api.recordWeighIn({
+        eventId: event.id, day, athleteId: athlete.id, weightKg: form.weight, medical: form.medical, note: form.note,
+        dobCheck: form.dobCheck, dob: form.dob, experienceCheck: form.experienceCheck, bouts: form.bouts,
+      })
       if (form.medical !== 'pass') return
-      // Re-check this athlete's bouts against the new weight; take off any that no longer fit.
+      // A correction that moves the athlete to another age group or from Novice to Open (or back)
+      // always needs discussing.
+      const corrections = []
+      if (dobFixed) {
+        const [was, now] = [ageCategory(athlete.date_of_birth, event.start_date), ageCategory(form.dob, event.start_date)]
+        const moved = was?.key !== now?.key ? `, ${was?.label ?? 'no age group'} to ${now?.label ?? 'no age group'}` : ''
+        corrections.push({ text: `${athlete.name}'s date of birth was corrected from ${athlete.date_of_birth ?? 'blank'} to ${form.dob}${moved}.`, moved: Boolean(moved) })
+      }
+      if (boutsFixed) {
+        const [was, now] = [experienceCategory(athlete.bouts), experienceCategory(form.bouts)]
+        const moved = was?.key !== now?.key ? `, ${was?.label ?? 'unknown'} to ${now?.label}` : ''
+        corrections.push({ text: `${athlete.name}'s bouts were corrected from ${athlete.bouts ?? 'blank'} to ${Number(form.bouts)}${moved}.`, moved: Boolean(moved) })
+      }
+      // Re-check this athlete's bouts against the new weight and corrected record; flag any that no
+      // longer fit for the Chief Official or Deputy to discuss (migration 35). Nothing is cancelled
+      // automatically.
       const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
       weights[athlete.id] = Number(form.weight)
+      const withFix = (id) => (id === athlete.id ? fixed : athletes[id])
       for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
-        const check = checkMatch(athletes[b.red_athlete_id], athletes[b.blue_athlete_id], event.start_date, weights)
+        const check = checkMatch(withFix(b.red_athlete_id), withFix(b.blue_athlete_id), event.start_date, weights)
         // On a Developmental bout, rule breaks an official already overrode don't count again.
         const broken = check.blocks.filter((x) => !(b.override_blocks ?? []).includes(x))
-        if (broken.length) await api.cancelBout(b.id, `Doesn't fit after the weigh-in: ${broken.join(' ')}`)
+        const moved = corrections.filter((c) => c.moved)
+        if (!broken.length && !moved.length) continue
+        const reason = corrections.length
+          ? [...corrections.map((c) => c.text), broken.length ? `The bout no longer fits: ${broken.join(' ')}` : ''].filter(Boolean).join(' ')
+          : `${athlete.name} weighed ${formatWeight(form.weight)}, so the bout no longer fits: ${broken.join(' ')}`
+        await api.flagBoutForReview(b.id, reason)
       }
-    })
+    }, { entries: Boolean(dobFixed || boutsFixed) })
   }
 
-  // Each row keeps its own form; the key resets it when a new weigh-in is recorded.
+  const checksText = (w) => [
+    w.dob_check && `DOB ${checkLabels[w.dob_check].toLowerCase()}${w.dob_before ? ` (was ${w.dob_before})` : ''}`,
+    w.experience_check && `bouts ${checkLabels[w.experience_check].toLowerCase()}${w.bouts_before != null ? ` (was ${w.bouts_before})` : ''}`,
+  ].filter(Boolean).join(', ')
+
+  // Each row keeps its own form; the key resets it when a new weigh-in is recorded or the athlete's
+  // record is corrected.
   const columns = [
     { title: 'Athlete', key: 'athlete', value: (a) => `${a.name} ${a.club ?? ''}`, csv: (a) => (a.club ? `${a.name} (${a.club})` : a.name), render: (_, a) => <>{a.name}<br /><Text type="secondary">{a.club ?? '—'}</Text></> },
     { title: 'Entered', key: 'entered', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
+    {
+      title: 'Date of birth',
+      key: 'dob',
+      value: (a) => a.date_of_birth,
+      render: (_, a) => <>{a.date_of_birth ?? '—'}<br /><Text type="secondary">{ageCategory(a.date_of_birth, event.start_date)?.label ?? ''}</Text></>,
+    },
+    {
+      title: 'Bouts',
+      key: 'bouts',
+      value: (a) => a.bouts,
+      render: (_, a) => <>{a.bouts ?? '—'}<br /><Text type="secondary">{experienceCategory(a.bouts)?.label ?? ''}</Text></>,
+    },
     {
       title: 'Weigh-in',
       key: 'form',
       csv: (a) => {
         const w = recorded[a.id]
-        return w ? [w.weight_kg != null ? formatWeight(w.weight_kg) : '', medicalLabels[w.medical] ?? '', w.note ?? ''].filter(Boolean).join(', ') : ''
+        return w ? [w.weight_kg != null ? formatWeight(w.weight_kg) : '', medicalLabels[w.medical] ?? '', checksText(w), w.note ?? ''].filter(Boolean).join(', ') : ''
       },
       render: (_, a) => (
-        <WeighInForm key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} />
+        <WeighInForm key={`${a.id}-${recorded[a.id]?.recorded_at ?? ''}-${a.date_of_birth}-${a.bouts}`} athlete={a} recorded={recorded[a.id]} busy={busy} onSave={(form) => save(a, form)} checksText={checksText} />
       ),
     },
   ]
@@ -936,39 +1287,93 @@ function WeighIn({ event, day, bouts, athletes, weighIns, busy, run }) {
       ) : (
         <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} weigh-in ${day}`} />
       )}
-      <Muted>A failed medical or a no-show takes the athlete's bouts off the card. A bout that no longer fits the weight allowance after the weigh-in is cancelled too.</Muted>
+      <Muted>
+        Check each athlete's weight, medical, date of birth (against their ID) and number of bouts. If the date of birth or bouts are wrong, pick "Wrong, correct it" and type the right value: the athlete's record is fixed.
+        A failed medical, a no-show, a weight that no longer fits, a date of birth or bouts that couldn't be checked, or a correction that changes the athlete's age group or Novice/Open marks the athlete's bouts "Needs discussion".
+        Nothing is cancelled automatically: a Chief Official keeps or cancels each one, and the opponent can still weigh in.
+      </Muted>
     </div>
   )
 }
 
-function WeighInForm({ athlete, recorded, busy, onSave }) {
+const checkLabels = { verified: 'Checked', corrected: 'Corrected', unverified: 'Couldn\'t check' }
+const checkOptions = [
+  { value: 'verified', label: 'Checked, correct' },
+  { value: 'corrected', label: 'Wrong, correct it' },
+  { value: 'unverified', label: 'Couldn\'t check' },
+]
+
+function WeighInForm({ athlete, recorded, busy, onSave, checksText }) {
   const [form, setForm] = useState({
     weight: recorded?.weight_kg ?? '', medical: recorded?.medical ?? 'pass', note: recorded?.note ?? '',
+    // A correction already saved shows the corrected value (now on the record); a new one starts blank.
+    dobCheck: recorded?.dob_check ?? '', dob: recorded?.dob_check === 'corrected' ? athlete.date_of_birth ?? '' : '',
+    experienceCheck: recorded?.experience_check ?? '', bouts: recorded?.experience_check === 'corrected' ? athlete.bouts ?? '' : '',
   })
+  const checking = form.medical !== 'absent'
+  // A new correction has to change something.
+  const sameDob = recorded?.dob_check !== 'corrected' && form.dob === athlete.date_of_birth
+  const sameBouts = recorded?.experience_check !== 'corrected' && form.bouts !== '' && Number(form.bouts) === Number(athlete.bouts)
+  const missing =
+    (form.medical === 'pass' && form.weight === '') ||
+    (form.medical === 'pass' && (!form.dobCheck || !form.experienceCheck)) ||
+    (checking && form.dobCheck === 'corrected' && (!form.dob || sameDob)) ||
+    (checking && form.experienceCheck === 'corrected' && (form.bouts === '' || sameBouts))
   return (
-    <Space wrap size={6}>
-      <NumberInput
-        aria-label={`${athlete.name} weight`}
-        placeholder="kg"
-        step={0.1}
-        min={10}
-        max={250}
-        style={{ width: 90 }}
-        value={form.weight}
-        onChange={(weight) => setForm({ ...form, weight })}
-      />
-      <Pick
-        aria-label={`${athlete.name} medical`}
-        style={{ width: 110 }}
-        value={form.medical}
-        onChange={(medical) => setForm({ ...form, medical })}
-        options={Object.entries(medicalLabels).map(([value, label]) => ({ value, label }))}
-      />
-      <Input aria-label={`${athlete.name} note`} placeholder="Note" style={{ width: 160 }} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
-      <Button disabled={busy || (form.medical === 'pass' && form.weight === '')} onClick={() => onSave(form)}>
-        {recorded ? 'Update' : 'Save'}
-      </Button>
-      {recorded && <Text type="secondary">{medicalLabels[recorded.medical]}</Text>}
+    <Space orientation="vertical" size={6}>
+      <Space wrap size={6}>
+        <NumberInput
+          aria-label={`${athlete.name} weight`}
+          placeholder="kg"
+          step={0.1}
+          min={10}
+          max={250}
+          style={{ width: 90 }}
+          value={form.weight}
+          onChange={(weight) => setForm({ ...form, weight })}
+        />
+        <Pick
+          aria-label={`${athlete.name} medical`}
+          style={{ width: 110 }}
+          value={form.medical}
+          onChange={(medical) => setForm({ ...form, medical })}
+          options={Object.entries(medicalLabels).map(([value, label]) => ({ value, label }))}
+        />
+        <Input aria-label={`${athlete.name} note`} placeholder="Note" style={{ width: 160 }} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+      </Space>
+      {checking && (
+        <Space wrap size={6}>
+          <Pick
+            aria-label={`${athlete.name} date of birth check`}
+            placeholder="Date of birth?"
+            style={{ width: 190 }}
+            value={form.dobCheck}
+            onChange={(dobCheck) => setForm({ ...form, dobCheck })}
+            options={checkOptions}
+          />
+          {form.dobCheck === 'corrected' && (
+            <DateInput aria-label={`${athlete.name} correct date of birth`} placeholder="YYYY-MM-DD" style={{ width: 150 }} value={form.dob} onChange={(dob) => setForm({ ...form, dob })} />
+          )}
+          <Pick
+            aria-label={`${athlete.name} experience check`}
+            placeholder="Bouts?"
+            style={{ width: 190 }}
+            value={form.experienceCheck}
+            onChange={(experienceCheck) => setForm({ ...form, experienceCheck })}
+            options={checkOptions}
+          />
+          {checking && (sameDob || sameBouts) && <Text type="danger">{sameDob ? 'That date of birth' : 'That number of bouts'} is already on the record.</Text>}
+          {form.experienceCheck === 'corrected' && (
+            <NumberInput aria-label={`${athlete.name} correct bouts`} placeholder="Bouts" min={0} max={1000} step={1} style={{ width: 90 }} value={form.bouts} onChange={(bouts) => setForm({ ...form, bouts })} />
+          )}
+        </Space>
+      )}
+      <Space wrap size={6}>
+        <Button disabled={busy || missing} onClick={() => onSave(form)}>
+          {recorded ? 'Update' : 'Save'}
+        </Button>
+        {recorded && <Text type="secondary">{[medicalLabels[recorded.medical], checksText(recorded)].filter(Boolean).join(', ')}</Text>}
+      </Space>
     </Space>
   )
 }

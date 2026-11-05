@@ -21,6 +21,7 @@
   --shadow-md: 0 8px 24px rgba(30, 58, 138, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
   --inset-highlight: rgba(255, 255, 255, 0.9);
   --corner-red: #b91c1c;
+  --danger: #b00000;
   --corner-blue: #1d4ed8;
   --radius-sm: 10px;
   --radius-md: 12px;
@@ -164,10 +165,20 @@ body {
   outline-offset: 2px;
 }
 
-/* The signed-in name sits on navy, so it is white (antd Text would make it near-black). */
+/* The signed-in name sits on navy, so it is white (antd Text would make it near-black).
+   A long name is cut short with "…" so it never runs over the nav. */
 .app-header .who-name.ant-typography {
   color: #fff;
   font-weight: 500;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The site role next to the name: plain text, so it doesn't look like a button. */
+.app-header .who-role {
+  color: var(--text-on-navy);
+  font-size: 15px;
 }
 
 /* A primary button on the navy header is gold, so it stands out. */
@@ -301,6 +312,49 @@ body {
   margin-top: 4px;
 }
 
+/* Add/edit athlete: boxes in rows. Four columns on wide screens (name, email and club take
+   two each; the short boxes one each), two on tablets and phones, one on very small phones.
+   "dense" fills gaps, so the layout stays tidy when the email or club box isn't shown. */
+.athlete-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: row dense;
+  gap: 0 16px;
+}
+
+.athlete-form .form-grid > .field {
+  min-width: 0;
+}
+
+.athlete-form .form-grid > .field.wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .athlete-form .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .athlete-form .form-grid > .field.wide {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 600px) {
+  /* Long boxes, the kg/lb weight box and experience get the whole row; short ones sit two to a row. */
+  .athlete-form .form-grid > .field.wide,
+  .athlete-form .form-grid > .field.weight,
+  .athlete-form .form-grid > .field.phone-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 359px) {
+  .athlete-form .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Tags: outlined navy. Strong is solid navy; muted is grey. */
 .badge.ant-tag {
   background: #fff;
@@ -330,6 +384,33 @@ body {
 
 .ant-table tr.row-error td {
   background: var(--bg-subtle);
+}
+
+/* Home: Active events with fewer than 5 officials. Red tint and edge, plus a red tag that says so in
+   words (white on #b00000 is 7.4:1, AAA). Row text stays #111 on the pale tint. */
+.ant-table tr.row-short-officials > td {
+  background: rgba(176, 0, 0, 0.07);
+}
+
+.ant-table tr.row-short-officials > td:first-child {
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.badge.ant-tag.short-officials {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  white-space: normal;
+}
+
+.stat-card.stat-danger {
+  border-color: var(--danger);
+  box-shadow: inset 4px 0 0 var(--danger), var(--shadow-md);
+}
+
+.stat-card.stat-danger .ant-statistic-content {
+  color: var(--danger);
 }
 
 .poster {
@@ -460,6 +541,60 @@ body {
   gap: 2px;
 }
 
+.role-picker {
+  border: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  min-width: 0;
+}
+
+.role-picker legend {
+  margin-bottom: 8px;
+}
+
+.role-choices,
+.role-choices .ant-checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.bout-officials {
+  margin: 8px 0;
+}
+
+.bout-official {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Conflicts of interest (migration 53). */
+.bout-conflict-action {
+  margin: 8px 0;
+}
+
+.bout-conflicts {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+/* A conflicted official assigned a working role on the officials plan. */
+.plan-conflict {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.bout-role-picker {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
 .comments {
   border-top: 1px solid var(--border-subtle);
   margin-top: 12px;
@@ -476,8 +611,27 @@ body {
   }
 }
 
-/* The site Admin's six pages need more room: below this width they move to their own row
-   under the brand (as everyone's do on phones) so they never run into Sign out. */
+/* Below 1024px everyone's pages move to their own row under the brand, so the name, bell and
+   Sign out never sit on top of them. The site Admin's six pages need more room, so they move
+   below 1180px. */
+@media (max-width: 1024px) {
+  .app-header-inner {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .pill-nav {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    padding: 8px 12px;
+  }
+}
+
 @media (max-width: 1180px) {
   .many-pages .app-header-inner {
     flex-wrap: wrap;
@@ -950,4 +1104,232 @@ body {
   display: block;
   margin-top: 4px;
   color: var(--text-muted);
+}
+
+/* Header "View as" picker: each person on two lines. */
+.test-as-item {
+  padding: 4px 0;
+  line-height: 1.35;
+}
+
+@media (max-width: 600px) {
+  .app-header .test-as-label {
+    display: none;
+  }
+}
+
+/* Header "View as" picker. */
+.view-as-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 48px));
+}
+
+/* Event locations (LocationField.jsx): a Google Maps search box with the map and its pin below. */
+.location-input,
+.location-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.location-map {
+  height: 280px;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+
+.location-map.small {
+  height: 200px;
+  max-width: 520px;
+}
+
+.location-input .ant-typography,
+.location-view .ant-typography {
+  margin-bottom: 0;
+}
+
+.place-option {
+  display: flex;
+  flex-direction: column;
+  white-space: normal;
+  line-height: 1.35;
+  padding: 4px 0;
+}
+
+@media (max-width: 600px) {
+  .location-map {
+    height: 220px;
+  }
+}
+
+.location-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.public-location {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+/* Officials assignment (migration 47): one colour per role, all dark text on a pale tint or white on
+   navy, so each passes AAA contrast. The word is always shown, so colour is never the only cue. */
+.role-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid var(--border-subtle);
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--text);
+  background: #fff;
+}
+
+.role-tag.role-supervisor {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+
+.role-tag.role-referee {
+  background: var(--gold-soft);
+  border-color: var(--gold);
+}
+
+.role-tag.role-judge {
+  background: var(--bg-subtle);
+  border-color: rgba(30, 58, 138, 0.35);
+  color: var(--navy-deep);
+}
+
+.role-tag.role-timekeeper {
+  background: #e6f4ea;
+  border-color: #8cc79f;
+  color: #0b3d1c;
+}
+
+.role-tag.role-rest {
+  color: #444;
+  border-style: dashed;
+}
+
+.plan-role.plan-role-supervisor .ant-select-selector,
+.plan-role.plan-role-supervisor.ant-select {
+  background: var(--navy);
+}
+
+.plan-role.plan-role-supervisor .ant-select-selection-item,
+.plan-role.plan-role-supervisor .ant-select-content {
+  color: #fff;
+}
+
+.plan-role.plan-role-referee .ant-select-selector,
+.plan-role.plan-role-referee.ant-select {
+  background: var(--gold-soft);
+}
+
+.plan-role.plan-role-judge .ant-select-selector,
+.plan-role.plan-role-judge.ant-select {
+  background: var(--bg-subtle);
+}
+
+.plan-role.plan-role-timekeeper .ant-select-selector,
+.plan-role.plan-role-timekeeper.ant-select {
+  background: #e6f4ea;
+}
+
+.plan-mine {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.plan-mine li {
+  margin-bottom: 8px;
+}
+
+.plan-bout {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.plan-bout:last-child {
+  border-bottom: none;
+}
+
+.plan-corners {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+}
+
+.plan-corner {
+  padding-left: 10px;
+  border-left: 4px solid var(--corner-red);
+}
+
+.plan-corner.blue {
+  border-left-color: var(--corner-blue);
+}
+
+.plan-cats {
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.plan-vs {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding-left: 14px;
+}
+
+/* The OpenStreetMap pin (OsmLocation.jsx): gold with a navy edge, pointing at the spot. */
+.osm-pin span {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin: 2px;
+  background: var(--gold);
+  border: 3px solid var(--navy-deep);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  box-shadow: var(--shadow-sm);
+}
+
+.location-map .leaflet-container {
+  font: inherit;
+}
+
+/* Suggested matches on the Bouts tab: red | blue (or a dropdown) | Add, then the note. */
+.suggested-match {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.suggested-match-side {
+  min-width: 0;
+}
+
+.suggested-match-note {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .suggested-match {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

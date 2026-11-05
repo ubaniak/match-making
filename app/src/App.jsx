@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Input, Layout, Select, Spin } from 'antd'
-import { CalendarOutlined, SafetyCertificateOutlined, UserOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons'
+import { CalendarOutlined, SafetyCertificateOutlined, UserOutlined, GoogleOutlined, HomeOutlined, LogoutOutlined, IdcardOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from './api'
-import { isOfficial, useAuth } from './auth'
+import { seesClubs, useAuth } from './auth'
 import AdminPage, { AthletesPage, OfficialsPage } from './AdminPage'
 import ClubsPage from './ClubsPage'
 import EventsPage from './EventsPage'
 import HomePage from './HomePage'
 import { NotificationBell, NotificationsProvider } from './Notifications'
 import PublicEvents from './PublicEvents'
-import { Badge, ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
+import { ViewAsMenu, ViewingBar } from './ViewAs'
+import { ErrorAlert, Muted, Paragraph, Text, Title } from './ui'
 
-const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, admin: <SettingOutlined /> }
+const pageIcons = { home: <HomeOutlined />, events: <CalendarOutlined />, clubs: <TeamOutlined />, athletes: <UserOutlined />, officials: <SafetyCertificateOutlined />, members: <IdcardOutlined /> }
 
 export default function App() {
-  const { session, profile, can, loading } = useAuth()
-  const [page, setPage] = useState('home')
+  const { session, profile, can, loading, viewing } = useAuth()
   // Bumped on every tab click so clicking the current tab again goes back to its list.
   const [visit, setVisit] = useState(0)
   // Where a link from Home (or an alert) asked to go: { eventId, tab } or { clubId }.
@@ -23,11 +23,12 @@ export default function App() {
   const hash = useHash()
   const route = routeFor(hash)
 
-  // Once signed in, the sign-in page moves on to Home, and the address bar shows #home rather
-  // than the bare root a sign-in link leaves behind.
+  // The page lives in the address bar (#home, #events, #clubs…), so refresh, Back and links keep it.
+  // Once signed in, the sign-in page (or the bare root a sign-in link leaves behind) moves on to Home.
+  const page = pageFor(hash)
   useEffect(() => {
-    if (session && (route === 'login' || (route === 'app' && !/^#\/?home$/.test(window.location.hash)))) goTo('#home')
-  }, [session, route, hash])
+    if (session && (route === 'login' || (route === 'app' && !page))) goTo('#home')
+  }, [session, route, page])
 
   // The site root is the public list of upcoming events; it needs no sign-in.
   if (route === 'public') return <PublicEvents signedIn={Boolean(session)} />
@@ -42,12 +43,13 @@ export default function App() {
   const pages = [
     ['home', 'Home'],
     can('pages:read') && ['events', 'Events'],
-    // Officials don't see clubs (Bhavek, 2026-11-02).
-    can('pages:read') && !isOfficial(profile) && ['clubs', 'Clubs'],
+    // Only people in a club, event Owners and the site Admin see clubs (officials don't, Bhavek 2026-11-02).
+    can('pages:read') && seesClubs(profile) && ['clubs', 'Clubs'],
     // The site Admin gets Athletes and Officials in the top nav, not tucked under Admin (Bhavek, 2026-11-02).
     can('users:manage') && ['athletes', 'Athletes'],
     can('users:manage') && ['officials', 'Officials'],
-    can('users:manage') && ['admin', 'Admin'],
+    // Was "Admin"; renamed to Members (Bhavek, 2026-11-04).
+    can('users:manage') && ['members', 'Members'],
   ].filter(Boolean)
   const current = pages.find(([key]) => key === page)?.[0] ?? pages[0]?.[0]
   // A link only counts for the user who clicked it (demo mode can switch users).
@@ -56,7 +58,7 @@ export default function App() {
   // Go to a page, optionally straight to one event (and tab) or club:
   // open({ page: 'events', eventId, tab }) or open({ page: 'clubs', clubId }).
   function open({ page: next, ...rest }) {
-    setPage(next)
+    if (pageFor(window.location.hash) !== next) window.location.hash = next
     setTarget({ ...rest, userId: profile?.id })
     setVisit((v) => v + 1)
     window.scrollTo(0, 0)
@@ -66,6 +68,7 @@ export default function App() {
     <NotificationsProvider userId={profile?.id}>
       <Layout className="page">
         {api.mode === 'mock' && <DemoBanner userId={session.user.id} />}
+        <ViewingBar viewing={viewing} />
         <Layout.Header className={pages.length > 4 ? 'app-header many-pages' : 'app-header'}>
           <div className="app-header-inner">
             <span className="brand">Match Making</span>
@@ -77,6 +80,7 @@ export default function App() {
                     type="button"
                     className={current === key ? 'pill active' : 'pill'}
                     aria-current={current === key ? 'page' : undefined}
+                    aria-label={label}
                     onClick={() => open({ page: key })}
                   >
                     {pageIcons[key]}
@@ -86,10 +90,12 @@ export default function App() {
               </nav>
             ) : <span style={{ flex: 1 }} />}
             <span className="who">
+              {api.mode === 'supabase' && can('users:manage') && !viewing && <ViewAsMenu myId={session.user.id} />}
               <NotificationBell onOpen={open} />
-              <Text className="who-name">{profile?.name || session.user.email}</Text>
-              {profile && <Badge>{profile.roles?.name}</Badge>}
-              <Button icon={<LogoutOutlined />} onClick={() => api.signOut().then(() => goTo(''))}>Sign out</Button>
+              <Text className="who-name" title={profile?.name || session.user.email}>{profile?.name || session.user.email}</Text>
+              {/* The site role is a label, not a button. Everyone else is a Member, so only Admin shows. */}
+              {siteRoleLabel(profile) && <span className="who-role">{siteRoleLabel(profile)}</span>}
+              <Button icon={<LogoutOutlined />} aria-label="Sign out" onClick={() => api.signOut().then(() => goTo(''))}>Sign out</Button>
             </span>
           </div>
         </Layout.Header>
@@ -99,7 +105,7 @@ export default function App() {
           {current === 'clubs' && <ClubsPage key={`${profile?.id}-${visit}`} profile={profile} can={can} clubId={linked.clubId} />}
           {current === 'athletes' && <AthletesPage key={visit} />}
           {current === 'officials' && <OfficialsPage key={visit} />}
-          {current === 'admin' && <AdminPage key={visit} />}
+          {current === 'members' && <AdminPage key={visit} />}
         </Layout.Content>
       </Layout>
     </NotificationsProvider>
@@ -109,13 +115,28 @@ export default function App() {
 // Routes live in the URL hash so GitHub Pages serves them without any server setup:
 //   (none), #upcoming  public upcoming events (the site root)
 //   #login             sign-in page
-//   #home              the signed-in app (anything else counts too, e.g. a sign-in link's #access_token=…)
+//   #home, #events, #clubs, #athletes, #officials, #members   the signed-in app's pages
+//                      (#admin, the old name, still opens Members)
+//                      (anything else goes to #home, e.g. a sign-in link's #access_token=…)
 function routeFor(hash) {
   const key = hash.replace(/^#\/?/, '')
   if (key === '' || key === 'upcoming') return 'public'
   if (key === 'login') return 'login'
   return 'app'
 }
+
+const appPages = ['home', 'events', 'clubs', 'athletes', 'officials', 'members']
+// Old hashes that still work, so saved links don't break.
+const pageAliases = { admin: 'members' }
+
+// Which app page a hash names (#events, #/clubs…), or null.
+function pageFor(hash) {
+  const raw = hash.replace(/^#\/?/, '')
+  const key = pageAliases[raw] ?? raw
+  return appPages.includes(key) ? key : null
+}
+
+const siteRoleLabel = (profile) => (profile?.role_id === 'admin' ? 'Admin' : null)
 
 function goTo(hash) {
   const url = window.location.pathname + window.location.search + (hash ? hash : '')
@@ -127,6 +148,17 @@ function goTo(hash) {
 // which Supabase strips from the address bar as it signs in. Read it now, before that happens,
 // so the person lands on Home and not on the public list.
 const backFromSignIn = /access_token=|error_description=/.test(window.location.hash) || /[?&]code=/.test(window.location.search)
+
+// Google sign-in for an email nobody invited comes back with an error instead of a session.
+function signInErrorFromUrl() {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, '') + '&' + window.location.search.replace(/^\?/, ''))
+  const description = params.get('error_description')
+  if (!description) return null
+  return /database error saving new user|has not been invited/i.test(description)
+    ? 'That Google account\'s email hasn\'t been invited. Ask a site Admin or the person running your event to add you, then try again.'
+    : description
+}
+const signInErrorOnLoad = signInErrorFromUrl()
 
 function useHash() {
   const [hash, setHash] = useState(backFromSignIn ? '#home' : window.location.hash)
@@ -195,7 +227,7 @@ function Login() {
   const [email, setEmail] = useState('')
   const [sentTo, setSentTo] = useState(null)
   const [code, setCode] = useState('')
-  const [error, setError] = useState(null)
+  const [error, setError] = useState(signInErrorOnLoad)
   const [busy, setBusy] = useState(false)
 
   async function run(action) {
@@ -229,7 +261,7 @@ function Login() {
       <SignedOutCard title="Check your email">
         <form onSubmit={verifyCode} className="login-form">
           {/@demo\.test$/i.test(sentTo) ? (
-            <Paragraph><strong>{sentTo}</strong> is a demo account from the test data. Type its demo code.</Paragraph>
+            <Paragraph><strong>{sentTo}</strong> is a demo account. Type its demo code.</Paragraph>
           ) : (
             <Paragraph>We sent a sign-in code to <strong>{sentTo}</strong>. Type it below, or click the link in the same email.</Paragraph>
           )}
@@ -269,6 +301,7 @@ function Login() {
       )}
       <form onSubmit={sendCode} className="login-form">
         <Paragraph>Enter your email and we'll send you a sign-in code.</Paragraph>
+        <Paragraph type="secondary">Testing with a demo account (ending @demo.test)? No email is sent: you'll type its demo code on the next screen.</Paragraph>
         <Input
           size="large"
           type="email"

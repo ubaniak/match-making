@@ -1,25 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Input, Popconfirm, Space, Tabs } from 'antd'
-import { DeleteOutlined, EditOutlined, MailOutlined } from '@ant-design/icons'
+import { Alert, Button, Checkbox, Input, Popconfirm, Space } from 'antd'
+import { DeleteOutlined, EditOutlined, EyeOutlined, MailOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import { api } from './api'
 import CsvImport from './CsvImport'
 import AthleteForm from './AthleteForm'
-import { formatBouts, formatWeight, genderLabel } from './athletes'
+import { cleanText, formatBouts, formatLevel, formatWeight, genderLabel } from './athletes'
 import { dash } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
 import { accountAs, sendWelcome } from './welcome'
-import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, PageHeading, Pick, Section } from './ui'
+import { Badge, ErrorAlert, Field, FormCard, FormMessage, FullRow, Muted, NumberInput, PageHeading, Pick, Section, Title } from './ui'
 
+// Two account types (Bhavek, 2026-11-04, Option B). Everything else is a role on a club or an event.
 const accountTypes = [
+  { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
-  { value: 'user', label: 'User' },
-  { value: 'official', label: 'Official' },
-  { value: 'public', label: 'Public (no access yet)' },
 ]
-const blankUser = { name: '', email: '', roleId: 'user' }
+const blankUser = { name: '', email: '', roleId: 'member', official: false }
 
-// An Official account should also be on the Officials list, so they can be picked for events.
+// Being an official means being on the Officials list, so they can be invited to events.
 // Adds them there unless that email is already listed.
 async function ensureOfficial({ name, email }) {
   const clean = email.trim().toLowerCase()
@@ -33,7 +32,7 @@ async function ensureOfficial({ name, email }) {
 // welcome email didn't go out (the envelope on their row sends it again).
 async function importUser(user) {
   await api.addUser(user)
-  if (user.roleId === 'official') await ensureOfficial(user)
+  if (user.official) await ensureOfficial(user)
   const welcome = await sendWelcome(user)
   return welcome.sent ? null : { note: `the welcome email wasn't sent (${welcome.reason}). Use the envelope on their row to send it again` }
 }
@@ -71,21 +70,13 @@ function useRunner(reload) {
   return { busy, error, setError, run }
 }
 
-// Athletes and Officials have their own top-nav pages (Bhavek, 2026-11-02).
-const tabs = [
-  ['users', 'Users'],
-  ['test-data', 'Test data'],
-]
-
+// Athletes and Officials have their own top-nav pages (Bhavek, 2026-11-02). Test data was
+// removed (Bhavek, 2026-11-04), so this page is just Users. Its nav tab is "Members" (Bhavek, 2026-11-04).
 export default function AdminPage() {
-  const [tab, setTab] = useState('users')
-
   return (
     <main className="panel">
-      <PageHeading title="Admin" />
-      <Tabs activeKey={tab} onChange={setTab} items={tabs.map(([key, label]) => ({ key, label }))} />
-      {tab === 'users' && <Users />}
-      {tab === 'test-data' && <TestData />}
+      <PageHeading title="Members" />
+      <Users />
     </main>
   )
 }
@@ -107,65 +98,6 @@ export function OfficialsPage() {
       <PageHeading title="Officials" />
       <Officials />
     </main>
-  )
-}
-
-// One click to load or remove the TEST events, clubs and athletes (migration 17).
-function TestData() {
-  const [busy, setBusy] = useState(null) // 'seed' or 'clear' while running
-  const [message, setMessage] = useState(null)
-  const counts = (c) => `${c.events} events, ${c.clubs} clubs, ${c.athletes} athletes and ${c.accounts ?? 0} demo accounts`
-
-  async function run(kind) {
-    setBusy(kind)
-    setMessage(null)
-    try {
-      const c = kind === 'seed' ? await api.seedTestData() : await api.clearTestData()
-      setMessage({ text: kind === 'seed' ? `Loaded ${counts(c)}.` : `Removed ${counts(c)}.` })
-    } catch (err) {
-      setMessage({ error: true, text: err.message })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <Section title="Test data">
-      <Muted>
-        Loads two Active events: TEST One-Day Card on 1 January 3000 with 20 athletes entered, and
-        TEST Multi-Day Open from 8 to 10 January 3000 with 100. Both have the same 5 TEST clubs. Birth dates
-        are in the 2950s to 2990s so the athletes fall into every age group in year 3000. Clearing removes
-        every event, athlete, club and official whose name starts with &ldquo;TEST &rdquo;, with their bouts and results,
-        and the demo accounts.
-      </Muted>
-      <Muted>
-        It also makes three demo accounts. Each signs in with the code <strong>123456</strong>, and no email is sent:
-      </Muted>
-      <ul>
-        <li><strong>event-owner@demo.test</strong>: Owner of both TEST events</li>
-        <li><strong>club-owner@demo.test</strong>: Owner of TEST North End Boxing</li>
-        <li><strong>official@demo.test</strong>: an official accepted for every day of both events, and their Chief Official</li>
-      </ul>
-      <Muted>
-        Anyone who knows these can sign in as them while test data is loaded, so clear it when you&rsquo;re done.
-      </Muted>
-      <Space style={{ marginTop: 16 }}>
-        <Popconfirm title="Load test data?" okText="Load" cancelText="Cancel" onConfirm={() => run('seed')}>
-          <Button type="primary" loading={busy === 'seed'} disabled={Boolean(busy)}>Load test data</Button>
-        </Popconfirm>
-        <Popconfirm
-          title="Clear test data?"
-          description="Everything named TEST and the demo accounts are deleted, including bouts and results. This can't be undone."
-          okText="Clear"
-          okButtonProps={{ danger: true }}
-          cancelText="Cancel"
-          onConfirm={() => run('clear')}
-        >
-          <Button danger loading={busy === 'clear'} disabled={Boolean(busy)}>Clear test data</Button>
-        </Popconfirm>
-      </Space>
-      <FormMessage message={message} />
-    </Section>
   )
 }
 
@@ -199,6 +131,21 @@ function Users() {
   const [welcome, setWelcome] = useState(null) // the last welcome email: who, and whether it went
   const [emailing, setEmailing] = useState(null) // email of the row whose welcome is sending
   const changes = useRunner(reload)
+  const [viewingBusy, setViewingBusy] = useState(null) // id of the row whose View as is starting
+
+  // View as: the whole app as this person sees it, read-only, until "Back to my account".
+  async function viewAs(user) {
+    setViewingBusy(user.id)
+    changes.setError(null)
+    try {
+      await api.startViewAs(user)
+      window.location.hash = 'home'
+      window.scrollTo(0, 0)
+    } catch (err) {
+      changes.setError(err.message)
+      setViewingBusy(null)
+    }
+  }
 
   async function addUser(event) {
     event.preventDefault()
@@ -209,7 +156,7 @@ function Users() {
     let listed = false
     try {
       data = await api.addUser(form)
-      if (form.roleId === 'official') listed = await ensureOfficial(form)
+      if (form.official) listed = await ensureOfficial(form)
     } catch (err) {
       setSaving(false)
       return setMessage({ error: true, text: err.message })
@@ -217,7 +164,7 @@ function Users() {
     const added = { name: form.name.trim(), email: form.email.trim().toLowerCase(), roleId: form.roleId }
     setWelcome(await sendWelcome(added))
     setSaving(false)
-    const role = accountAs[form.roleId] ?? 'a User'
+    const role = accountAs[form.roleId] ?? 'a Member'
     const officialNote = listed ? ' They are on the Officials list too.' : ''
     setMessage({
       text: data === 'updated'
@@ -252,6 +199,19 @@ function Users() {
               setEmailing(null)
             }}
           />
+          {/* Demo accounts are left out of View as (Bhavek, 2026-11-04): sign in as them instead. */}
+          {api.mode === 'supabase' && u.id && !/@demo\.test$/i.test(u.email ?? '') && (
+            <Button
+              size="small"
+              shape="circle"
+              icon={<EyeOutlined />}
+              aria-label={`View as ${u.name || u.email}`}
+              title="View as (see exactly what they see, read-only)"
+              disabled={Boolean(viewingBusy)}
+              loading={viewingBusy === u.id}
+              onClick={() => viewAs(u)}
+            />
+          )}
           <RowActions
             name={u.name || u.email}
             busy={changes.busy}
@@ -274,16 +234,22 @@ function Users() {
         <Field label="Name"><Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Email"><Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
         <Field label="Account"><Pick value={form.roleId} onChange={(roleId) => setForm({ ...form, roleId })} options={accountTypes} /></Field>
+        <FullRow>
+          <Checkbox checked={form.official} onChange={(e) => setForm({ ...form, official: e.target.checked })}>
+            Official: also add them to the Officials list, so they can be invited to events
+          </Checkbox>
+        </FullRow>
       </FormCard>
       <FormMessage message={message} />
       <WelcomeNotice welcome={welcome} onDismiss={() => setWelcome(null)} />
       <Muted>
         Adding someone emails them how to sign in; the envelope on their row sends it again.
-        Account sets what they can do across the site: Admins manage everything, Officials are also added to the Officials list.
-        Site Admins create events and clubs. What a user can do on an event (Owner, Coach or Viewer) or in a club (Owner or Coach) is set there.
+        There are two accounts: Admins manage everything; everyone else is a Member. Any Member can request an event
+        (and own it once a site Admin approves it). Everything else a Member does comes from their roles: Owner or Coach
+        of a club, Owner of an event, or an official on an event (anyone on the Officials list can be invited).
       </Muted>
       <CsvImport kind="users" importRow={importUser} onDone={reload}>
-        <Muted>Each person gets the same welcome email as adding them above. Officials are added to the Officials list too.</Muted>
+        <Muted>Each person gets the same welcome email as adding them above. Put yes in the official column to add them to the Officials list too.</Muted>
       </CsvImport>
 
       <Section title="Users">
@@ -295,11 +261,7 @@ function Users() {
             busy={changes.busy}
             onCancel={() => setEditing(null)}
             onSave={async (fields) => {
-              const becameOfficial = fields.roleId === 'official' && editing.role_id !== 'official'
-              const saved = await changes.run(async () => {
-                await api.updateUser(editing, fields)
-                if (becameOfficial) await ensureOfficial({ name: fields.name, email: fields.email })
-              })
+              const saved = await changes.run(() => api.updateUser(editing, fields))
               if (saved) setEditing(null)
             }}
           />
@@ -343,8 +305,9 @@ function Athletes() {
     { title: 'Gender', key: 'gender', render: (_, a) => genderLabel(a.gender) },
     { title: 'Weight', key: 'weight', value: (a) => a.weight_kg, render: (_, a) => formatWeight(a.weight_kg) },
     { title: 'Experience', key: 'bouts', value: (a) => a.bouts, render: (_, a) => formatBouts(a.bouts) },
+    { title: 'BC number', key: 'bc', value: (a) => a.bc_number, render: (_, a) => dash(a.bc_number) },
+    { title: 'Last medical', key: 'medical', value: (a) => a.last_medical, render: (_, a) => dash(a.last_medical) },
     { title: 'Club', key: 'club', render: (_, a) => dash(a.club) },
-    { title: 'Coach', key: 'coach', render: (_, a) => (a.coach ? a.coach.name || a.coach.email : '—') },
     { title: 'Login', key: 'login', value: (a) => a.invite_email, render: (_, a) => <LoginBadge record={a} /> },
     {
       key: 'actions',
@@ -365,15 +328,11 @@ function Athletes() {
     <section>
       <AthleteForm
         clubs={clubs}
-        users={users}
         onSave={async (record) => {
           await api.addAthlete(record)
           reload()
         }}
       />
-      {users.some((u) => !u.id) && (
-        <Muted>Invited users appear in the coach list once they've signed in.</Muted>
-      )}
       <Muted>Clubs are made on the Clubs page. To move an athlete to another club, open their club there.</Muted>
       <CsvImport
         kind="athletes"
@@ -395,7 +354,6 @@ function Athletes() {
           <AthleteForm
             key={editing.id}
             athlete={editing}
-            users={users}
             onCancel={() => setEditing(null)}
             onSave={async (record) => {
               await api.updateAthlete(editing.id, record)
@@ -421,7 +379,34 @@ function LoginBadge({ record }) {
   return '—'
 }
 
-const emptyOfficial = { name: '', email: '', qualifications: '' }
+const emptyOfficial = { name: '', email: '', phone: '', level: '', bcNumber: '', qualifications: '' }
+
+// The form's values as an officials row (level, phone and BC number are migration 40).
+const officialRecord = (form) => ({
+  name: form.name.trim(),
+  invite_email: form.email.trim().toLowerCase(),
+  phone: cleanText(form.phone),
+  level: form.level === '' || form.level == null ? null : Number(form.level),
+  bc_number: cleanText(form.bcNumber),
+  qualifications: cleanText(form.qualifications),
+})
+
+// The fields shared by the add and edit official forms.
+function OfficialFields({ form, setForm }) {
+  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  return (
+    <>
+      <Field label="Name"><Input required {...field('name')} /></Field>
+      <Field label="Email"><Input type="email" required {...field('email')} /></Field>
+      <Field label="Phone" hint="optional"><Input type="tel" {...field('phone')} /></Field>
+      <Field label="Level" hint="optional">
+        <NumberInput min={0} max={100} step={1} precision={0} value={form.level} onChange={(v) => setForm({ ...form, level: v })} />
+      </Field>
+      <Field label="BC number" hint="Boxing Canada, optional"><Input {...field('bcNumber')} /></Field>
+      <Field label="Qualifications" hint="optional"><Input {...field('qualifications')} /></Field>
+    </>
+  )
+}
 
 function Officials() {
   const [officials, setOfficials] = useState([])
@@ -450,11 +435,7 @@ function Officials() {
     setSaving(true)
     setMessage(null)
     try {
-      await api.addOfficial({
-        name: form.name.trim(),
-        invite_email: form.email.trim().toLowerCase(),
-        qualifications: form.qualifications.trim() || null,
-      })
+      await api.addOfficial(officialRecord(form))
     } catch (err) {
       return setMessage({ error: true, text: err.message })
     } finally {
@@ -465,12 +446,13 @@ function Officials() {
     reload()
   }
 
-  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
-
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name' },
-    { title: 'Qualifications', key: 'q', render: (_, o) => dash(o.qualifications) },
-    { title: 'Login', key: 'login', value: (o) => o.invite_email, render: (_, o) => <LoginBadge record={o} /> },
+    { title: 'Level', key: 'level', value: (o) => o.level, render: (_, o) => formatLevel(o.level) },
+    { title: 'Email', key: 'login', value: (o) => o.invite_email, render: (_, o) => <LoginBadge record={o} /> },
+    { title: 'Phone', key: 'phone', value: (o) => o.phone, render: (_, o) => dash(o.phone) },
+    { title: 'BC number', key: 'bc', value: (o) => o.bc_number, render: (_, o) => dash(o.bc_number) },
+    { title: 'Qualifications', key: 'q', value: (o) => o.qualifications, render: (_, o) => dash(o.qualifications) },
     {
       key: 'actions',
       className: 'actions',
@@ -479,7 +461,7 @@ function Officials() {
           name={o.name}
           busy={changes.busy}
           onEdit={() => { changes.setError(null); setEditing(o) }}
-          deleteText="Their event invitations are removed too, and they stop being Chief Official or Deputy on those events."
+          deleteText="Their event invitations are removed too, and they stop being Chief Official on those events."
           onDelete={() => changes.run(() => api.deleteOfficial(o.id))}
         />
       ),
@@ -493,9 +475,7 @@ function Officials() {
         onSubmit={addOfficial}
         actions={<Button type="primary" htmlType="submit" loading={saving}>{saving ? 'Adding…' : 'Add official'}</Button>}
       >
-        <Field label="Name"><Input required {...field('name')} /></Field>
-        <Field label="Email"><Input type="email" required {...field('email')} /></Field>
-        <Field label="Qualifications"><Input {...field('qualifications')} /></Field>
+        <OfficialFields form={form} setForm={setForm} />
       </FormCard>
       <FormMessage message={message} />
       <CsvImport
@@ -534,7 +514,7 @@ function UserForm({ user, busy, onSave, onCancel }) {
   const [form, setForm] = useState({
     name: user.name ?? '',
     email: user.email,
-    roleId: user.role_id ?? 'user',
+    roleId: user.role_id === 'admin' ? 'admin' : 'member',
     status: user.status ?? (user.state === 'Disabled' ? 'disabled' : 'active'),
   })
   const set = (key) => (value) => setForm({ ...form, [key]: value })
@@ -565,11 +545,17 @@ function UserForm({ user, busy, onSave, onCancel }) {
 }
 
 function OfficialForm({ official, busy, onSave, onCancel }) {
-  const [form, setForm] = useState({ name: official.name, email: official.invite_email ?? '', qualifications: official.qualifications ?? '' })
-  const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) })
+  const [form, setForm] = useState({
+    name: official.name,
+    email: official.invite_email ?? '',
+    phone: official.phone ?? '',
+    level: official.level ?? '',
+    bcNumber: official.bc_number ?? '',
+    qualifications: official.qualifications ?? '',
+  })
   function save(e) {
     e.preventDefault()
-    onSave({ name: form.name.trim(), invite_email: form.email.trim().toLowerCase(), qualifications: form.qualifications.trim() || null })
+    onSave(officialRecord(form))
   }
   return (
     <FormCard
@@ -582,9 +568,7 @@ function OfficialForm({ official, busy, onSave, onCancel }) {
         </>
       }
     >
-      <Field label="Name"><Input required {...field('name')} /></Field>
-      <Field label="Email"><Input type="email" required {...field('email')} /></Field>
-      <Field label="Qualifications"><Input {...field('qualifications')} /></Field>
+      <OfficialFields form={form} setForm={setForm} />
       <FullRow><Muted>Changing the email links the official to the account with the new address, or invites it.</Muted></FullRow>
     </FormCard>
   )

@@ -7,6 +7,16 @@ export function useAuth() {
   const [profile, setProfile] = useState(null)
   const [permissions, setPermissions] = useState([])
   const [loading, setLoading] = useState(true)
+  // View as (site Admins): whose eyes the app is seen through. The database runs every request as
+  // them, so the whole app (profile, permissions, pages) follows this id.
+  const [viewing, setViewing] = useState(() => api.viewingAs?.() ?? null)
+
+  useEffect(() => {
+    if (!api.viewingAs) return
+    const onChange = () => setViewing(api.viewingAs())
+    window.addEventListener('mm-view-as', onChange)
+    return () => window.removeEventListener('mm-view-as', onChange)
+  }, [])
 
   useEffect(() => {
     api.getSession().then((current) => {
@@ -16,7 +26,20 @@ export function useAuth() {
     return api.onAuthChange(setSession)
   }, [])
 
-  const userId = session?.user.id
+  const sessionUserId = session?.user.id
+
+  // Check with the database on sign-in and whenever the tab comes back into view, in case View as
+  // was started or ended in another tab or timed out.
+  useEffect(() => {
+    if (!sessionUserId || !api.checkViewAs) return
+    const check = () => api.checkViewAs().then(setViewing)
+    check()
+    const onVisible = () => { if (document.visibilityState === 'visible') check() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [sessionUserId])
+
+  const userId = sessionUserId ? (viewing?.id ?? sessionUserId) : undefined
 
   useEffect(() => {
     if (!userId) {
@@ -40,8 +63,9 @@ export function useAuth() {
 
   const can = useCallback((permission) => permissions.includes(permission), [permissions])
 
-  return { session, profile, can, loading }
+  return { session, profile, can, loading, viewing: sessionUserId ? viewing : null }
 }
 
-// Accounts with the Official role. Officials don't see clubs (Bhavek, 2026-11-02).
-export const isOfficial = (profile) => profile?.role_id === 'official'
+// Clubs only matter to people in a club and to event Owners (Bhavek, 2026-11-02: officials don't
+// see clubs). There's no Official account type any more, so this goes by what they belong to.
+export const seesClubs = (profile) => profile?.role_id === 'admin' || Boolean(profile?.in_club || profile?.owns_event)

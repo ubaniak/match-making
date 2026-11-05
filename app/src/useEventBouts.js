@@ -48,6 +48,14 @@ export function useEventBouts({ event, may, clubs, profile, onEntriesChange }) {
     // The CO and Deputy record every day's weigh-in; other officials only on the days they accepted.
     weighInDays: data.acceptedDays ?? [],
     officialRole,
+    me: profile?.id ?? null,
+    // The signed-in user's event roles (migration 42), which they can take on a bout.
+    myRoles: data.myRoles ?? {},
+    // Officials working the event (either Chief Official seat, or accepted the invitation) can
+    // declare a conflict of interest on a bout; the Chief Officials and site Admin see them all
+    // (migration 53).
+    worksEvent: Boolean(officialRole) || (data.acceptedDays ?? []).length > 0,
+    seesConflicts: may.siteAdmin || Boolean(officialRole),
     ownedClubs,
     cardOpen: event.status === 'active',
   }

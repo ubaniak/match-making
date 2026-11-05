@@ -1,15 +1,56 @@
-import { supabase } from '../supabase'
+import { supabase, VIEW_AS_READ_ONLY } from '../supabase'
+import { locationColumns } from '../locations'
+import { duplicateAthleteText } from '../athletes'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
-const eventColumns = `id, name, venue, start_date, end_date, status, poster_path, entry_deadline, timezone, show_public_bouts,
+const eventColumns = `id, name, venue, venue_address, venue_lat, venue_lng, venue_place_id,
+  weigh_in_venue, weigh_in_address, weigh_in_lat, weigh_in_lng, weigh_in_place_id, start_date, end_date, status, status_note, poster_path, entry_deadline, timezone, show_public_bouts, min_officials,
   days:event_days(day, weigh_in_start, weigh_in_end, sessions:event_bout_sessions(starts_at, label)),
   members:event_members(user_id, role, user:profiles!event_members_user_id_fkey(id, name, email))`
 
 const POSTERS = 'event-posters'
 
-// Demo accounts from "Load test data" (migration 20) sign in with the fixed code 123456, which is
+// Demo accounts (any @demo.test email a site Admin adds, migration 46) sign in with the fixed code 123456, which is
 // really their password. Only these addresses ever try a password; nobody is emailed a code.
 const isDemoEmail = (email) => /@demo\.test$/i.test(email.trim())
+
+// "Test as" was removed (Option B, 2026-11-04). Forget any Admin session a test run left behind.
+try {
+  window.localStorage.removeItem('mm-testing-from')
+} catch {
+  // Storage blocked: nothing was kept there either.
+}
+
+// "View as" (migration 44): the person a site Admin is viewing as, { id, name, email }, kept here so
+// the page knows straight away after a reload. The database holds the real switch; checkViewAs()
+// brings this copy in line with it.
+const VIEW_AS_KEY = 'mm-viewing-as'
+function readViewAs() {
+  try {
+    return JSON.parse(window.localStorage.getItem(VIEW_AS_KEY)) || null
+  } catch {
+    return null
+  }
+}
+function writeViewAs(value) {
+  try {
+    if (value) window.localStorage.setItem(VIEW_AS_KEY, JSON.stringify(value))
+    else window.localStorage.removeItem(VIEW_AS_KEY)
+  } catch {
+    // Storage blocked: checkViewAs() still finds the session on the next load.
+  }
+  window.dispatchEvent(new Event('mm-view-as'))
+}
+// Emails and poster files don't go through the database, so View as blocks them here.
+function refuseWhileViewing() {
+  if (readViewAs()) throw new Error(VIEW_AS_READ_ONLY)
+}
+
+// Only invited people can sign in (migration 34). Supabase reports a refused new account as
+// "Database error saving new user"; this is what we tell the person instead.
+export const notInvitedMessage = (email) =>
+  `${email ? email : 'That email'} hasn't been invited. Ask a site Admin or the person running your event to add you, then try again.`
+const isNotInvitedError = (error) => /database error saving new user|has not been invited/i.test(error?.message ?? '')
 
 async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args)
@@ -17,8 +58,24 @@ async function rpc(name, args) {
   return data
 }
 
+// The database refuses a second copy of an athlete (migration 57). Say which club has them.
+async function duplicateAthleteError(error, athlete, ignoreId = null) {
+  if (error.code !== '23505' || !/athletes_unique_/.test(error.message ?? '')) return error
+  try {
+    const [match] = (await rpc('find_athlete_duplicates', {
+      p_rows: [{ name: athlete.name, date_of_birth: athlete.date_of_birth, bc_number: athlete.bc_number }],
+      p_ignore: ignoreId,
+    })) ?? []
+    if (match) return new Error(duplicateAthleteText(match))
+  } catch {
+    // fall through to the general message
+  }
+  return new Error(/bc_number/.test(error.message) ? 'An athlete with this BC number is already in the system' : 'This athlete is already in the system (same name and date of birth)')
+}
+
 // Calls the send-event-email Edge Function and turns its error into a readable message.
 async function invokeEmail(body) {
+  refuseWhileViewing()
   const { error } = await supabase.functions.invoke('send-event-email', { body })
   if (error) {
     let message = error.message
@@ -32,7 +89,7 @@ async function invokeEmail(body) {
 }
 
 // Athletes carry their club's name as `club` so pages can show it directly.
-const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id,
+const athleteColumns = `id, name, date_of_birth, gender, weight_kg, bouts, club_id, coach_id, bc_number, last_medical,
   club_ref:clubs(name), coach:profiles!athletes_coach_id_fkey(name, email)`
 const tidyAthlete = ({ club_ref, ...athlete }) => ({ ...athlete, club: club_ref?.name ?? null })
 
@@ -68,17 +125,54 @@ export const supabaseApi = {
     return () => data.subscription.unsubscribe()
   },
 
-  signOut() {
+  async signOut() {
+    // Signing out ends View as too; the Admin signs in again as usual.
+    if (readViewAs()) await this.stopViewAs().catch(() => {})
     return supabase.auth.signOut()
+  },
+
+  // Who the site Admin is viewing as ({ id, name, email }), or null.
+  viewingAs() {
+    return readViewAs()
+  },
+
+  // Site Admins only: see the app exactly as this person does, read-only. Nobody signs in as them.
+  async startViewAs(user) {
+    await rpc('start_view_as', { p_target_id: user.id })
+    writeViewAs({ id: user.id, name: user.name || user.email, email: user.email })
+  },
+
+  async stopViewAs() {
+    try {
+      await rpc('stop_view_as')
+    } finally {
+      writeViewAs(null)
+    }
+  },
+
+  // Asks the database who (if anyone) the signed-in Admin is viewing as, and keeps the copy in step.
+  async checkViewAs() {
+    const { data, error } = await supabase.rpc('my_view_as')
+    if (error) return readViewAs() // migration 44 not run yet: nothing to check against
+    const row = data?.[0]
+    const current = readViewAs()
+    const next = row ? { id: row.id, name: row.name || row.email, email: row.email } : null
+    if (next?.id !== current?.id) writeViewAs(next)
+    return next
   },
 
   async sendMagicLink(email) {
     if (isDemoEmail(email)) return
+    // Ask first so strangers are turned away at once and no email goes out. If the check isn't
+    // installed yet (migration not run), carry on; the database still refuses new accounts.
+    const { data: invited, error: checkError } = await supabase.rpc('email_is_invited', { p_email: email })
+    if (!checkError && invited === false) throw new Error(notInvitedMessage(email.trim().toLowerCase()))
     const { error } = await supabase.auth.signInWithOtp({
       email,
       // Come back to whatever URL the app is served from (local dev or GitHub Pages).
       options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
     })
+    if (isNotInvitedError(error)) throw new Error(notInvitedMessage(email.trim().toLowerCase()))
     if (error) throw error
   },
 
@@ -86,7 +180,7 @@ export const supabaseApi = {
   async verifyEmailCode(email, code) {
     if (isDemoEmail(email)) {
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: code })
-      if (error) throw new Error('That code is wrong, or the test data isn\'t loaded. A site Admin can load it from Admin > Test data.')
+      if (error) throw new Error('That code is wrong, or this demo account hasn\'t been added yet. A site Admin adds it on Admin > Users.')
       return
     }
     const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'email' })
@@ -106,12 +200,20 @@ export const supabaseApi = {
   },
 
   async loadMe(userId) {
-    const [profileResult, permissionsResult] = await Promise.all([
+    const [profileResult, permissionsResult, clubsResult, ownsResult] = await Promise.all([
       supabase.from('profiles').select('id, email, name, role_id, status, roles(name)').eq('id', userId).maybeSingle(),
       supabase.rpc('my_permissions'),
+      // Whether they're in (or invited to) any club, and whether they own any event: these decide
+      // whether the Clubs page shows.
+      supabase.from('club_members').select('club_id').eq('user_id', userId).limit(1),
+      supabase.from('event_members').select('event_id').eq('user_id', userId).eq('role', 'owner').limit(1),
     ])
     return {
-      profile: profileResult.data,
+      profile: profileResult.data && {
+        ...profileResult.data,
+        in_club: (clubsResult.data ?? []).length > 0,
+        owns_event: (ownsResult.data ?? []).length > 0,
+      },
       permissions: (permissionsResult.data ?? []).map((row) => row.permission),
     }
   },
@@ -185,15 +287,21 @@ export const supabaseApi = {
 
   async addAthlete(athlete) {
     const { error } = await supabase.from('athletes').insert(athlete)
-    if (error) throw error
+    if (error) throw await duplicateAthleteError(error, athlete)
   },
 
   // Club owners and site Admins. The club changes only through a transfer.
   async updateAthlete(athleteId, fields) {
     const { data, error } = await supabase.from('athletes').update(fields).eq('id', athleteId).select('id')
-    if (error) throw error
+    if (error) throw await duplicateAthleteError(error, fields, athleteId)
     if (!data.length) throw new Error('You can\'t edit this athlete')
   },
+  // Athletes already in the system (any club) with the same name + date of birth or BC number.
+  // rows: [{ name, date_of_birth, bc_number }]. Returns [{ row_index, matched_on, athlete_name, club_name }].
+  async findAthleteDuplicates(rows, ignoreId = null) {
+    return (await rpc('find_athlete_duplicates', { p_rows: rows, p_ignore: ignoreId })) ?? []
+  },
+
   // Club Owners and site Admins. Refused while the athlete is in an Active event or has results.
   async deleteAthlete(athleteId) {
     const { data, error } = await supabase.from('athletes').delete().eq('id', athleteId).select('id')
@@ -201,15 +309,6 @@ export const supabaseApi = {
     if (!data.length) throw new Error('You can\'t delete this athlete')
   },
 
-
-  // Site Admin only: load or remove the TEST events, clubs and athletes. Each returns counts.
-  async seedTestData() {
-    return rpc('seed_test_data')
-  },
-
-  async clearTestData() {
-    return rpc('clear_test_data')
-  },
 
   // Clubs, each with its members and athlete count.
   async listClubs() {
@@ -228,7 +327,7 @@ export const supabaseApi = {
   },
 
   async getClub(clubId) {
-    const [club, transfers] = await Promise.all([
+    const [club, transfers, emailInvites] = await Promise.all([
       supabase.from('clubs').select(`id, name, ${clubMemberColumns}, athletes(${athleteColumns})`).eq('id', clubId).maybeSingle(),
       supabase
         .from('athlete_transfers')
@@ -239,6 +338,9 @@ export const supabaseApi = {
           requester:profiles!athlete_transfers_requested_by_fkey(name, email)`)
         .or(`from_club_id.eq.${clubId},to_club_id.eq.${clubId}`)
         .order('requested_at', { ascending: false }),
+      // Invites to emails that haven't signed in yet (migration 45). Only the club's Owners and site
+      // Admins see them; before the migration runs the table doesn't exist, so an error means none.
+      supabase.from('club_member_invites').select('email, role, status, invited_at').eq('club_id', clubId).order('email'),
     ])
     const failed = club.error || transfers.error
     if (failed) throw failed
@@ -247,6 +349,7 @@ export const supabaseApi = {
       ...club.data,
       athletes: club.data.athletes.map(tidyAthlete).sort((a, b) => a.name.localeCompare(b.name)),
       transfers: transfers.data,
+      email_invites: emailInvites.error ? [] : emailInvites.data,
     }
   },
 
@@ -267,8 +370,9 @@ export const supabaseApi = {
   },
 
   async deleteClub(clubId) {
+    const isClubInUse = (e) => e.code === '23503' || /athletes_club_id_fkey/.test(e.message ?? '')
     const { error } = await supabase.from('clubs').delete().eq('id', clubId)
-    if (error) throw error.code === '23503' ? new Error('Move or remove the club\'s athletes first') : error
+    if (error) throw isClubInUse(error) ? new Error('This club still has athletes. Move them to another club or delete them, then delete the club.') : error
   },
 
   // A site Admin adds someone straight away; a club owner's invite waits for a site Admin.
@@ -281,8 +385,15 @@ export const supabaseApi = {
 
   // Club owners only see their own club's people (migration 30), so they invite by email. A site
   // Admin's invite joins straight away; an owner's waits for a site Admin. Returns the person's name.
+  // Returns { name, new_account }. Someone new can sign in straight away; they join the club (once a
+  // site Admin approves) when they first do.
   async inviteClubMember(clubId, email, role) {
     return rpc('invite_club_member', { p_club_id: clubId, p_email: email, p_role: role || 'coach' })
+  },
+
+  async cancelClubEmailInvite(clubId, email) {
+    const { error } = await supabase.from('club_member_invites').delete().eq('club_id', clubId).eq('email', email)
+    if (error) throw error
   },
 
   async approveClubMember(clubId, userId) {
@@ -337,7 +448,7 @@ export const supabaseApi = {
   async listOfficials() {
     const { data, error } = await supabase
       .from('officials')
-      .select('id, name, qualifications, invite_email, user_id')
+      .select('id, name, level, qualifications, invite_email, phone, bc_number, user_id')
       .order('name')
     if (error) throw error
     return data
@@ -392,23 +503,30 @@ export const supabaseApi = {
   },
 
   // Site Admins only. The event starts as Requested. Returns its id.
-  async createEvent({ name, venue, startDate, endDate, ownerId, timezone }) {
+  // location: { name, address, lat, lng, placeId } from the Google Maps field (migration 50); a CSV import passes venue text.
+  async createEvent({ name, venue, location, startDate, endDate, ownerId, timezone }) {
     const { data, error } = await supabase.rpc('create_event', {
       p_name: name,
-      p_venue: venue,
+      p_venue: location?.name ?? venue,
       p_start_date: startDate,
       p_end_date: endDate,
-      p_owner_id: ownerId,
+      p_owner_id: ownerId || null,
       p_timezone: timezone,
     })
     if (error) throw error
+    // The address and pin go on straight after; the new event's Owner or the site Admin can edit it.
+    if (location?.name) {
+      const { error: pinError } = await supabase.from('events').update(locationColumns(location, 'venue')).eq('id', data)
+      if (pinError) throw pinError
+    }
     return data
   },
 
   // entryDeadline: an ISO timestamp, or '' for no deadline.
   // timezone: only a site Admin can change it; leave it out to keep the current one.
-  async updateEventDetails(eventId, { name, venue, startDate, endDate, entryDeadline, timezone }) {
-    const changes = { name: name.trim(), venue: venue.trim() || null, start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null }
+  // location: the bout location, { name, address, lat, lng, placeId } or null.
+  async updateEventDetails(eventId, { name, location, startDate, endDate, entryDeadline, timezone }) {
+    const changes = { name: name.trim(), ...locationColumns(location, 'venue'), start_date: startDate, end_date: endDate, entry_deadline: entryDeadline || null }
     if (timezone) changes.timezone = timezone
     const { data, error } = await supabase
       .from('events')
@@ -430,6 +548,22 @@ export const supabaseApi = {
     if (!data.length) throw new Error('You can\'t change this event')
   },
 
+  // Where the weigh-ins are (migration 50). null means at the bout location. Owner or site Admin (the update policy checks).
+  async saveWeighInLocation(eventId, location) {
+    const { data, error } = await supabase
+      .from('events')
+      .update(locationColumns(location, 'weigh_in'))
+      .eq('id', eventId)
+      .select('id')
+    if (error) throw error
+    if (!data.length) throw new Error('You can\'t change this event')
+  },
+
+  // How many accepted officials the event needs (migration 43). Only the event's Chief Officials (migration 48).
+  async setMinOfficials(eventId, min) {
+    await rpc('set_min_officials', { p_event_id: eventId, p_min: min })
+  },
+
   // days: [{ day, weigh_in_start, weigh_in_end, sessions: [{ starts_at, label }] }], one per day with bouts.
   async saveEventTimes(eventId, days) {
     const { error } = await supabase.rpc('save_event_times', { p_event_id: eventId, p_days: days })
@@ -437,8 +571,9 @@ export const supabaseApi = {
   },
 
   // 'active' (approve), 'done' or 'cancelled'. Site Admins only.
-  async setEventStatus(eventId, status) {
-    const { error } = await supabase.rpc('set_event_status', { p_event_id: eventId, p_status: status })
+  // note: optional reason the Owner sees (most useful when denying).
+  async setEventStatus(eventId, status, note) {
+    const { error } = await supabase.rpc('set_event_status', { p_event_id: eventId, p_status: status, p_note: note || null })
     if (error) throw error
   },
 
@@ -452,6 +587,7 @@ export const supabaseApi = {
   },
 
   async uploadPoster(eventId, file, oldPath) {
+    refuseWhileViewing()
     const extension = (file.name.split('.').pop() || 'img').toLowerCase().replace(/[^a-z0-9]/g, '')
     const path = `${eventId}/${Date.now()}.${extension}`
     const upload = await supabase.storage.from(POSTERS).upload(path, file, { contentType: file.type })
@@ -462,6 +598,7 @@ export const supabaseApi = {
   },
 
   async removePoster(eventId, path) {
+    refuseWhileViewing()
     const { error } = await supabase.from('events').update({ poster_path: null }).eq('id', eventId)
     if (error) throw error
     if (path) await supabase.storage.from(POSTERS).remove([path])
@@ -477,6 +614,7 @@ export const supabaseApi = {
   // Site Admin only. The database removes the event's bouts, entries, officials, weigh-ins
   // and alerts with it (every table points at events with on delete cascade).
   async deleteEvent(eventId) {
+    refuseWhileViewing()
     const { data, error } = await supabase.from('events').delete().eq('id', eventId).select('id')
     if (error) throw error
     // Row security turns a refused delete into "nothing deleted" rather than an error.
@@ -491,33 +629,27 @@ export const supabaseApi = {
   },
 
   // Add a Coach or Viewer, or change their role. Ownership moves only through transferEventOwnership.
-  async setEventMember(eventId, userId, role) {
-    const { error } = await supabase
-      .from('event_members')
-      .upsert({ event_id: eventId, user_id: userId, role }, { onConflict: 'event_id,user_id' })
-    if (error) throw error
-  },
-
-  async removeEventMember(eventId, userId) {
-    const { error } = await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_id', userId)
-    if (error) throw error
-  },
-
-  // Site Admins only. The old Owner stays on as a Viewer.
+  // Site Admins only. The old Owner comes off the event.
   async transferEventOwnership(eventId, userId) {
     const { error } = await supabase.rpc('transfer_event_ownership', { p_event_id: eventId, p_user_id: userId })
     if (error) throw error
   },
 
   // Clubs and entries (plan/events.md section 3). Rules are enforced by the database functions.
+  // An invited club is in only after one of its Owners accepts (migration 36).
   async inviteClub(eventId, clubId) {
     await rpc('invite_club', { p_event_id: eventId, p_club_id: clubId })
   },
 
-  // Emails a club's Owners that it's in the event, with the dates, times and optional notes
-  // (migration 32 and the send-event-email Edge Function).
+  // Emails a club's Owners its invitation (or that it's in, for a club made on the event), with the
+  // dates, times and optional notes (migration 59 and the send-event-email Edge Function).
   async emailClubInvitation(eventId, clubId, notes) {
     await invokeEmail({ event_id: eventId, club_id: clubId, notes: notes?.trim() || undefined })
+  },
+
+  // A club Owner (or a site Admin) accepts or declines the club's invitation (migration 36).
+  async answerClubInvite(eventId, clubId, accept) {
+    await rpc('answer_club_invite', { p_event_id: eventId, p_club_id: clubId, p_accept: accept })
   },
 
   async requestToJoin(eventId, clubId) {
@@ -575,26 +707,86 @@ export const supabaseApi = {
 
   // The event's officials, bouts (with approvals and comments) and weigh-ins.
   async getBouts(eventId) {
-    const [officials, bouts, weighIns, accepted] = await Promise.all([
+    const [officials, bouts, weighIns, accepted, roles] = await Promise.all([
       supabase.from('event_officials').select('role, user_id, user:profiles!event_officials_user_id_fkey(id, name, email)').eq('event_id', eventId),
       supabase.from('bouts').select(`*,
         red:athletes!bouts_red_athlete_id_fkey(id, name), blue:athletes!bouts_blue_athlete_id_fkey(id, name),
         red_club:clubs!bouts_red_club_id_fkey(id, name), blue_club:clubs!bouts_blue_club_id_fkey(id, name),
+        red_club_has_owner, blue_club_has_owner,
         approvals:bout_approvals(side, decision, note, override, decided_by, decided_at),
+        bout_officials(user_id, judge, referee, supervisor, timekeeper, accepted_at, user:profiles!bout_officials_user_id_fkey(id, name, email)),
+        bout_conflicts(user_id, reason, created_at, user:profiles!bout_conflicts_user_id_fkey(id, name, email)),
         comments:bout_comments(id, body, created_at, author:profiles!bout_comments_author_id_fkey(id, name, email))`)
         .eq('event_id', eventId).order('day').order('position'),
-      supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, recorded_at').eq('event_id', eventId),
+      supabase.from('weigh_ins').select('day, athlete_id, weight_kg, medical, note, dob_check, dob_before, experience_check, bouts_before, recorded_at').eq('event_id', eventId),
       supabase.rpc('my_official_days', { p_event_id: eventId }),
+      supabase.rpc('my_event_roles', { p_event_id: eventId }).maybeSingle(),
     ])
-    const failed = officials.error || bouts.error || weighIns.error || accepted.error
+    const failed = officials.error || bouts.error || weighIns.error || accepted.error || roles.error
     if (failed) throw failed
     return {
       officials: officials.data,
       // Days the signed-in user accepted to officiate (they record those days' weigh-ins).
       acceptedDays: accepted.data ?? [],
+      // The signed-in user's event roles (migration 42): { judge, referee, supervisor, timekeeper }.
+      myRoles: roles.data ?? {},
       bouts: bouts.data.map((b) => ({ ...b, comments: [...b.comments].sort((x, y) => x.created_at.localeCompare(y.created_at)) })),
       weighIns: weighIns.data,
     }
+  },
+
+  // An official working the event declares a conflict of interest on a bout, or takes it back
+  // (migration 53). Only the Chief Officials, site Admins and the official see it.
+  async declareBoutConflict(boutId, reason) {
+    await rpc('declare_bout_conflict', { p_bout_id: boutId, p_reason: reason?.trim() || null })
+  },
+
+  async withdrawBoutConflict(boutId) {
+    await rpc('withdraw_bout_conflict', { p_bout_id: boutId })
+  },
+
+  // A corner's club owner takes their athlete out of the bout; the bout is cancelled (migration 52).
+  async withdrawCorner(boutId, side, reason) {
+    await rpc('withdraw_corner', { p_bout_id: boutId, p_side: side, p_reason: reason?.trim() || null })
+  },
+
+  // ---------------------------------------------------------------------------
+  // Officials assignment plan (migration 47)
+  // ---------------------------------------------------------------------------
+
+  // One day's plan: { plan: { status, approved_at, ... } | null, slots: [{ bout_id, user_id, role }],
+  // pool: the officials working that day with level and ticked roles }. Officials who aren't a
+  // Chief Official get nothing until the plan is approved.
+  async getOfficialPlan(eventId, day) {
+    const [plan, slots, pool] = await Promise.all([
+      supabase.from('official_plans').select('status, updated_at, approved_at, approved_by, updated_by').eq('event_id', eventId).eq('day', day).maybeSingle(),
+      supabase.from('official_plan_slots').select('bout_id, user_id, role').eq('event_id', eventId).eq('day', day),
+      supabase.rpc('list_day_officials', { p_event_id: eventId, p_day: day }),
+    ])
+    const failed = plan.error || slots.error || pool.error
+    if (failed) throw failed
+    return { plan: plan.data, slots: slots.data, pool: pool.data ?? [] }
+  },
+
+  // slots: [{ bout_id, user_id, role }]; saving makes the plan a draft again.
+  async saveOfficialPlan(eventId, day, slots) {
+    await rpc('save_official_plan', { p_event_id: eventId, p_day: day, p_slots: slots })
+  },
+
+  async approveOfficialPlan(eventId, day) {
+    await rpc('approve_official_plan', { p_event_id: eventId, p_day: day })
+  },
+
+  async reopenOfficialPlan(eventId, day) {
+    await rpc('reopen_official_plan', { p_event_id: eventId, p_day: day })
+  },
+
+  // A Chief Official changes an official's event roles on the day: { judge, referee, supervisor, timekeeper }.
+  async setOfficialEventRoles(eventId, userId, roles) {
+    await rpc('set_official_event_roles', {
+      p_event_id: eventId, p_user_id: userId, p_judge: !!roles.judge, p_referee: !!roles.referee,
+      p_supervisor: !!roles.supervisor, p_timekeeper: !!roles.timekeeper,
+    })
   },
 
   async setEventOfficial(eventId, role, userId) {
@@ -615,6 +807,17 @@ export const supabaseApi = {
     return rpc('list_event_invitations', { p_event_id: eventId })
   },
 
+  // How many officials accepted each event: { [eventId]: count }. Row security only returns
+  // invitations the user may see (site Admin, the event's Owner and its officials), so other events count 0.
+  async acceptedOfficialCounts(eventIds) {
+    if (!eventIds.length) return {}
+    const { data, error } = await supabase.from('official_invitations').select('event_id').eq('status', 'accepted').in('event_id', eventIds)
+    if (error) throw error
+    const counts = Object.fromEntries(eventIds.map((id) => [id, 0]))
+    for (const row of data) counts[row.event_id] += 1
+    return counts
+  },
+
   // The signed-in user's own invitations, with each event's name, dates and status.
   async listMyInvitations() {
     return rpc('list_my_invitations')
@@ -633,10 +836,13 @@ export const supabaseApi = {
 
   // days: the days accepted ('YYYY-MM-DD'); left out means every day of the event.
   // sessions: 'YYYY-MM-DD HH:mm' keys for days worked only in some bout sessions.
-  async respondToInvitation(invitationId, accept, days, sessions) {
+  // roles: { judge, referee, supervisor, timekeeper }; accepting needs at least one (migration 42).
+  async respondToInvitation(invitationId, accept, days, sessions, roles) {
     await rpc('respond_to_invitation', {
       p_invitation_id: invitationId, p_accept: accept,
       p_days: accept && days?.length ? days : null, p_sessions: accept && sessions?.length ? sessions : null,
+      p_judge: accept && !!roles?.judge, p_referee: accept && !!roles?.referee,
+      p_supervisor: accept && !!roles?.supervisor, p_timekeeper: accept && !!roles?.timekeeper,
     })
   },
 
@@ -685,6 +891,16 @@ export const supabaseApi = {
 
   async cancelBout(boutId, reason) {
     await rpc('cancel_bout', { p_bout_id: boutId, p_reason: reason || null })
+  },
+
+  // A bout that no longer fits after the weigh-in needs discussing (migration 35).
+  async flagBoutForReview(boutId, reason) {
+    await rpc('flag_bout_for_review', { p_bout_id: boutId, p_reason: reason })
+  },
+
+  // The Chief Official or Deputy keeps a bout that needed discussing (migration 35).
+  async clearBoutReview(boutId) {
+    await rpc('clear_bout_review', { p_bout_id: boutId })
   },
 
   // order: [{ id, session }] in running order.
@@ -739,10 +955,15 @@ export const supabaseApi = {
     await rpc('add_bout_comment', { p_bout_id: boutId, p_body: body })
   },
 
-  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note }) {
+  // dobCheck / experienceCheck: 'verified', 'corrected' or 'unverified' (migration 55). A correction
+  // (dob, bouts) also fixes the athlete's record.
+  async recordWeighIn({ eventId, day, athleteId, weightKg, medical, note, dobCheck, dob, experienceCheck, bouts }) {
     await rpc('record_weigh_in', {
       p_event_id: eventId, p_day: day, p_athlete_id: athleteId,
       p_weight_kg: weightKg === '' || weightKg == null ? null : Number(weightKg), p_medical: medical, p_note: note || null,
+      p_dob_check: dobCheck || null, p_dob: dobCheck === 'corrected' ? dob || null : null,
+      p_experience_check: experienceCheck || null,
+      p_bouts: experienceCheck === 'corrected' && bouts !== '' && bouts != null ? Number(bouts) : null,
     })
   },
 

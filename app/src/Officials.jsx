@@ -1,19 +1,23 @@
 // Officials on an event (plan/events.md, "Inviting officials"): a site Admin or any official
-// on the event invites officials, officials accept or decline, and the CO and Deputy are picked from
+// on the event invites officials, officials accept or decline, and the two Chief Officials are picked from
 // those who accepted. Also the "Your invitations" list on the Events page.
 import { useCallback, useEffect, useState } from 'react'
-import { Alert, Button, Card as AntCard, Checkbox, Input, Modal, Segmented, Select, Space, Tabs } from 'antd'
+import { Alert, Button, Card as AntCard, Checkbox, Input, InputNumber, Modal, Segmented, Select, Space, Tabs, Tag } from 'antd'
 import CsvImport from './CsvImport'
 import DataTable from './DataTable'
 import { api } from './api'
+import RoleChoices from './RoleChoices'
 import { daysBetween, formatDateRange, formatDay, formatShortDay, todayIso } from './dates'
 import { effectiveStatus } from './events'
+import { minOfficials, shortOnOfficials } from './dashboard'
+import { eventRoles, rolesFlags, rolesOf, rolesText } from './officialRoles'
 import { askConfirm } from './dialogs'
 import WelcomeNotice from './WelcomeNotice'
 import { sendWelcome } from './welcome'
 import { Badge, DateInput, ErrorAlert, Field, FormCard, FullRow, Muted, Pick, Section, Text } from './ui'
 
-const officialLabels = { chief: 'Chief Official', deputy: 'Deputy' }
+// Two Chief Officials with the same powers (Option B, 2026-11-04). The second seat is stored as 'deputy'.
+const officialLabels = { chief: 'Chief Official', deputy: 'Second Chief Official' }
 const answerLabels = { accepted: 'Accepted', declined: 'Declined', pending: 'Waiting', expired: 'No response' }
 const personName = (user) => (user ? user.name || user.email : '—')
 // Emailed links go straight to sign-in and then Home; the bare root is the public page.
@@ -25,10 +29,12 @@ function answerOf(invitation, timeZone) {
   return invitation.status
 }
 
-// Can the official still answer? Until the event's first day, and not after an unanswered respond-by date.
+// Can the official still answer? While the event is Active, up to its last day (Bhavek: "If I am
+// invited as an official I should be allowed to accept or decline"), and not after an unanswered
+// respond-by date.
 function canAnswer(invitation, event) {
-  if (effectiveStatus(event) !== 'active' || event.status !== 'active') return false
-  if (todayIso(event.timezone) >= event.start_date) return false
+  if (event.status !== 'active') return false
+  if (todayIso(event.timezone) > event.end_date) return false
   return answerOf(invitation, event.timezone) !== 'expired'
 }
 
@@ -68,8 +74,9 @@ function daysText(invitation, event) {
   }).join(', ')
 }
 
-// Accepting asks which days, and on days with more than one bout session, whole day or which
-// sessions. ask(event, invitation) resolves to { days, sessions } or null when cancelled.
+// Accepting asks which event roles the official will work (Judge, Referee, Supervisor, Timekeeper:
+// any mix, at least one), which days, and on days with more than one bout session, whole day or
+// which sessions. ask(event, invitation) resolves to { days, sessions, roles } or null when cancelled.
 // The event needs its days and sessions; pass { id } alone and they are loaded.
 function useAcceptDays() {
   const [asking, setAsking] = useState(null) // { event, all, picked: { [day]: 'all' | [times] }, resolve }
@@ -77,14 +84,15 @@ function useAcceptDays() {
     const event = eventOrId.days ? eventOrId : await api.getEvent(eventOrId.id)
     const all = daysBetween(event.start_date, event.end_date)
     const sessionsOf = (d) => event.days?.find((x) => x.day === d)?.sessions ?? []
-    if (all.length <= 1 && sessionsOf(all[0]).length <= 1) return { days: all, sessions: [] }
+    const pickDays = all.length > 1 || sessionsOf(all[0]).length > 1
     const picked = {}
     const days = invitation?.status === 'accepted' && invitation.days?.length ? invitation.days : all
     for (const d of days.filter((x) => all.includes(x))) {
       const times = (invitation?.sessions ?? []).filter((k) => k.startsWith(d)).map((k) => k.slice(11))
       picked[d] = times.length ? times : 'all'
     }
-    return new Promise((resolve) => setAsking({ event, all, sessionsOf, picked, resolve }))
+    const roles = invitation?.status === 'accepted' ? rolesOf(invitation) : []
+    return new Promise((resolve) => setAsking({ event, all, sessionsOf, picked, roles, pickDays, resolve }))
   }
   function close(value) {
     asking?.resolve(value)
@@ -93,15 +101,15 @@ function useAcceptDays() {
   function result() {
     const days = asking.all.filter((d) => asking.picked[d] && (asking.picked[d] === 'all' || asking.picked[d].length))
     const sessions = days.flatMap((d) => (asking.picked[d] === 'all' ? [] : asking.picked[d].map((t) => sessionKey(d, t))))
-    return { days, sessions }
+    return { days, sessions, roles: rolesFlags(asking.roles) }
   }
   const pick = (d, value) => setAsking({ ...asking, picked: { ...asking.picked, [d]: value } })
-  const ready = asking ? result().days.length > 0 : false
+  const ready = asking ? result().days.length > 0 && asking.roles.length > 0 : false
 
   const dialog = (
     <Modal
       open={Boolean(asking)}
-      title="When can you officiate?"
+      title={asking?.pickDays ? 'Your roles and days' : 'Your roles'}
       okText="Accept"
       okButtonProps={{ disabled: !ready }}
       onOk={() => close(result())}
@@ -109,6 +117,13 @@ function useAcceptDays() {
     >
       {asking && (
         <>
+          <fieldset className="role-picker">
+            <legend><Text strong>Which roles will you work?</Text> <Text type="secondary">Pick one or more.</Text></legend>
+            <RoleChoices roles={eventRoles} value={asking.roles} onChange={(roles) => setAsking({ ...asking, roles })} />
+          </fieldset>
+          {asking.roles.length === 0 && <Muted>Pick at least one role to accept.</Muted>}
+          {asking.pickDays && (
+          <>
           <Muted>
             {asking.event.name} runs {formatDateRange(asking.event.start_date, asking.event.end_date)}. Pick the days you can
             work, and on a day with more than one bout session, the whole day or just some sessions. Working any part of a day
@@ -145,6 +160,8 @@ function useAcceptDays() {
               )
             })}
           </Space>
+          </>
+          )}
         </>
       )}
     </Modal>
@@ -156,21 +173,25 @@ function useAcceptDays() {
 // The event's Officials section
 // ---------------------------------------------------------------------------
 
-// officials: the event's CO and Deputy rows. run: the bouts section's runner, which reloads them.
-export function EventOfficials({ event, may, profile, officials, busy, run }) {
+// officials: the event's two Chief Official rows. run: the bouts section's runner, which reloads them.
+export function EventOfficials({ event, may, profile, officials, busy, run, onEventChange }) {
   // Site Admins and the event's Chief Official invite and remove officials (Bhavek: "admins and
-  // the nominated CO"). Only a site Admin picks the Chief Official; either picks the Deputy.
-  const chief = officials.some((o) => o.role === 'chief' && o.user_id === profile?.id)
+  // the nominated CO"). Only a site Admin picks the first Chief Official; either picks the second.
+  const chief = officials.some((o) => o.user_id === profile?.id)
   const manager = may.siteAdmin || chief
   const [invitations, setInvitations] = useState([])
   const [mine, setMine] = useState(null)
   const [error, setError] = useState(null)
-  // Any official who accepted can invite more officials and resend invitations (Bhavek: "an
-  // official is allowed to add other officials"), and sees the lists. Removing stays with managers.
-  const onEvent = officials.some((o) => o.user_id === profile?.id) || mine?.status === 'accepted'
-  const canAdd = manager || onEvent
+  // Only the Chief Official and Deputy (and site Admins) invite, add and resend (Bhavek: "only the
+  // CO and deputy can invite other officials. Ordinary ones can only change their role in an
+  // event"). Officials who accepted still see the lists, read-only, and change their own roles.
+  const onEvent = chief || mine?.status === 'accepted'
+  const canAdd = manager
   // The event's Owner sees the lists too, but can't change them.
-  const seesLists = canAdd || may.role === 'owner'
+  const seesLists = canAdd || onEvent || may.role === 'owner'
+  // Bhavek: "the site CO picks the min number of officials". Only the event's Chief Officials (both
+  // seats); the Owner and site Admins see it read-only.
+  const setsMin = chief
   const listsByRole = manager || may.role === 'owner' || officials.some((o) => o.user_id === profile?.id)
 
   const load = useCallback(async () => {
@@ -206,24 +227,49 @@ export function EventOfficials({ event, may, profile, officials, busy, run }) {
     <Section title={seesLists ? `Officials (${counts.accepted})` : 'Officials'} extra={extra}>
       <ErrorAlert>{error}</ErrorAlert>
       {mine && <MyAnswer invitation={mine} event={event} busy={busy} act={act} />}
-      {missing.length > 0 && (
-        <Muted>Every event needs a Chief Official and a Deputy. They approve bouts, run the weigh-in and record results.</Muted>
+      {seesLists && <MinOfficials event={event} accepted={counts.accepted} canEdit={setsMin} busy={busy} run={run} onSaved={onEventChange} />}
+      {seesLists && missing.length > 0 && (
+        <Muted>Every event needs two Chief Officials. They approve bouts, run the weigh-in and record results.</Muted>
       )}
       {seesLists ? (
         <Manage event={event} may={may} manager={manager} canAdd={canAdd} me={profile?.id} invitations={invitations} byRole={byRole} busy={busy} act={act} />
-      ) : (
-        <AntCard size="small" className="form-card">
-          <Space size="large" wrap>
-            {['chief', 'deputy'].map((role) => (
-              <span key={role}>
-                <Text type="secondary">{officialLabels[role]}: </Text>
-                <Text strong>{byRole[role] ? personName(byRole[role].user) : 'Not chosen'}</Text>
-              </span>
-            ))}
-          </Space>
-        </AntCard>
+      ) : !mine && (
+        // Bhavek: only the event's Owner, its officials and site Admins see who is officiating (migration 51).
+        // Someone invited sees their invitation above instead; the list shows once they accept.
+        <Muted>Only the event's Owner, its officials and site Admins can see who is officiating.</Muted>
       )}
     </Section>
+  )
+}
+
+// How many accepted officials the event needs. Below it, the event shows red on Home and its Dashboard.
+function MinOfficials({ event, accepted, canEdit, busy, run, onSaved }) {
+  const min = minOfficials(event)
+  const [value, setValue] = useState(min)
+  useEffect(() => setValue(min), [min])
+  const short = shortOnOfficials(event, accepted)
+  const status = short
+    ? <Tag className="badge short-officials">{`Short: ${accepted} of ${min} officials`}</Tag>
+    : <Text type="secondary">{`${accepted} of ${min} accepted`}</Text>
+  if (!canEdit) {
+    return (
+      <Space wrap>
+        <Text>Minimum officials: <Text strong>{min}</Text></Text>
+        {status}
+      </Space>
+    )
+  }
+  const save = () => run(async () => {
+    await api.setMinOfficials(event.id, value)
+    await onSaved?.()
+  })
+  return (
+    <Space wrap align="center">
+      <label htmlFor={`min-officials-${event.id}`}><Text>Minimum officials</Text></label>
+      <InputNumber id={`min-officials-${event.id}`} min={1} max={100} precision={0} value={value} onChange={(v) => setValue(v)} style={{ width: 96 }} />
+      <Button onClick={save} loading={busy} disabled={!value || value === min}>Save</Button>
+      {status}
+    </Space>
   )
 }
 
@@ -236,7 +282,7 @@ function MyAnswer({ invitation, event, busy, act }) {
   const { ask, dialog } = useAcceptDays()
   async function accept() {
     const parts = await ask(event, invitation)
-    if (parts) act(() => api.respondToInvitation(invitation.id, true, parts.days, parts.sessions))
+    if (parts) act(() => api.respondToInvitation(invitation.id, true, parts.days, parts.sessions, parts.roles))
   }
   return (
     <AntCard size="small" className="form-card gap">
@@ -244,22 +290,26 @@ function MyAnswer({ invitation, event, busy, act }) {
       <Space wrap>
         <Text>You're invited to officiate this event.</Text>
         <AnswerBadge answer={answer} />
+        {answer === 'accepted' && <Text type="secondary">{rolesText(invitation)}</Text>}
         {answer === 'accepted' && choice && <Text type="secondary">{daysText(invitation, event)}</Text>}
         {invitation.respond_by && answer === 'pending' && <Text type="secondary">Please answer by {formatDay(invitation.respond_by)}.</Text>}
-        {open && (answer !== 'accepted' || choice) && (
-          <Button size="small" type={answer === 'accepted' ? 'default' : 'primary'} disabled={busy} onClick={accept}>{answer === 'accepted' ? 'Change days' : 'Accept'}</Button>
+        {open && (
+          <Button size="small" type={answer === 'accepted' ? 'default' : 'primary'} disabled={busy} onClick={accept}>
+            {answer === 'accepted' ? (choice ? 'Change days and roles' : 'Change roles') : 'Accept'}
+          </Button>
         )}
         {open && answer !== 'declined' && (
           <Button size="small" disabled={busy} onClick={() => act(() => api.respondToInvitation(invitation.id, false))}>Decline</Button>
         )}
       </Space>
-      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or one of the event's officials to invite you again.</Muted>}
+      {!open && answer === 'expired' && <Muted>The respond-by date has passed. Ask a site Admin or one of the event's Chief Officials to invite you again.</Muted>}
+      {!open && answer !== 'expired' && <Muted>This event is over or no longer running, so this invitation can't be changed.</Muted>}
     </AntCard>
   )
 }
 
 // The lists of who answered what. Site Admins and the event's officials also invite here (and
-// add someone new); site Admins and the Chief Official also remove and pick the CO and Deputy.
+// add someone new); site Admins and the Chief Officials also remove officials and pick the Chief Officials.
 function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, act }) {
   const [officialsList, setOfficialsList] = useState([])
   const [choice, setChoice] = useState([])
@@ -323,11 +373,11 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
     }
   }
 
-  // Someone not on the Officials list: the same onboarding as Admin > Add a user (an Official
-  // account and the welcome email), then the event invitation.
+  // Someone not on the Officials list: the same onboarding as Admin > Add a user (a Member account
+  // on the Officials list, and the welcome email), then the event invitation.
   async function addNew(e) {
     e.preventDefault()
-    const person = { name: newOfficial.name.trim(), email: newOfficial.email.trim().toLowerCase(), roleId: 'official' }
+    const person = { name: newOfficial.name.trim(), email: newOfficial.email.trim().toLowerCase(), roleId: 'member' }
     let added = null
     setWelcome(null)
     const ok = await deliver(
@@ -357,7 +407,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
       const added = await api.addEventOfficial(event.id, row.name, row.email, respondBy)
       invitationIds = [added.invitation_id]
       if (added.new_account) {
-        const welcome = await sendWelcome({ name: row.name, email: row.email, roleId: 'official' })
+        const welcome = await sendWelcome({ name: row.name, email: row.email, roleId: 'member' })
         if (!welcome.sent) problems.push(`the welcome email wasn't sent (${welcome.reason})`)
       }
     }
@@ -402,6 +452,10 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
         </Space>
       ),
     },
+    {
+      title: 'Roles', key: 'roles', value: (i) => (i.status === 'accepted' ? rolesText(i, '') : ''),
+      render: (_, i) => (i.status === 'accepted' ? rolesText(i) : '—'),
+    },
     (multiDay || event.days.some((d) => d.sessions.length > 1)) && {
       title: 'Days', key: 'days', value: (i) => (i.status === 'accepted' ? daysText(i, event) : ''),
       render: (_, i) => (i.status === 'accepted' ? daysText(i, event) : '—'),
@@ -438,7 +492,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
   return (
     <>
       {canAdd && effectiveStatus(event) === 'requested' && <Muted>Officials can be invited once the event is approved.</Muted>}
-      {!manager && may.role === 'owner' && <Muted>A site Admin or the event's officials invite more officials. A site Admin picks the Chief Official.</Muted>}
+      {!manager && <Muted>Only the event's Chief Official, Deputy or a site Admin invite officials. A site Admin picks the first Chief Official.</Muted>}
       {canInvite && (
         <FormCard
           onSubmit={invite}
@@ -492,7 +546,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
             <Input type="email" value={newOfficial.email} onChange={(e) => setNewOfficial({ ...newOfficial, email: e.target.value })} placeholder="name@example.com" />
           </Field>
           <FullRow>
-            <Muted>They're added to the Officials list with an Official account, get the same welcome email as a new user, then get this event's invitation.</Muted>
+            <Muted>They're added to the Officials list (which lets them sign in), get the same welcome email as a new user, then get this event's invitation.</Muted>
           </FullRow>
         </FormCard>
       )}
@@ -512,7 +566,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
           }}
         >
           <Muted>
-            Someone on the Officials list is invited; anyone else is added with an Official account and gets the welcome email first.
+            Someone on the Officials list is invited; anyone else is added to the Officials list and gets the welcome email first.
             {respondBy ? ` They have until ${formatDay(respondBy)} to answer (the Respond by date above).` : ' Set Respond by above first if they need a deadline.'}
           </Muted>
         </CsvImport>
@@ -538,7 +592,7 @@ function Manage({ event, may, manager, canAdd, me, invitations, byRole, busy, ac
           </Field>
         ))}
         {manager && pickable.length === 0 && (
-          <FullRow><Muted>{may.siteAdmin ? 'Pick the Chief Official and Deputy from the officials who accepted.' : 'Pick the Deputy from the officials who accepted.'}</Muted></FullRow>
+          <FullRow><Muted>{may.siteAdmin ? 'Pick both Chief Officials from the officials who accepted.' : 'Pick the second Chief Official from the officials who accepted.'}</Muted></FullRow>
         )}
       </FormCard>
 
@@ -648,7 +702,7 @@ export function MyInvitations({ onOpen }) {
     }
     setBusy(true)
     try {
-      await api.respondToInvitation(i.id, accept, parts?.days, parts?.sessions)
+      await api.respondToInvitation(i.id, accept, parts?.days, parts?.sessions, parts?.roles)
       await load()
     } catch (err) {
       setError(err.message)
@@ -669,6 +723,7 @@ export function MyInvitations({ onOpen }) {
       render: (_, i) => (
         <Space size={4} wrap>
           <AnswerBadge answer={answerOf(i, i.timezone)} />
+          {i.status === 'accepted' && <Text type="secondary">{rolesText(i)}</Text>}
           {i.status === 'accepted' && (i.start_date !== i.end_date || i.sessions?.length > 0) && <Text type="secondary">{daysText(i, eventOf(i))}</Text>}
         </Space>
       ),
@@ -682,7 +737,7 @@ export function MyInvitations({ onOpen }) {
         return (
           <Space>
             {current !== 'accepted' && <Button size="small" type="primary" disabled={busy} onClick={() => answer(i, true)}>Accept</Button>}
-            {current === 'accepted' && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days</Button>}
+            {current === 'accepted' && <Button size="small" disabled={busy} onClick={() => answer(i, true)}>Change days and roles</Button>}
             {current !== 'declined' && <Button size="small" disabled={busy} onClick={() => answer(i, false)}>Decline</Button>}
           </Space>
         )
@@ -694,7 +749,7 @@ export function MyInvitations({ onOpen }) {
     <Section title="Your invitations to officiate">
       {dialog}
       <ErrorAlert>{error}</ErrorAlert>
-      <Muted>Accept for the days, or the bout sessions, you can work. You can change your answer or your days until the event's first day.</Muted>
+      <Muted>Accept with the roles you'll work (Judge, Referee, Supervisor, Timekeeper) and the days, or bout sessions, you can work. You can change your answer, roles or days until the event's first day.</Muted>
       <DataTable rowKey="id" columns={columns} dataSource={shown} csvName="Invitations to officiate" />
     </Section>
   )

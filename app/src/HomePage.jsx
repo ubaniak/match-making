@@ -1,18 +1,30 @@
 // Home: the first page after sign-in. Alerts at the top, then one block per role the user has
 // (site Admin, event Owner, club Owner or Coach, official), each with the numbers that role needs.
 import { useCallback, useEffect, useState } from 'react'
-import { Button } from 'antd'
+import { Button, Tag } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import DataTable from './DataTable'
 import HomeAlerts from './HomeAlerts'
 import { formatDateRange } from './dates'
-import { loadDashboard } from './dashboard'
-import { statusLabels } from './events'
+import { loadDashboard, minOfficials, shortOnOfficials } from './dashboard'
+import { effectiveStatus, statusLabels } from './events'
 import { Badge, ErrorAlert, Muted, PageHeading, Section, StatGrid, Text } from './ui'
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const shortDate = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-const officialRoles = { chief: 'Chief Official', deputy: 'Deputy' }
+// Both seats are Chief Officials with the same powers (the second is stored as 'deputy').
+const officialRoles = { chief: 'Chief Official', deputy: 'Chief Official' }
+
+// Officials who accepted an event. Active events with fewer than their minimum get a red tag that
+// says so in words, and their table row turns red (rowClassName below), so colour is never the only cue.
+function OfficialsCount({ event, count }) {
+  if (count == null || effectiveStatus(event) !== 'active') return '—'
+  if (!shortOnOfficials(event, count)) return count
+  const min = minOfficials(event)
+  return <Tag className="badge short-officials" title={`Needs at least ${min} officials`}>{`Short: ${count} of ${min} officials`}</Tag>
+}
+const officialsSortValue = (event, count) => (effectiveStatus(event) === 'active' ? count ?? 0 : null)
+const shortRow = (event, count) => (count != null && shortOnOfficials(event, count) ? 'row-short-officials' : '')
 
 export default function HomePage({ profile, can, onOpen }) {
   const siteAdmin = can('users:manage')
@@ -51,21 +63,17 @@ export default function HomePage({ profile, can, onOpen }) {
 
       <HomeAlerts profile={profile} can={can} onOpen={onOpen} dashboard={data} />
 
-      {data?.admin && <AdminBlock admin={data.admin} onOpen={onOpen} eventLink={eventLink} />}
+      {data?.admin && <AdminBlock admin={data.admin} counts={data.officialCounts} onOpen={onOpen} eventLink={eventLink} />}
       {data?.owner && <OwnerBlock owner={data.owner} onOpen={onOpen} eventLink={eventLink} />}
       {data?.club && <ClubBlock club={data.club} onOpen={onOpen} eventLink={eventLink} />}
-      {data?.official && <OfficialBlock official={data.official} onOpen={onOpen} eventLink={eventLink} />}
+      {data?.official && <OfficialBlock official={data.official} counts={data.officialCounts} events={data.events} onOpen={onOpen} eventLink={eventLink} />}
 
       {data && roles.length === 0 && (
         <Section title="Getting started">
-          {profile?.role_id === 'public' ? (
-            <Muted>You don't have a role yet. Ask an Admin to add you as a user.</Muted>
-          ) : (
-            <Muted>
-              You're not running an event, in a club or officiating yet. A club Owner can add you to their club, an Admin can
-              invite you to officiate, and events you're added to show up here.
-            </Muted>
-          )}
+          <Muted>
+            You're not running an event, in a club or officiating yet. You can request an event, a club Owner can add you to
+            their club, an official can invite you to officiate, and events you're part of show up here.
+          </Muted>
           <Button onClick={() => onOpen({ page: 'events' })}>See events</Button>
         </Section>
       )}
@@ -73,36 +81,40 @@ export default function HomePage({ profile, can, onOpen }) {
   )
 }
 
-function AdminBlock({ admin, onOpen, eventLink }) {
+function AdminBlock({ admin, counts, onOpen, eventLink }) {
   const events = () => onOpen({ page: 'events' })
   const columns = [
     { title: 'Event', key: 'name', value: (e) => e.name, render: (_, e) => eventLink(e) },
     { title: 'Dates', key: 'dates', value: (e) => e.start_date, render: (_, e) => formatDateRange(e.start_date, e.end_date) },
     { title: 'Location', key: 'venue', render: (_, e) => e.venue || '—' },
     { title: 'Athletes', dataIndex: 'athlete_count', key: 'athletes' },
+    { title: 'Officials', key: 'officials', value: (e) => officialsSortValue(e, counts[e.id]), render: (_, e) => <OfficialsCount event={e} count={counts[e.id]} /> },
   ]
+  // Running and coming up in the next 30 days, plus any later Active event still short on officials.
+  const upcoming = [...admin.running, ...admin.soon, ...admin.short].filter((e, i, all) => all.indexOf(e) === i)
   return (
     <Section title="Site admin">
       <StatGrid
         stats={[
           { key: 'requested', title: 'To approve', value: admin.requested.length, note: 'Events requested', onClick: events },
           { key: 'active', title: 'Active events', value: admin.active.length, note: `${admin.running.length} running today · ${admin.soon.length} in the next 30 days`, onClick: events },
-          { key: 'users', title: 'Users', value: admin.users.active, note: `${admin.users.invited} invited · ${admin.users.disabled} disabled`, onClick: () => onOpen({ page: 'admin' }) },
+          { key: 'users', title: 'Users', value: admin.users.active, note: `${admin.users.invited} invited · ${admin.users.disabled} disabled`, onClick: () => onOpen({ page: 'members' }) },
           { key: 'clubs', title: 'Clubs', value: admin.clubs, note: admin.clubInvites.length ? `${plural(admin.clubInvites.length, 'invite')} to approve` : 'No invites waiting', onClick: () => onOpen({ page: 'clubs' }) },
           { key: 'athletes', title: 'Athletes', value: admin.athletes, note: 'On the site', onClick: () => onOpen({ page: 'athletes' }) },
           { key: 'officials', title: 'Officials', value: admin.officials.total, note: `${admin.officials.signedIn} signed in`, onClick: () => onOpen({ page: 'officials' }) },
+          { key: 'short', title: 'Short on officials', value: admin.short.length, note: 'Active events below their minimum', danger: admin.short.length > 0, onClick: events },
         ]}
       />
       {admin.requested.length > 0 && (
         <>
           <Text strong>Waiting for your approval</Text>
-          <DataTable rowKey="id" columns={columns} dataSource={admin.requested} csvName="Events waiting for approval" />
+          <DataTable rowKey="id" columns={columns.filter((c) => c.key !== 'officials')} dataSource={admin.requested} csvName="Events waiting for approval" />
         </>
       )}
-      {admin.soon.length + admin.running.length > 0 && (
+      {upcoming.length > 0 && (
         <>
           <Text strong>Running now and coming up</Text>
-          <DataTable rowKey="id" columns={columns} dataSource={[...admin.running, ...admin.soon.filter((e) => !admin.running.includes(e))]} csvName="Events running and coming up" />
+          <DataTable rowKey="id" columns={columns} dataSource={upcoming} rowClassName={(e) => shortRow(e, counts[e.id])} csvName="Events running and coming up" />
         </>
       )}
     </Section>
@@ -118,7 +130,7 @@ function OwnerBlock({ owner, onOpen, eventLink }) {
     { title: 'Clubs', key: 'clubs', value: (r) => r.clubsIn, render: (_, r) => r.clubsIn },
     { title: 'Athletes', key: 'athletes', value: (r) => r.athletes, render: (_, r) => r.athletes },
     { title: 'Requests', key: 'requests', value: (r) => r.joinRequests + r.lateEntries, render: (_, r) => r.joinRequests + r.lateEntries },
-    { title: 'Officials', key: 'officials', value: (r) => r.officials, render: (_, r) => r.officials },
+    { title: 'Officials', key: 'officials', value: (r) => officialsSortValue(r.event, r.officials), render: (_, r) => <OfficialsCount event={r.event} count={r.officials} /> },
     { title: 'Bouts', key: 'bouts', value: (r) => r.bouts, render: (_, r) => (r.bouts ? `${r.approved} of ${r.bouts} approved` : '0') },
     { title: 'Results', key: 'results', value: (r) => r.results, render: (_, r) => r.results },
   ]
@@ -132,9 +144,10 @@ function OwnerBlock({ owner, onOpen, eventLink }) {
           { key: 'athletes', title: 'Athletes', value: totals.athletes, note: 'Entered', onClick: go('clubs') },
           { key: 'requests', title: 'Requests', value: totals.requests, note: 'Clubs and late entries to answer', onClick: go('clubs') },
           { key: 'bouts', title: 'Bouts', value: totals.bouts, note: `${totals.approved} approved · ${totals.pending} waiting`, onClick: go('bouts') },
+          totals.short > 0 && { key: 'short', title: 'Short on officials', value: totals.short, note: 'Fewer officials accepted than the event needs', danger: true, onClick: go('officials') },
         ]}
       />
-      {rows.length > 0 ? <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={rows} csvName="Your events" /> : <Muted>None of your events are running right now.</Muted>}
+      {rows.length > 0 ? <DataTable rowKey={(r) => r.event.id} columns={columns} dataSource={rows} rowClassName={(r) => shortRow(r.event, r.officials)} csvName="Your events" /> : <Muted>None of your events are running right now.</Muted>}
     </Section>
   )
 }
@@ -143,17 +156,21 @@ function ClubBlock({ club, onOpen, eventLink }) {
   const owns = club.clubs.some((c) => c.owner)
   const clubsLink = club.clubs.length === 1 ? () => onOpen({ page: 'clubs', clubId: club.clubs[0].id }) : () => onOpen({ page: 'clubs' })
   const columns = [
-    { title: 'Event', key: 'name', value: (r) => r.event.name, render: (_, r) => eventLink(r.event, r.joined ? 'clubs' : undefined) },
+    { title: 'Event', key: 'name', value: (r) => r.event.name, render: (_, r) => eventLink(r.event, r.joined || r.invited ? 'clubs' : undefined) },
     { title: 'Dates', key: 'dates', value: (r) => r.event.start_date, render: (_, r) => formatDateRange(r.event.start_date, r.event.end_date) },
     {
       title: 'Your club', key: 'club', value: (r) => clubState(r),
-      render: (_, r) => <Badge strong={r.joined} muted={!r.joined && !r.asked}>{clubState(r)}</Badge>,
+      render: (_, r) => <Badge strong={r.joined} muted={!r.joined && !r.asked && !r.invited}>{clubState(r)}</Badge>,
     },
     { title: 'Entries', key: 'entries', value: (r) => (r.entriesOpen ? 'Open' : 'Closed'), render: (_, r) => (r.entriesOpen ? 'Open' : 'Closed') },
     { title: 'Athletes in', key: 'entered', value: (r) => r.entered, render: (_, r) => r.entered },
     { title: 'Bouts', key: 'bouts', value: (r) => r.bouts, render: (_, r) => (r.bouts ? `${r.approved} of ${r.bouts} approved` : '0') },
     { title: 'Waiting', key: 'waiting', value: (r) => r.waiting.length, render: (_, r) => r.waiting.length },
-  ]
+    owns && {
+      title: 'To approve', key: 'approve', value: (r) => r.toApprove.length,
+      render: (_, r) => (r.toApprove.length ? <Button size="small" type="primary" onClick={() => onOpen({ page: 'events', eventId: r.event.id, tab: 'bouts' })}>{r.toApprove.length} to approve</Button> : '0'),
+    },
+  ].filter(Boolean)
   const title = club.clubs.length === 1 ? club.clubs[0].name : 'Your clubs'
   return (
     <Section title={title}>
@@ -163,7 +180,8 @@ function ClubBlock({ club, onOpen, eventLink }) {
           { key: 'athletes', title: 'Athletes', value: club.athletes, note: 'In your club' + (club.clubs.length > 1 ? 's' : ''), onClick: clubsLink },
           { key: 'events', title: 'Events', value: club.joined, note: 'Your club is in', onClick: () => onOpen({ page: 'events' }) },
           { key: 'entered', title: 'Entered', value: club.entered, note: 'Athletes in events' },
-          { key: 'waiting', title: 'Waiting', value: club.waiting.length, note: 'Bouts for the officials to approve' },
+          owns && { key: 'approve', title: 'To approve', value: club.toApprove.length, note: 'Bouts for your corner' },
+          { key: 'waiting', title: 'Waiting', value: club.waiting.length, note: 'Bouts not approved yet' },
           owns && { key: 'transfers', title: 'Transfers', value: club.transfersIn.length, note: 'Asking to join your club', onClick: clubsLink },
         ]}
       />
@@ -176,11 +194,16 @@ function ClubBlock({ club, onOpen, eventLink }) {
   )
 }
 
-const clubState = (r) => (r.joined ? 'In' : r.asked ? 'Asked to join' : 'Not in')
+const clubState = (r) => (r.joined ? 'In' : r.invited ? 'Invited: accept on the Clubs tab' : r.asked ? 'Asked to join' : 'Not in')
 
-function OfficialBlock({ official, onOpen, eventLink }) {
+function OfficialBlock({ official, counts, events, onOpen, eventLink }) {
   const { next } = official
   const roleOf = (i) => officialRoles[official.roles.find((r) => r.event.id === i.event_id)?.role] ?? 'Official'
+  // The invitation carries the event's dates and status; its minimum comes from the events list.
+  const eventOf = (i) => ({
+    min_officials: events.find((e) => e.id === i.event_id)?.min_officials,
+    status: i.event_status, start_date: i.start_date, end_date: i.end_date, timezone: i.timezone,
+  })
   const toApproveOf = (i) => official.roles.find((r) => r.event.id === i.event_id)?.toApprove.length ?? 0
   const columns = [
     { title: 'Event', key: 'name', value: (i) => i.event_name, render: (_, i) => eventLink({ id: i.event_id, name: i.event_name }, 'officials') },
@@ -194,6 +217,7 @@ function OfficialBlock({ official, onOpen, eventLink }) {
     {
       title: 'To approve', key: 'approve', value: (i) => toApproveOf(i), render: (_, i) => toApproveOf(i),
     },
+    { title: 'Officials', key: 'officials', value: (i) => officialsSortValue(eventOf(i), counts[i.event_id]), render: (_, i) => <OfficialsCount event={eventOf(i)} count={counts[i.event_id]} /> },
   ]
   return (
     <Section title="Officiating">
@@ -206,7 +230,7 @@ function OfficialBlock({ official, onOpen, eventLink }) {
         ]}
       />
       {official.accepted.length > 0 ? (
-        <DataTable rowKey="id" columns={columns} dataSource={official.accepted} csvName="Officiating" />
+        <DataTable rowKey="id" columns={columns} dataSource={official.accepted} rowClassName={(i) => shortRow(eventOf(i), counts[i.event_id])} csvName="Officiating" />
       ) : (
         <Muted>You haven't accepted any events yet.</Muted>
       )}

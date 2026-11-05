@@ -20,18 +20,26 @@ site Admins have admin powers. Athletes don't log in; their club owner acts for 
 
 ## 1. Event setup
 
-Event statuses are **Requested**, **Active**, **Done** and **Cancelled**.
+Event statuses are **Requested**, **Active**, **Done**, **Cancelled** and **Denied**.
 
-1. Only a site Admin can create an event. Regular users can no longer create events (this
-   replaces the "any user creates an event" behaviour from PR #8 and PR #13).
-2. To create an event the Admin enters a name, start date, end date and Owner. The event starts as
-   **Requested**.
-3. The Owner is emailed "You have Requested an event" with a link to the site.
-4. The Owner can upload a poster (optional) and fills in the day times (below). These stay editable.
-5. A site Admin approves the event, turning it **Active**. They can approve at any time, even
-   before the times are filled in. Only Active events can invite clubs, coaches or officials.
-6. Only a site Admin can cancel an event, at any stage before Done. The Owner can ask the Admin
-   to cancel but can't do it themselves.
+Who creates and approves events (Bhavek, 2026-11-03):
+
+1. Event owners create events. Any signed-in User can request an event and becomes its Owner. A
+   site Admin can also create an event and pick any Owner. Officials can't create events.
+   Required: name, start date, end date (and the Owner, when an Admin creates it). The event
+   starts as **Requested**.
+2. When a site Admin creates an event for someone, the Owner is emailed "You have Requested an
+   event" with a link to the site. Someone requesting their own event gets no email.
+3. The Owner can upload a poster (optional) and fills in the day times (below). These stay editable.
+4. A site Admin approves (turning it **Active**) or denies (**Denied**, with an optional reason the
+   Owner sees) a Requested event, and gets an "Approve or deny event" to-do for each request.
+   Approval can happen at any time, even before the times are filled in. Only Active events can
+   invite clubs, coaches or officials. (Bouts are approved by each event's Chief Official and
+   Deputy, below; they don't approve events.)
+5. A site Admin can do anything, including overriding a decision: send an Active event back to
+   Requested, or reopen a Denied, Cancelled or Done event as Requested.
+6. Only a site Admin can cancel an event. The Owner can ask the Admin to cancel but can't do it
+   themselves.
 7. An event becomes **Done** automatically the day after its end date. A site Admin can also mark
    it Done early.
 8. Only a site Admin can delete an event, at any status, from the Delete event button on the event
@@ -113,7 +121,9 @@ athletes are not listed. Viewers see only what is on the public page.
 
 ## 3. Entries
 
-- The event Owner (or a site Admin) invites clubs to the event.
+- The event Owner (or a site Admin) invites clubs to the event. An invited club is in only once
+  one of its club owners accepts (Bhavek 2026-11-03). Until then it can't enter athletes, and
+  accepting enters nobody: only the athletes the club submits take part.
 - A club owner can also request to join an Active event on the club's behalf. The Owner or a
   site Admin accepts or declines.
 - Once a club is in, its club owners submit their own athletes. Athletes are entered straight
@@ -127,20 +137,30 @@ athletes are not listed. Viewers see only what is on the public page.
 ## 4. Matching bouts
 
 - The event Owner pairs athletes into bouts.
-- Only the event's Chief Official or Deputy approves or rejects a bout; one decision from either
-  is enough. Clubs and coaches don't approve. A site Admin can also decide, but only the Chief
-  Official and Deputy get the "Approve bout" to-do and email.
-- If the official rejects a bout, it goes back to the Owner to re-match.
+- A bout needs approving by both corners' club owners AND the Chief Official or Deputy (Bhavek,
+  2026-11-04: "the official and club owners must all approve a bout"). One owner per corner is
+  enough, and one decision from either Chief Official is enough.
+  - Whoever makes the bout approves their own corner automatically if they own that club.
+  - A corner whose club has no active owner doesn't need approving, so the bout can't get stuck.
+  - Both corners from the same club: one owner approval covers both.
+  - After the day's weigh-in starts, the Chief Official or Deputy can decide for a corner.
+  - A site Admin can decide any side but gets no to-do.
+  - "Send for approval" gives each side still waiting one "Approve bout" to-do and email: the
+    corner's club owners, and the Chief Official and Deputy. Sending again replaces the to-do.
+- If anyone rejects a bout, it goes back to the Owner to re-match. Re-matching clears the approvals.
+- Either corner's club owner can withdraw their athlete from a bout at any time until it has a
+  result, even after it's approved. The bout is cancelled and the other club, the Owner and the
+  officials are told.
 - Everyone involved in a bout can comment on the match-up. Comments are plain text only.
 
 ### Bout types
 
 Every bout is one of three types, picked when it is made (default Scored):
 
-- **Scored:** must follow every match rule. No override. Needs the official approval.
+- **Scored:** must follow every match rule. No override. Needs the club owners' and official approvals.
 - **Developmental:** the match rules apply, but the Chief Official, Deputy or a site Admin can
   override a rule break by giving a reason. The bout keeps the reason, who overrode it, when, and
-  the rules it broke. It still needs the official approval.
+  the rules it broke. It still needs the club owners' and official approvals.
 - **Sparring:** must follow the match rules, but needs no approval: it is Approved as soon as it is
   made, and isn't sent for approval.
 - Male against female, a boxer who is too young, or missing details can't be overridden on any type.
@@ -164,11 +184,21 @@ applies them like this:
 
 - On weigh-in day, any official who accepted that day (and the CO and Deputy on every day)
   records each athlete's actual weight and a medical **pass** or **fail** with a note.
-- Every bout is checked again against the actual weights. A bout that fails is cancelled and
-  pulled off the card. An athlete who fails the medical or doesn't show up comes off their bouts
-  the same way.
-- After the weigh-in, only an official can make a new bout. It still needs the Chief Official's
-  or Deputy's approval.
+- They also check each athlete's **date of birth** (against ID) and **experience** (number of
+  bouts): checked and correct, wrong (they type the right value and the athlete's record is fixed,
+  keeping the old value on the weigh-in), or couldn't check (Bhavek, 2026-11-04).
+- A check that couldn't be done, or a correction that moves the athlete to another age group or
+  between Novice and Open, or that makes the bout break the match rules, marks the bout
+  **Needs discussion**.
+- Every bout is checked again against the actual weights. A bout that no longer fits, or one with
+  an athlete who fails the medical or doesn't show up, is marked **Needs discussion**. Nothing is
+  cancelled automatically (Bhavek, 2026-11-03).
+- Only the Chief Official or Deputy settles a bout that needs discussion: keep it or cancel it.
+  They get a "Discuss bout" to-do. No result can be recorded until it's settled.
+- The opponent of an athlete who fails still weighs in and is processed as normal, even if the
+  bout is later cancelled.
+- After the weigh-in, only an official can make a new bout. It still needs both club owners and
+  the Chief Official or Deputy to approve, but an official can decide for a corner.
 - An athlete can box on more than one day of an event, and weighs in on each day they box.
 
 ## 6. The card and results
@@ -184,7 +214,9 @@ applies them like this:
 
 | Action | Site Admin | Owner | Club owner | CO / Deputy | Event official |
 |--------|:-:|:-:|:-:|:-:|:-:|
-| Create, approve, cancel, close event | ✓ | | | | |
+| Request (create) an event | ✓ | ✓ (any User) | | | |
+| Approve or deny a Requested event | ✓ | | | | |
+| Cancel, close, reopen, undo an approval | ✓ | | | | |
 | Edit details, times, poster | ✓ | ✓ | | | |
 | Choose the CO | ✓ | | | | |
 | Invite officials (including someone new) | ✓ | | | ✓ | ✓ (accepted) |
