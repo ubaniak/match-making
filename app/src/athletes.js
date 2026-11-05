@@ -32,3 +32,34 @@ export function athleteProblems({ name, date_of_birth, gender, weight_kg, bouts,
 // Optional details (migration 40). Blank text is saved as null.
 export const cleanText = (text) => (text ?? '').toString().trim() || null
 export const formatLevel = (level) => (level == null || level === '' ? '—' : `Level ${level}`)
+
+// An athlete can be in the system only once, across every club (migration 57,
+// 20261104160000_unique_athletes.sql). The same athlete is the same name and date of birth
+// (ignoring case and extra spaces), or the same BC number (ignoring case).
+export const athleteNameKey = (name) => (name ?? '').toString().trim().replace(/\s+/g, ' ').toLowerCase()
+export const athleteBcKey = (bc) => (bc ?? '').toString().trim().toLowerCase() || null
+
+// Says who already has the athlete. match is { matched_on, athlete_name, club_name }.
+export function duplicateAthleteText({ matched_on, athlete_name, club_name }) {
+  const where = club_name ? ` in ${club_name}` : ''
+  return matched_on === 'bc_number'
+    ? `Already in the system: ${athlete_name}${where} has this BC number`
+    : `Already in the system: ${athlete_name}${where}, same name and date of birth`
+}
+
+// Matches in a list of athletes (demo mode, which can see everyone). Same shape as the
+// find_athlete_duplicates database function.
+export function findDuplicatesIn(athletes, rows, ignoreId, clubName = () => null) {
+  const found = []
+  rows.forEach((row, index) => {
+    const bc = athleteBcKey(row.bc_number)
+    const name = athleteNameKey(row.name)
+    for (const a of athletes) {
+      if (a.id === ignoreId) continue
+      const sameBc = bc && athleteBcKey(a.bc_number) === bc
+      const sameName = row.date_of_birth && a.date_of_birth === row.date_of_birth && athleteNameKey(a.name) === name
+      if (sameBc || sameName) found.push({ row_index: index, matched_on: sameBc ? 'bc_number' : 'name_dob', athlete_name: a.name, club_name: clubName(a.club_id) })
+    }
+  })
+  return found
+}

@@ -1,5 +1,6 @@
 import { supabase, VIEW_AS_READ_ONLY } from '../supabase'
 import { locationColumns } from '../locations'
+import { duplicateAthleteText } from '../athletes'
 
 // Talks to the real Supabase project. Row-level security does the protecting.
 const eventColumns = `id, name, venue, venue_address, venue_lat, venue_lng, venue_place_id,
@@ -55,6 +56,21 @@ async function rpc(name, args) {
   const { data, error } = await supabase.rpc(name, args)
   if (error) throw error
   return data
+}
+
+// The database refuses a second copy of an athlete (migration 57). Say which club has them.
+async function duplicateAthleteError(error, athlete, ignoreId = null) {
+  if (error.code !== '23505' || !/athletes_unique_/.test(error.message ?? '')) return error
+  try {
+    const [match] = (await rpc('find_athlete_duplicates', {
+      p_rows: [{ name: athlete.name, date_of_birth: athlete.date_of_birth, bc_number: athlete.bc_number }],
+      p_ignore: ignoreId,
+    })) ?? []
+    if (match) return new Error(duplicateAthleteText(match))
+  } catch {
+    // fall through to the general message
+  }
+  return new Error(/bc_number/.test(error.message) ? 'An athlete with this BC number is already in the system' : 'This athlete is already in the system (same name and date of birth)')
 }
 
 // Calls the send-event-email Edge Function and turns its error into a readable message.
@@ -271,15 +287,21 @@ export const supabaseApi = {
 
   async addAthlete(athlete) {
     const { error } = await supabase.from('athletes').insert(athlete)
-    if (error) throw error
+    if (error) throw await duplicateAthleteError(error, athlete)
   },
 
   // Club owners and site Admins. The club changes only through a transfer.
   async updateAthlete(athleteId, fields) {
     const { data, error } = await supabase.from('athletes').update(fields).eq('id', athleteId).select('id')
-    if (error) throw error
+    if (error) throw await duplicateAthleteError(error, fields, athleteId)
     if (!data.length) throw new Error('You can\'t edit this athlete')
   },
+  // Athletes already in the system (any club) with the same name + date of birth or BC number.
+  // rows: [{ name, date_of_birth, bc_number }]. Returns [{ row_index, matched_on, athlete_name, club_name }].
+  async findAthleteDuplicates(rows, ignoreId = null) {
+    return (await rpc('find_athlete_duplicates', { p_rows: rows, p_ignore: ignoreId })) ?? []
+  },
+
   // Club Owners and site Admins. Refused while the athlete is in an Active event or has results.
   async deleteAthlete(athleteId) {
     const { data, error } = await supabase.from('athletes').delete().eq('id', athleteId).select('id')
