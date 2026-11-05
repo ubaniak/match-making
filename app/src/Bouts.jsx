@@ -350,7 +350,7 @@ function Card({ event, data, rights, busy, run, publish }) {
 
       {canMatch && !rematch && (
         <SuggestedMatches
-          event={event} day={day} weights={weights} busy={busy}
+          event={event} day={day} weights={weights} busy={busy} details={details}
           taken={new Set(live.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]))}
           onAdd={(fields) => run(() => api.saveBout({ ...fields, eventId: event.id, day }))}
         />
@@ -453,7 +453,7 @@ function BoutsImport({ event, data, days, official, run }) {
 // "Suggested matches": the app pairs up the athletes who are free this day (suggestMatches in
 // matching.js, the same rules as Best match) and the Owner or a Chief Official adds each pairing as
 // a Scored bout with one click. When an athlete fits more than one opponent, a dropdown picks which.
-function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
+function SuggestedMatches({ event, day, weights, taken, busy, details = false, onAdd }) {
   const takenKey = [...taken].sort().join(',')
   const weightsKey = JSON.stringify(weights)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -467,7 +467,7 @@ function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
     m.clubsPick && "club's pick",
     m.check.needsSupervisor ? 'needs the Chief Official' : m.check.warnings.length ? `${m.check.warnings.length} warning${m.check.warnings.length === 1 ? '' : 's'}` : 'good match',
   ].filter(Boolean).join(', ')
-  const who = (a) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}`
+  const who = (a) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${details ? ` · ${detailsText(a)}` : ''}`
 
   async function add(pair, match) {
     setAdding(pair.athlete.id)
@@ -499,12 +499,14 @@ function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
               <div className="suggested-match-side">
                 <span className="corner-label red">Red</span> <Text strong>{pair.athlete.name}</Text>
                 <br /><Muted block={false}>{pair.athlete.club ?? '—'} · {categoryText(pair.athlete, event.start_date)}</Muted>
+                {details && <><br /><Text>{detailsText(pair.athlete)}</Text></>}
               </div>
               <div className="suggested-match-side">
                 <span className="corner-label blue">Blue</span>{' '}
                 {pair.opponents.length > 1 ? (
                   <>
                     <Muted block={false}>{pair.opponents.length} possible opponents</Muted>
+                    {details && <><br /><Text>Picked: {detailsText(match.athlete)}</Text></>}
                     <Pick
                       aria-label={`Opponent for ${pair.athlete.name}`}
                       value={match.athlete.id}
@@ -516,6 +518,7 @@ function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
                   <>
                     <Text strong>{match.athlete.name}</Text>
                     <br /><Muted block={false}>{match.athlete.club ?? '—'} · {categoryText(match.athlete, event.start_date)}</Muted>
+                    {details && <><br /><Text>{detailsText(match.athlete)}</Text></>}
                   </>
                 )}
               </div>
