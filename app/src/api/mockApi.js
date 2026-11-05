@@ -1690,9 +1690,10 @@ export const mockApi = {
     }
     if (!['scored', 'developmental', 'sparring'].includes(boutType)) throw new Error('Pick Scored, Developmental or Sparring')
     let reason = overrideReason?.trim() || null
+    // Sparring skips the match rules (the app still stops the hard ones).
+    if (boutType === 'sparring') blocks = []
     if (blocks.length) {
       if (boutType === 'scored') throw new Error('A Scored bout must follow every match rule')
-      if (boutType === 'sparring') throw new Error('A Sparring bout must follow the match rules')
       if (!isOfficial(current, eventId)) throw new Error('Only a Chief Official can override the match rules')
       if (!reason) throw new Error('Give a reason for overriding the match rules')
     } else {

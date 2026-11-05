@@ -1,7 +1,7 @@
 import { api } from './api'
 import { athleteBcKey, athleteNameKey, athleteProblems, cleanText, duplicateAthleteText } from './athletes'
 import { daysBetween, MAX_EVENT_DAYS } from './dates'
-import { checkMatch } from './matching'
+import { checkForType, checkMatch } from './matching'
 
 // What each CSV import expects, and how a row is checked before anything is saved.
 
@@ -351,9 +351,9 @@ export const importSpecs = {
       const taken = (state.taken[day] ??= new Set(takenByDay?.[day] ?? []))
       for (const a of [red, blue]) if (taken.has(a.id)) errors.push(`${a.name} is already boxing on ${day}`)
 
-      const check = checkMatch(red, blue, eventDate, weightsByDay?.[day] ?? {})
+      const check = checkForType(checkMatch(red, blue, eventDate, weightsByDay?.[day] ?? {}), boutType)
       errors.push(...check.blocks.map((b) => b.replace(/\.$/, '')))
-      if (check.blocks.length && check.hard.length === 0) errors.push('To override the rules, make a Developmental bout on the form instead')
+      if (check.blocks.length && check.hard.length === 0) errors.push('Set bout_type to sparring to skip the rules, or make a Developmental bout on the form to override them')
       if (errors.length === 0) {
         taken.add(red.id)
         taken.add(blue.id)

@@ -160,3 +160,13 @@ export function bestOpponents(athlete, candidates, eventDate, weights = {}, take
     .filter((m) => m.check.blocks.length === 0)
     .sort((x, y) => x.distance - y.distance)
 }
+
+// Sparring bouts skip the match rules (age, weight, experience gaps): those breaks become warnings
+// and the bout needs no Chief Official for U17 v U19. Only the hard blocks still apply: male v
+// female, too young to box, and missing details. Other bout types get the check unchanged.
+export function checkForType(check, boutType) {
+  if (!check || boutType !== 'sparring') return check
+  const soft = check.blocks.filter((b) => !check.hard.includes(b)).map((b) => b.replace(/\.$/, ''))
+  const warnings = check.warnings.map((w) => w.replace(/: needs the Chief Official's approval$/, ''))
+  return { ...check, blocks: [...check.hard], warnings: [...warnings, ...soft], needsSupervisor: false }
+}

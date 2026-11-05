@@ -7,7 +7,7 @@ import { api } from './api'
 import { formatWeight } from './athletes'
 import { ageCategory, categoryText, experienceCategory } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
-import { bestOpponents, checkMatch } from './matching'
+import { bestOpponents, checkForType, checkMatch } from './matching'
 import { EventOfficials } from './Officials'
 import { rolesText } from './officialRoles'
 import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
@@ -24,12 +24,13 @@ const sideLabels = { red: 'Red corner', blue: 'Blue corner', official: 'Chief Of
 const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
 // Bout types (migration 25). Scored follows every rule; Developmental lets the Chief Official or
-// Deputy override a rule break with a reason; Sparring follows the rules but needs no approval.
+// Deputy override a rule break with a reason; Sparring skips the match rules (not the hard ones)
+// and needs no approval.
 const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparring: 'Sparring' }
 const boutTypeHelp = {
   scored: 'Must follow every match rule. Both corners\' club owners and a Chief Official approve it.',
   developmental: 'The match rules apply, but a Chief Official can override them with a reason. Both corners\' club owners and a Chief Official approve it.',
-  sparring: 'Must follow the match rules. No approval needed: the bout is approved as soon as it is made.',
+  sparring: 'The match rules don\'t apply (only male v female, too young and missing details still block). No approval needed: the bout is approved as soon as it is made.',
 }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
 const personName = (user) => (user ? user.name || user.email : '—')
@@ -382,7 +383,7 @@ function BoutsImport({ event, data, days, official, run }) {
     >
       <Muted>
         Athletes are matched by name among those entered in this event. Each bout goes to the end of its day's card.
-        Rows that break the match rules are skipped; make those on the form, where a Developmental bout can be overridden with a reason.
+        Rows that break the match rules are skipped, unless their bout_type is sparring (sparring skips the rules). A Developmental bout can be overridden with a reason on the form.
       </Muted>
     </CsvImport>
   )
@@ -396,7 +397,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
   const byId = Object.fromEntries(event.athletes.map((a) => [a.id, a]))
   const red = byId[redId]
   const blue = byId[blueId]
-  const check = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
+  const check = red && blue ? checkForType(checkMatch(red, blue, event.start_date, weights), boutType) : null
   const [bestOnly, setBestOnly] = useState(false)
   const label = (a, note) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}${note ? ` (${note})` : ''}`
   const plain = (other) => event.athletes.filter((a) => a.id !== other).map((a) => {
@@ -508,7 +509,7 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
       {suggestion && <FullRow><Muted>{suggestion}</Muted></FullRow>}
       {check && check.blocks.map((b) => <FullRow key={b}><Text type="danger">{b}</Text></FullRow>)}
       {blocked && check.hard.length === 0 && boutType !== 'developmental' && (
-        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Developmental bout can, if a Chief Official overrides them with a reason.</Muted></FullRow>
+        <FullRow><Muted>{boutTypeLabels[boutType]} bouts can't break the match rules. A Sparring bout skips them, and a Developmental bout can break them if a Chief Official overrides them with a reason.</Muted></FullRow>
       )}
       {blocked && boutType === 'developmental' && check.hard.length > 0 && (
         <FullRow><Muted>No one can override this, even on a Developmental bout.</Muted></FullRow>
@@ -575,7 +576,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, weighInStarted 
 
   // Re-check against weigh-in weights, so officials see a bout that no longer fits. Rule breaks an
   // official already overrode on a Developmental bout aren't shown again.
-  const recheck = red && blue ? checkMatch(red, blue, event.start_date, weights) : null
+  const recheck = red && blue ? checkForType(checkMatch(red, blue, event.start_date, weights), type) : null
   const newBlocks = recheck ? recheck.blocks.filter((b) => !(bout.override_blocks ?? []).includes(b)) : []
 
   // Each corner's club owners and a Chief Official approve (migration 52). A corner whose club has
@@ -1127,7 +1128,7 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
       weights[athlete.id] = Number(form.weight)
       const withFix = (id) => (id === athlete.id ? fixed : athletes[id])
       for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
-        const check = checkMatch(withFix(b.red_athlete_id), withFix(b.blue_athlete_id), event.start_date, weights)
+        const check = checkForType(checkMatch(withFix(b.red_athlete_id), withFix(b.blue_athlete_id), event.start_date, weights), boutTypeOf(b))
         // On a Developmental bout, rule breaks an official already overrode don't count again.
         const broken = check.blocks.filter((x) => !(b.override_blocks ?? []).includes(x))
         const moved = corrections.filter((c) => c.moved)
