@@ -160,3 +160,58 @@ export function bestOpponents(athlete, candidates, eventDate, weights = {}, take
     .filter((m) => m.check.blocks.length === 0)
     .sort((x, y) => x.distance - y.distance)
 }
+
+const norm = (s) => (s ?? '').trim().toLowerCase()
+
+// True when `b` is the opponent `a`'s club suggested when entering them (by name, and club if given).
+export function isClubsPick(a, b) {
+  if (!norm(a.suggested_opponent_name) || norm(a.suggested_opponent_name) !== norm(b.name)) return false
+  return !norm(a.suggested_opponent_club) || norm(a.suggested_opponent_club) === norm(b.club)
+}
+
+// "Suggested matches" for one day: pairs up the entered athletes who are free that day, using the
+// same rules as Best match (no rule blocks, no same club, nobody already boxing that day).
+// Athletes with the fewest possible opponents are paired first, each with their closest free
+// opponent (the one their club suggested comes first when it fits), so as many athletes as
+// possible get a bout. Each pair is shown from the side with more possible opponents, so its
+// dropdown offers the alternatives. An athlete left over whose opponents are all paired already,
+// and who isn't in any pair's dropdown, gets a row of their own (pick.taken: that opponent is
+// suggested elsewhere). Returns [{ athlete, pick, opponents }]: opponents is every athlete who fits
+// `athlete` ([{ athlete, check, distance, clubsPick }], pick first).
+export function suggestMatches(athletes, eventDate, weights = {}, taken = new Set()) {
+  const free = athletes.filter((a) => !taken.has(a.id))
+  const options = new Map(free.map((a) => {
+    const list = bestOpponents(a, free, eventDate, weights, taken).map((m) => ({ ...m, clubsPick: isClubsPick(a, m.athlete) || isClubsPick(m.athlete, a) }))
+    list.sort((x, y) => Number(y.clubsPick) - Number(x.clubsPick))
+    return [a.id, list]
+  }))
+  const byId = new Map(free.map((a) => [a.id, a]))
+  const order = free
+    .filter((a) => options.get(a.id).length)
+    .sort((x, y) => options.get(x.id).length - options.get(y.id).length
+      || options.get(x.id)[0].distance - options.get(y.id)[0].distance
+      || x.name.localeCompare(y.name))
+  const used = new Set()
+  const pairs = []
+  for (const a of order) {
+    if (used.has(a.id)) continue
+    const mine = options.get(a.id).find((m) => !used.has(m.athlete.id))
+    if (!mine) continue
+    used.add(a.id)
+    used.add(mine.athlete.id)
+    // Show the pair from the side with more choices, so the dropdown has the alternatives.
+    const b = mine.athlete
+    const [fixed, other] = options.get(b.id).length > options.get(a.id).length ? [b, a] : [a, b]
+    const list = options.get(fixed.id)
+    const pick = list.find((m) => m.athlete.id === other.id)
+    pairs.push({ athlete: fixed, pick, opponents: [pick, ...list.filter((m) => m !== pick)] })
+  }
+  const offered = new Set(pairs.flatMap((p) => [p.athlete.id, ...p.opponents.map((m) => m.athlete.id)]))
+  for (const a of order) {
+    if (offered.has(a.id)) continue
+    const list = options.get(a.id)
+    pairs.push({ athlete: byId.get(a.id), pick: { ...list[0], taken: true }, opponents: list })
+    offered.add(a.id)
+  }
+  return pairs
+}

@@ -1339,7 +1339,7 @@ function ClubOwnersDialog({ club, owners, users, busy, error, onAdd, onRemove, o
 // Entered athletes. Club owners enter and withdraw their own club's athletes and suggest opponents.
 function EventEntries({ event, may, clubs, profile, onChange }) {
   const [allAthletes, setAllAthletes] = useState([])
-  const [form, setForm] = useState({ athleteId: '', opponentName: '', opponentClub: '', note: '' })
+  const [form, setForm] = useState({ athleteIds: [], opponentName: '', opponentClub: '', note: '' })
   const [editing, setEditing] = useState(null) // athlete id whose suggestion is being edited
   const [suggestion, setSuggestion] = useState({ name: '', club: '' })
   const [error, setError] = useState(null)
@@ -1381,15 +1381,28 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
     }
   }
 
+  // Enters every picked athlete. A suggested opponent only applies when one athlete is picked.
+  // Athletes that fail stay picked so the user can see them and try again.
   async function enter(e) {
     e.preventDefault()
-    if (!form.athleteId) return
-    const ok = await run(() =>
-      late
-        ? api.requestLateEntry(event.id, form.athleteId, form.note)
-        : api.enterAthlete(event.id, form.athleteId, form.opponentName, form.opponentClub),
-    )
-    if (ok) setForm({ athleteId: '', opponentName: '', opponentClub: '', note: '' })
+    const ids = form.athleteIds
+    if (ids.length === 0) return
+    const single = ids.length === 1
+    const failed = []
+    const ok = await run(async () => {
+      for (const id of ids) {
+        try {
+          if (late) await api.requestLateEntry(event.id, id, form.note)
+          else await api.enterAthlete(event.id, id, single ? form.opponentName : '', single ? form.opponentClub : '')
+        } catch (err) {
+          const name = allAthletes.find((a) => a.id === id)?.name ?? 'An athlete'
+          failed.push({ id, message: `${name}: ${err.message}` })
+        }
+      }
+      if (failed.length) throw new Error(failed.map((f) => f.message).join(' · '))
+    })
+    if (ok) setForm({ athleteIds: [], opponentName: '', opponentClub: '', note: '' })
+    else if (failed.length) setForm((f) => ({ ...f, athleteIds: failed.map((x) => x.id) }))
   }
 
   async function withdraw(a) {
@@ -1448,24 +1461,42 @@ function EventEntries({ event, may, clubs, profile, onChange }) {
       {effectiveStatus(event) === 'requested' && <Muted>Athletes can be entered once the event is approved.</Muted>}
       {canEnter && (
         <FormCard
-          title={late ? 'Ask for a late entry' : 'Enter an athlete'}
+          title={late ? 'Ask for late entries' : 'Enter athletes'}
           onSubmit={enter}
-          actions={<Button type="primary" htmlType="submit" disabled={busy || !form.athleteId}>{late ? 'Send request' : 'Enter'}</Button>}
+          actions={(
+            <Button type="primary" htmlType="submit" disabled={busy || form.athleteIds.length === 0}>
+              {late ? 'Send request' : 'Enter'}{form.athleteIds.length > 1 ? ` ${form.athleteIds.length} athletes` : ''}
+            </Button>
+          )}
         >
           {late && <FullRow><Muted>The entry deadline has passed. The event's Owner will accept or decline your request.</Muted></FullRow>}
-          <Field label="Athlete">
-            <Pick
-              value={form.athleteId}
-              onChange={(athleteId) => setForm({ ...form, athleteId })}
-              placeholder={available.length ? 'Choose an athlete…' : may.siteAdmin ? 'Every athlete in the event\'s clubs is entered' : 'All your club\'s athletes are entered'}
+          <Field label="Athletes" hint="pick one or more" full>
+            <Select
+              mode="multiple"
+              aria-label="Athletes to enter"
+              value={form.athleteIds}
+              onChange={(athleteIds) => setForm({ ...form, athleteIds })}
+              placeholder={available.length ? 'Choose athletes…' : may.siteAdmin ? 'Every athlete in the event\'s clubs is entered' : 'All your club\'s athletes are entered'}
+              optionFilterProp="label"
+              style={{ width: '100%' }}
               options={available.map((a) => ({
                 value: a.id,
                 label: [a.name, a.club, genderLabel(a.gender), formatWeight(a.weight_kg)].filter((v) => v && v !== '—').join(' · '),
               }))}
             />
           </Field>
+          {available.length > 1 && (
+            <FullRow>
+              <Space>
+                <Button size="small" disabled={busy || form.athleteIds.length === available.length} onClick={() => setForm({ ...form, athleteIds: available.map((a) => a.id) })}>Pick all ({available.length})</Button>
+                {form.athleteIds.length > 0 && <Button size="small" disabled={busy} onClick={() => setForm({ ...form, athleteIds: [] })}>Clear</Button>}
+              </Space>
+            </FullRow>
+          )}
           {late ? (
             <Field label="Note" hint="optional"><Input maxLength={500} {...field('note')} /></Field>
+          ) : form.athleteIds.length > 1 ? (
+            <FullRow><Muted>To suggest opponents for several athletes, use Suggest opponent on each one in the list below after entering.</Muted></FullRow>
           ) : (
             <>
               <Field label="Suggested opponent" hint="optional"><Input maxLength={100} placeholder="Name" {...field('opponentName')} /></Field>
