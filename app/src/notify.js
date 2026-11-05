@@ -10,6 +10,8 @@ export function useNotifications() {
 
 // Where a notification leads: an event (and tab) or a club. Null when there's nowhere to go.
 export function linkFor(n) {
+  // Requests for a new club wait for the site Admin on the Clubs page (migration 60).
+  if (n.kind === 'club_request') return { page: 'clubs' }
   if (n.event_id) return { page: 'events', eventId: n.event_id, tab: n.tab ?? undefined }
   if (n.club_id) return { page: 'clubs', clubId: n.club_id }
   return null

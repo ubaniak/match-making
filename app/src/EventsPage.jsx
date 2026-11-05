@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Checkbox, Descriptions, Input, Modal, Select, Space, Tabs, Upload } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
+import { RequestClub } from './ClubRequests'
 import DataTable from './DataTable'
 import CsvImport from './CsvImport'
 import { api } from './api'
@@ -1115,8 +1116,10 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
   const [ownersOf, setOwnersOf] = useState(null) // club id whose owners are being changed
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
-  // The event's Owner (and site Admins) add clubs and club owners while the event is Active.
+  // The event's Owner (and site Admins) manage club owners while the event is Active. Only site
+  // Admins make new clubs; an Owner asks for one instead (migration 60).
   const managesOwners = may.manageClubs && may.open
+  const createsClubs = may.siteAdmin && may.open
   const users = useActiveUsers(managesOwners)
   const clubById = Object.fromEntries(clubs.map((c) => [c.id, c]))
   const ownersOfClub = (clubId) => (clubById[clubId]?.members ?? []).filter((m) => m.role === 'owner' && m.status === 'active')
@@ -1236,7 +1239,8 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
           </FullRow>
         </FormCard>
       )}
-      {managesOwners && (
+      {may.manageClubs && may.open && !may.siteAdmin && <RequestClub eventId={event.id} />}
+      {createsClubs && (
         <FormCard
           compact
           onSubmit={addClub}
@@ -1263,7 +1267,7 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
         </FormCard>
       )}
       {may.manageClubs && may.open && (
-        <EventClubsImport event={event} clubs={clubs} canCreate={managesOwners} statusByClub={Object.fromEntries(event.clubs.map((ec) => [ec.club_id, ec.status]))} onDone={onChange} />
+        <EventClubsImport event={event} clubs={clubs} canCreate={createsClubs} statusByClub={Object.fromEntries(event.clubs.map((ec) => [ec.club_id, ec.status]))} onDone={onChange} />
       )}
       {may.open && canJoin.length > 0 && (
         <Space wrap className="gap">
@@ -1305,7 +1309,7 @@ function EventClubsImport({ event, clubs, canCreate, statusByClub, onDone }) {
       }}
       onDone={onDone}
     >
-      <Muted>A club that already exists is invited, and is in once one of its owners accepts. {canCreate && 'A club name we don\'t know is created with the owners in owner_emails and joins straight away.'}</Muted>
+      <Muted>A club that already exists is invited, and is in once one of its owners accepts. {canCreate ? 'A club name we don\'t know is created with the owners in owner_emails and joins straight away.' : 'A club that isn\'t in the app yet can\'t be added here: use Request a new club.'}</Muted>
     </CsvImport>
   )
 }

@@ -264,7 +264,7 @@ export const importSpecs = {
         return { clubId: club.id }
       }
       const emails = emailList(values.owner_emails)
-      if (!canCreate) errors.push(`No club called ${name}`)
+      if (!canCreate) errors.push(`No club called ${name}. Ask a site Admin with Request a new club`)
       else if (emails.length === 0) errors.push(`No club called ${name}. To add it as a new club, fill in owner_emails`)
       const owners = emails.map((email) => activeUser(email, usersByEmail, errors)).filter(Boolean)
       return { name, ownerIds: owners.map((u) => u.id) }

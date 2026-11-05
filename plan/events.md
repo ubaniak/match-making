@@ -103,9 +103,15 @@ athletes are not listed. Viewers see only what is on the public page.
 
 - A club is its own record with its own athletes. It replaces the free-text club on athletes.
 - A site Admin creates clubs and assigns their club owners.
-- While an event is **Active**, its Owner can also create a club (it joins the event straight
-  away) and add or remove the owners of any club in the event. These owners don't need a site
-  Admin's approval. A club always keeps at least one owner. Owners must have signed in once.
+- Only a site Admin creates clubs. Anyone else who needs a club that isn't in the app yet sends
+  a **Request a new club** (club name, the owner's name and email, both required, and an optional note). Every site Admin
+  gets a to-do on the Clubs page. Approving makes the club, makes that owner email the club's Owner (with an
+  account and a welcome email if they have none), and, when the request came from an event,
+  invites the club to that event. Declining can give a reason. The person who asked is told
+  either way, and can withdraw a request still waiting.
+- While an event is **Active**, its Owner can add or remove the owners of any club in the
+  event. These owners don't need a site Admin's approval. A club always keeps at least one
+  owner. Owners must have signed in once.
 - Club owners or a site Admin add and edit the club's athletes.
 - Club owners can invite more people to the club, but a site Admin must approve each invite.
 - One person can belong to many clubs.
@@ -226,7 +232,9 @@ applies them like this:
 | See the officials lists and count | ✓ | ✓ | | ✓ | |
 | Accept or decline an invitation | | | | ✓ | ✓ |
 | Invite clubs, accept join and late-entry requests | ✓ | ✓ | | | |
-| Create clubs in the event; add or remove club owners | ✓ | ✓ | | | |
+| Create clubs in the event | ✓ | | | | |
+| Request a new club (site Admin approves) | | ✓ | ✓ | | |
+| Add or remove club owners in the event | ✓ | ✓ | | | |
 | Submit, withdraw own athletes; suggest opponents | ✓ | | ✓ | | |
 | Match bouts, set order | ✓ | ✓ | | | |
 | Approve or reject a bout; unlock U17 v U19 | ✓ | | | ✓ | |
