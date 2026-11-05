@@ -1309,3 +1309,27 @@ body {
 .location-map .leaflet-container {
   font: inherit;
 }
+
+/* Suggested matches on the Bouts tab: red | blue (or a dropdown) | Add, then the note. */
+.suggested-match {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.suggested-match-side {
+  min-width: 0;
+}
+
+.suggested-match-note {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .suggested-match {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
