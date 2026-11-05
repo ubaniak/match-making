@@ -104,8 +104,8 @@ athletes are not listed. Viewers see only what is on the public page.
 - A club is its own record with its own athletes. It replaces the free-text club on athletes.
 - A site Admin creates clubs and assigns their club owners.
 - Only a site Admin creates clubs. Anyone else who needs a club that isn't in the app yet sends
-  a **Request a new club** (club name, contact name and email, optional note). Every site Admin
-  gets a to-do on the Clubs page. Approving makes the club, makes the contact its Owner (with an
+  a **Request a new club** (club name, the owner's name and email, both required, and an optional note). Every site Admin
+  gets a to-do on the Clubs page. Approving makes the club, makes that owner email the club's Owner (with an
   account and a welcome email if they have none), and, when the request came from an event,
   invites the club to that event. Declining can give a reason. The person who asked is told
   either way, and can withdraw a request still waiting.

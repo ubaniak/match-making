@@ -8,7 +8,7 @@ import WelcomeNotice from './WelcomeNotice'
 import { Badge, ErrorAlert, Field, FormCard, FullRow, Muted, Section, SuccessAlert } from './ui'
 
 // New clubs need a site Admin's approval (migration 60). Anyone else asks for one here, with a
-// contact who becomes its Owner. From an event they run, the club is invited to it once approved.
+// required owner email: that person becomes its Owner. From an event they run, the club is invited to it once approved.
 
 const statusLabels = { pending: 'Waiting for Admin', approved: 'Approved', denied: 'Declined', withdrawn: 'Withdrawn' }
 const personName = (user) => (user ? user.name || user.email : '—')
@@ -75,7 +75,7 @@ export function RequestClub({ eventId, title = 'Request a new club', intro }) {
 
   const columns = [
     { title: 'Club', dataIndex: 'name', key: 'name' },
-    { title: 'Contact', key: 'contact', value: (r) => `${r.contact_name} ${r.contact_email}`, render: (_, r) => `${r.contact_name} (${r.contact_email})` },
+    { title: 'Owner', key: 'contact', value: (r) => `${r.contact_name} ${r.contact_email}`, render: (_, r) => `${r.contact_name} (${r.contact_email})` },
     ...(eventId ? [] : [{ title: 'For event', key: 'event', value: (r) => r.event?.name ?? '', render: (_, r) => dash(r.event?.name) }]),
     { title: 'Asked', key: 'asked', value: (r) => r.requested_at, render: (_, r) => formatWhen(r.requested_at) },
     { title: 'Status', key: 'status', value: (r) => statusLabels[r.status], render: (_, r) => <StatusBadge status={r.status} /> },
@@ -96,11 +96,11 @@ export function RequestClub({ eventId, title = 'Request a new club', intro }) {
         actions={<Button type="primary" htmlType="submit" disabled={busy || !form.name.trim() || !form.contactName.trim() || !form.contactEmail.trim()}>Send to Admin</Button>}
       >
         <Field label="Club name"><Input {...field('name')} maxLength={120} placeholder="e.g. Riverside Boxing" /></Field>
-        <Field label="Contact name" hint="becomes the club's Owner"><Input {...field('contactName')} maxLength={120} placeholder="e.g. Maria Lopez" /></Field>
-        <Field label="Contact email"><Input type="email" {...field('contactEmail')} maxLength={200} placeholder="maria@example.com" /></Field>
+        <Field label="Owner name" hint="who runs the club"><Input {...field('contactName')} maxLength={120} placeholder="e.g. Maria Lopez" /></Field>
+        <Field label="Owner email" hint="required: they sign in with it"><Input type="email" required {...field('contactEmail')} maxLength={200} placeholder="maria@example.com" /></Field>
         <Field label="Note for the Admin" hint="optional"><Input {...field('note')} maxLength={500} placeholder="e.g. New club in Brandon, coach is Boxing Canada certified" /></Field>
         <FullRow>
-          <Muted>{intro ?? 'Only clubs already in the app can be invited. A site Admin checks a new club and its contact first. Once approved, the contact becomes its Owner.'}</Muted>
+          <Muted>{intro ?? 'Only clubs already in the app can be invited. A site Admin checks a new club and its owner first. Once approved, the owner email becomes the club\'s Owner and can sign in.'}</Muted>
         </FullRow>
       </FormCard>
       <SuccessAlert>{sent}</SuccessAlert>
@@ -165,7 +165,7 @@ export function AdminClubRequests({ onChange }) {
 
   const columns = (open) => [
     { title: 'Club', dataIndex: 'name', key: 'name' },
-    { title: 'Contact', key: 'contact', value: (r) => `${r.contact_name} ${r.contact_email}`, render: (_, r) => `${r.contact_name} (${r.contact_email})` },
+    { title: 'Owner', key: 'contact', value: (r) => `${r.contact_name} ${r.contact_email}`, render: (_, r) => `${r.contact_name} (${r.contact_email})` },
     { title: 'Asked by', key: 'by', value: (r) => personName(r.requester), render: (_, r) => personName(r.requester) },
     { title: 'For event', key: 'event', value: (r) => r.event?.name ?? '', render: (_, r) => dash(r.event?.name) },
     { title: 'Note', key: 'note', value: (r) => r.note ?? '', render: (_, r) => dash(r.note) },

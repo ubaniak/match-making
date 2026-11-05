@@ -1222,8 +1222,8 @@ export const mockApi = {
     const clean = (name ?? '').trim()
     const email = (contactEmail ?? '').trim().toLowerCase()
     if (!clean) throw new Error('Give the club a name')
-    if (!contactName?.trim()) throw new Error('Give a contact name for the club')
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email address doesn\'t look right')
+    if (!contactName?.trim()) throw new Error('Give the club owner\'s name')
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Give the club owner\'s email address (it must look like name@example.com)')
     const existing = current.clubs.find((c) => c.name.trim().toLowerCase() === clean.toLowerCase())
     if (existing) throw new Error(`${existing.name} is already in the app. Invite it instead.`)
     current.clubRequests ??= []
@@ -1236,7 +1236,7 @@ export const mockApi = {
     }
     current.clubRequests.push(request)
     notify(current, [ADMIN_ID], 'club_request', `${personName(current, me)} asked for a new club: ${clean}`, {
-      body: `Contact: ${request.contact_name} (${email})${eventId ? `. For ${eventName(current, eventId)}` : ''}${request.note ? `. ${request.note}` : ''}`,
+      body: `Owner: ${request.contact_name} (${email})${eventId ? `. For ${eventName(current, eventId)}` : ''}${request.note ? `. ${request.note}` : ''}`,
       key: `club-request:${request.id}`,
     })
     write(DATA_KEY, current)

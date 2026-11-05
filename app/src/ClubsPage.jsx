@@ -93,7 +93,7 @@ function ClubList({ siteAdmin, profile, onOpen }) {
       {/* A club that isn't in the app yet needs a site Admin's approval (migration 60). */}
       {!siteAdmin && (
         <Section title="Need a club that isn't here?">
-          <RequestClub intro="Ask a site Admin to add a club that isn't in the app yet, with a contact. Once approved, the contact becomes its Owner and the club can be invited to events." />
+          <RequestClub intro="Ask a site Admin to add a club that isn't in the app yet, with its owner's name and email. Once approved, that email becomes the club's Owner and the club can be invited to events." />
         </Section>
       )}
     </>

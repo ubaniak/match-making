@@ -1,7 +1,7 @@
 -- Migration 60: new clubs need a site Admin's approval.
 --
 -- Bhavek (2026-11-05): if someone wants to invite a club that isn't in the app yet, they can't add
--- it themselves. They send a request (club name and a contact) and a site Admin approves it.
+-- it themselves. They send a request (club name and its owner's name and email, both required) and a site Admin approves it.
 --
 --   * create_event_club (an event Owner making a club on the spot, migration 23) is now for site
 --     Admins only. Everyone else picks from the clubs already in the app.
@@ -127,10 +127,10 @@ begin
     raise exception 'Give the club a name' using errcode = '22023';
   end if;
   if v_contact = '' then
-    raise exception 'Give a contact name for the club' using errcode = '22023';
+    raise exception 'Give the club owner''s name' using errcode = '22023';
   end if;
   if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
-    raise exception 'That email address doesn''t look right' using errcode = '22023';
+    raise exception 'Give the club owner''s email address (it must look like name@example.com)' using errcode = '22023';
   end if;
   select name into v_existing from public.clubs where lower(trim(name)) = lower(v_name);
   if v_existing is not null then
@@ -147,7 +147,7 @@ begin
   perform public.add_notification(
     public.site_admin_ids(), 'club_request',
     coalesce(public.person_name(auth.uid()), 'Someone') || ' asked for a new club: ' || v_name,
-    'Contact: ' || v_contact || ' (' || v_email || ')'
+    'Owner: ' || v_contact || ' (' || v_email || ')'
       || coalesce('. For ' || public.event_name(p_event_id), '')
       || coalesce('. ' || v_note, ''),
     null, null, null, null, 'club-request:' || v_id);
