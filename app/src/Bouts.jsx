@@ -30,7 +30,7 @@ const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparr
 const boutTypeHelp = {
   scored: 'Must follow every match rule. Both corners\' club owners and a Chief Official approve it.',
   developmental: 'The match rules apply, but a Chief Official can override them with a reason. Both corners\' club owners and a Chief Official approve it.',
-  sparring: 'The match rules don\'t apply (only male v female, too young and missing details still block). No approval needed: the bout is approved as soon as it is made.',
+  sparring: 'The match rules don\'t apply (only male v female, too young and missing details still block). No approval or weigh-in needed: the bout is approved as soon as it is made.',
 }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
 const personName = (user) => (user ? user.name || user.email : '—')
@@ -935,7 +935,7 @@ function BoutRow({ bout, index, count, event, athletes, weights, details = false
       {bout.result_note && <Muted>Result note: {bout.result_note}</Muted>}
 
       {sparring ? (
-        <Muted>Sparring: no approval needed.</Muted>
+        <Muted>Sparring: no approval or weigh-in needed.</Muted>
       ) : (
       <ul className="approvals">
         {['red', 'blue', 'official'].filter((side) => !(sameClub && side === 'blue')).map((side) => {
@@ -1262,8 +1262,10 @@ function SendNotice({ notice, onDismiss }) {
 function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run }) {
   const recorded = Object.fromEntries(weighIns.map((w) => [w.athlete_id, w]))
   // Everyone matched that day (even on a bout since cancelled, so both opponents can still weigh
-  // in), plus anyone already weighed in.
-  const ids = [...new Set([...allBouts.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]), ...weighIns.map((w) => w.athlete_id)])]
+  // in), plus anyone already weighed in. Sparring bouts need no weigh-in, so an athlete boxing only
+  // in Sparring bouts isn't listed (migration 60).
+  const weighed = allBouts.filter((b) => boutTypeOf(b) !== 'sparring')
+  const ids = [...new Set([...weighed.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]), ...weighIns.map((w) => w.athlete_id)])]
   const rows = ids.map((id) => athletes[id]).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
 
   async function save(athlete, form) {
@@ -1296,7 +1298,8 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
       const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
       weights[athlete.id] = Number(form.weight)
       const withFix = (id) => (id === athlete.id ? fixed : athletes[id])
-      for (const b of bouts.filter((x) => !x.winner && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
+      // Sparring bouts need no weigh-in, so the weigh-in never flags them.
+      for (const b of bouts.filter((x) => !x.winner && boutTypeOf(x) !== 'sparring' && [x.red_athlete_id, x.blue_athlete_id].includes(athlete.id))) {
         const check = checkForType(checkMatch(withFix(b.red_athlete_id), withFix(b.blue_athlete_id), event.start_date, weights), boutTypeOf(b))
         // On a Developmental bout, rule breaks an official already overrode don't count again.
         const broken = check.blocks.filter((x) => !(b.override_blocks ?? []).includes(x))
@@ -1349,7 +1352,7 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
     <div className="weigh-in">
       <Title level={4}>Weigh-in, {formatDay(day)}</Title>
       {rows.length === 0 ? (
-        <Muted>Nobody is boxing this day yet.</Muted>
+        <Muted>{allBouts.length ? 'Nobody needs weighing this day: Sparring bouts need no weigh-in.' : 'Nobody is boxing this day yet.'}</Muted>
       ) : (
         <DataTable rowKey="id" columns={columns} dataSource={rows} csvName={`${event.name} weigh-in ${day}`} />
       )}
@@ -1357,6 +1360,7 @@ function WeighIn({ event, day, bouts, allBouts, athletes, weighIns, busy, run })
         Check each athlete's weight, medical, date of birth (against their ID) and number of bouts. If the date of birth or bouts are wrong, pick "Wrong, correct it" and type the right value: the athlete's record is fixed.
         A failed medical, a no-show, a weight that no longer fits, a date of birth or bouts that couldn't be checked, or a correction that changes the athlete's age group or Novice/Open marks the athlete's bouts "Needs discussion".
         Nothing is cancelled automatically: a Chief Official keeps or cancels each one, and the opponent can still weigh in.
+        Sparring bouts need no weigh-in: athletes boxing only in Sparring bouts aren't listed, and the weigh-in never marks a Sparring bout.
       </Muted>
     </div>
   )

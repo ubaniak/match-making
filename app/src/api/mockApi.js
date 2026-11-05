@@ -447,7 +447,8 @@ function flagBout(current, bout, reason) {
 
 function flagAthleteBouts(current, eventId, athleteId, day, reason) {
   for (const b of current.bouts ?? []) {
-    if (b.event_id === eventId && b.day === day && [b.red_athlete_id, b.blue_athlete_id].includes(athleteId)) flagBout(current, b, reason)
+    // Sparring bouts need no weigh-in, so it never flags them (migration 60).
+    if (b.event_id === eventId && b.day === day && b.bout_type !== 'sparring' && [b.red_athlete_id, b.blue_athlete_id].includes(athleteId)) flagBout(current, b, reason)
   }
 }
 
