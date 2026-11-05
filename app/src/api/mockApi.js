@@ -1666,6 +1666,10 @@ export const mockApi = {
     throw new Error('Demo mode doesn\'t send email')
   },
 
+  async emailClubInvitation() {
+    throw new Error('Demo mode doesn\'t send email')
+  },
+
   async saveBout({ id, eventId, day, redId, blueId, needsSupervisor, warnings, boutType = 'scored', blocks = [], overrideReason = null }) {
     const current = data()
     const event = findEvent(current, eventId)
