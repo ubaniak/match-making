@@ -7,11 +7,11 @@ import { api } from './api'
 import { formatWeight } from './athletes'
 import { ageCategory, categoryText, experienceCategory } from './categories'
 import { daysBetween, formatDay, formatShortDay } from './dates'
-import { bestOpponents, checkForType, checkMatch } from './matching'
+import { bestOpponents, checkForType, checkMatch, suggestMatches } from './matching'
 import { EventOfficials } from './Officials'
 import { rolesText } from './officialRoles'
 import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, ClearOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
@@ -289,6 +289,14 @@ function Card({ event, data, rights, busy, run, publish }) {
       {rights.seesConflicts && <ConflictsSummary bouts={shown} />}
       {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only a Chief Official can make or change bouts.</Muted>}
 
+      {canMatch && !rematch && (
+        <SuggestedMatches
+          event={event} day={day} weights={weights} busy={busy}
+          taken={new Set(live.flatMap((b) => [b.red_athlete_id, b.blue_athlete_id]))}
+          onAdd={(fields) => run(() => api.saveBout({ ...fields, eventId: event.id, day }))}
+        />
+      )}
+
       {canMatch && (
         <MatchForm
           key={`${day}-${rematch?.id ?? 'new'}`}
@@ -386,6 +394,93 @@ function BoutsImport({ event, data, days, official, run }) {
         Rows that break the match rules are skipped, unless their bout_type is sparring (sparring skips the rules). A Developmental bout can be overridden with a reason on the form.
       </Muted>
     </CsvImport>
+  )
+}
+
+// "Suggested matches": the app pairs up the athletes who are free this day (suggestMatches in
+// matching.js, the same rules as Best match) and the Owner or a Chief Official adds each pairing as
+// a Scored bout with one click. When an athlete fits more than one opponent, a dropdown picks which.
+function SuggestedMatches({ event, day, weights, taken, busy, onAdd }) {
+  const takenKey = [...taken].sort().join(',')
+  const weightsKey = JSON.stringify(weights)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pairs = useMemo(() => suggestMatches(event.athletes, event.start_date, weights, taken), [event.athletes, event.start_date, takenKey, weightsKey])
+  const [chosen, setChosen] = useState({}) // { [athleteId]: opponentId }
+  const [adding, setAdding] = useState(null)
+  if (pairs.length === 0) return null
+  // Who each athlete is paired with in another row, so a dropdown can say so.
+  const pickedFor = Object.fromEntries(pairs.filter((p) => !p.pick.taken).flatMap((p) => [[p.pick.athlete.id, p.athlete], [p.athlete.id, p.pick.athlete]]))
+  const note = (m) => [
+    m.clubsPick && "club's pick",
+    m.check.needsSupervisor ? 'needs the Chief Official' : m.check.warnings.length ? `${m.check.warnings.length} warning${m.check.warnings.length === 1 ? '' : 's'}` : 'good match',
+  ].filter(Boolean).join(', ')
+  const who = (a) => `${a.name} · ${a.club ?? '—'} · ${categoryText(a, event.start_date)}`
+
+  async function add(pair, match) {
+    setAdding(pair.athlete.id)
+    const ok = await onAdd({
+      redId: pair.athlete.id, blueId: match.athlete.id, needsSupervisor: match.check.needsSupervisor, warnings: match.check.warnings, boutType: 'scored',
+    })
+    setAdding(null)
+    if (ok) setChosen((c) => Object.fromEntries(Object.entries(c).filter(([id]) => id !== pair.athlete.id)))
+  }
+
+  return (
+    <FormCard title={`Suggested matches for ${formatDay(day)} (${pairs.length})`} className="suggested-matches">
+      <FullRow>
+        <Muted>
+          Athletes entered in this event who fit each other under the match rules, from different clubs and not boxing yet this day.
+          Click Add to make it a Scored bout (red corner first). Where an athlete fits more than one opponent, choose one from the list.
+        </Muted>
+      </FullRow>
+      {pairs.map((pair) => {
+        const match = pair.opponents.find((m) => m.athlete.id === chosen[pair.athlete.id]) ?? pair.pick
+        const options = pair.opponents.map((m) => {
+          const other = pickedFor[m.athlete.id]
+          const elsewhere = other && other.id !== pair.athlete.id ? `, suggested with ${other.name}` : ''
+          return { value: m.athlete.id, label: `${who(m.athlete)} (${note(m)}${elsewhere})` }
+        })
+        return (
+          <FullRow key={pair.athlete.id}>
+            <div className="suggested-match">
+              <div className="suggested-match-side">
+                <span className="corner-label red">Red</span> <Text strong>{pair.athlete.name}</Text>
+                <br /><Muted block={false}>{pair.athlete.club ?? '—'} · {categoryText(pair.athlete, event.start_date)}</Muted>
+              </div>
+              <div className="suggested-match-side">
+                <span className="corner-label blue">Blue</span>{' '}
+                {pair.opponents.length > 1 ? (
+                  <>
+                    <Muted block={false}>{pair.opponents.length} possible opponents</Muted>
+                    <Pick
+                      aria-label={`Opponent for ${pair.athlete.name}`}
+                      value={match.athlete.id}
+                      onChange={(id) => setChosen((c) => ({ ...c, [pair.athlete.id]: id }))}
+                      options={options}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text strong>{match.athlete.name}</Text>
+                    <br /><Muted block={false}>{match.athlete.club ?? '—'} · {categoryText(match.athlete, event.start_date)}</Muted>
+                  </>
+                )}
+              </div>
+              <Button type="primary" disabled={busy} loading={adding === pair.athlete.id} onClick={() => add(pair, match)}>
+                Add
+              </Button>
+              <div className="suggested-match-note">
+                <Muted block={false}>
+                  {match.clubsPick && "The club suggested this opponent. "}
+                  {pickedFor[match.athlete.id] && pickedFor[match.athlete.id].id !== pair.athlete.id && `${match.athlete.name} is also suggested with ${pickedFor[match.athlete.id].name}; adding this bout replaces that suggestion. `}
+                  {match.check.warnings.length ? `Check before approving: ${match.check.warnings.join('; ')}.` : 'A good match.'}
+                </Muted>
+              </div>
+            </div>
+          </FullRow>
+        )
+      })}
+    </FormCard>
   )
 }
 
@@ -495,13 +590,22 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
         <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={redOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
       <FullRow>
-        <Button
-          icon={<SwapOutlined rotate={90} />}
-          disabled={!redId && !blueId}
-          onClick={() => { setRedId(blueId); setBlueId(redId) }}
-        >
-          Swap corner
-        </Button>
+        <Space wrap>
+          <Button
+            icon={<SwapOutlined rotate={90} />}
+            disabled={!redId && !blueId}
+            onClick={() => { setRedId(blueId); setBlueId(redId) }}
+          >
+            Swap corner
+          </Button>
+          <Button
+            icon={<ClearOutlined />}
+            disabled={!redId && !blueId}
+            onClick={() => { setRedId(''); setBlueId(''); setReason('') }}
+          >
+            Clear athletes
+          </Button>
+        </Space>
       </FullRow>
       <Field label={<span className="corner-label blue">Blue corner</span>}>
         <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={blueOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
