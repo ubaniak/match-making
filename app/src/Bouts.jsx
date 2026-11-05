@@ -11,7 +11,7 @@ import { bestOpponents, checkMatch, suggestMatches } from './matching'
 import { EventOfficials } from './Officials'
 import { rolesText } from './officialRoles'
 import { Alert, Button, Card as AntCard, Collapse, Dropdown, Input, Radio, Space, Switch, Tabs } from 'antd'
-import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
+import { ArrowDownOutlined, ArrowUpOutlined, DownOutlined, HolderOutlined, ClearOutlined, SendOutlined, SwapOutlined } from '@ant-design/icons'
 import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
@@ -589,13 +589,22 @@ function MatchForm({ event, day, bout, weights, taken, busy, canOverride, onCanc
         <Pick value={redId} onChange={setRedId} placeholder="Choose an athlete…" options={redOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
       </Field>
       <FullRow>
-        <Button
-          icon={<SwapOutlined rotate={90} />}
-          disabled={!redId && !blueId}
-          onClick={() => { setRedId(blueId); setBlueId(redId) }}
-        >
-          Swap corner
-        </Button>
+        <Space wrap>
+          <Button
+            icon={<SwapOutlined rotate={90} />}
+            disabled={!redId && !blueId}
+            onClick={() => { setRedId(blueId); setBlueId(redId) }}
+          >
+            Swap corner
+          </Button>
+          <Button
+            icon={<ClearOutlined />}
+            disabled={!redId && !blueId}
+            onClick={() => { setRedId(''); setBlueId(''); setReason('') }}
+          >
+            Clear athletes
+          </Button>
+        </Space>
       </FullRow>
       <Field label={<span className="corner-label blue">Blue corner</span>}>
         <Pick value={blueId} onChange={setBlueId} placeholder="Choose an athlete…" options={blueOptions} notFoundContent={bestOnly ? 'No one fits. Turn off Best match to see everyone.' : undefined} />
