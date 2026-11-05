@@ -99,7 +99,7 @@ function conflictsText(bout) {
   return (bout.bout_conflicts ?? []).map((c) => `${personName(c.user)}${c.reason ? ` (${c.reason})` : ''}`).join('; ')
 }
 
-// The Bouts tab: the card, the weigh-in and results.
+// The Bouts tab: the card and results. The weigh-in has its own tab (EventWeighIns).
 // publish: { canChange, busy, onChange(show) } for the public bout list switch.
 export function EventBouts({ event, bouts, publish }) {
   if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
@@ -108,6 +108,49 @@ export function EventBouts({ event, bouts, publish }) {
       <ErrorAlert>{bouts.error}</ErrorAlert>
       <Card event={event} data={bouts.data} rights={bouts.rights} busy={bouts.busy} run={bouts.run} publish={publish} />
     </>
+  )
+}
+
+// The Weigh-ins tab: one day at a time, for the same people who could record it on the Bouts tab
+// before (the CO/Deputy and site Admin every day, other officials on the days they accepted).
+export function EventWeighIns({ event, bouts }) {
+  if (!bouts.data) return bouts.error ? <ErrorAlert>{bouts.error}</ErrorAlert> : <Muted>Loading…</Muted>
+  return (
+    <>
+      <ErrorAlert>{bouts.error}</ErrorAlert>
+      <WeighInDays event={event} data={bouts.data} rights={bouts.rights} busy={bouts.busy} run={bouts.run} />
+    </>
+  )
+}
+
+function WeighInDays({ event, data, rights, busy, run }) {
+  const days = daysBetween(event.start_date, event.end_date)
+  const [day, setDay] = useState(days[0])
+  const athletes = useMemo(() => Object.fromEntries(event.athletes.map((a) => [a.id, a])), [event.athletes])
+  const weighIns = data.weighIns.filter((w) => w.day === day)
+  const dayBouts = data.bouts.filter((b) => b.day === day)
+  const live = dayBouts.filter((b) => b.status !== 'cancelled').sort((a, b) => a.position - b.position)
+  const canWeighIn = rights.cardOpen && (rights.official || rights.weighInDays.includes(day))
+  return (
+    <Section title="Weigh-ins">
+      {days.length > 1 && (
+        <Tabs
+          activeKey={day}
+          onChange={setDay}
+          items={days.map((d) => ({
+            key: d,
+            label: `${formatShortDay(d)} (${data.weighIns.filter((w) => w.day === d).length})`,
+          }))}
+        />
+      )}
+      {canWeighIn ? (
+        <WeighIn event={event} day={day} bouts={live} allBouts={dayBouts} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
+      ) : weighIns.length > 0 ? (
+        <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
+      ) : (
+        <Muted>No weigh-in recorded for {formatDay(day)} yet.</Muted>
+      )}
+    </Section>
   )
 }
 
@@ -164,7 +207,6 @@ function Card({ event, data, rights, busy, run, publish }) {
   const weights = Object.fromEntries(weighIns.filter((w) => w.weight_kg != null).map((w) => [w.athlete_id, Number(w.weight_kg)]))
   const weighInStarted = weighIns.length > 0
   const canMatch = rights.cardOpen && (rights.official || (rights.owner && !weighInStarted))
-  const canWeighIn = rights.cardOpen && (rights.official || rights.weighInDays.includes(day))
   const dayBouts = data.bouts.filter((b) => b.day === day)
   const live = dayBouts.filter((b) => b.status !== 'cancelled').sort((a, b) => a.position - b.position)
   const cancelled = dayBouts.filter((b) => b.status === 'cancelled')
@@ -373,12 +415,6 @@ function Card({ event, data, rights, busy, run, publish }) {
         />
       )}
 
-      {canWeighIn && (
-        <WeighIn event={event} day={day} bouts={live} allBouts={dayBouts} athletes={athletes} weighIns={weighIns} busy={busy} run={run} />
-      )}
-      {!canWeighIn && weighIns.length > 0 && (
-        <Muted>Weigh-in recorded for {weighIns.length} athlete{weighIns.length === 1 ? '' : 's'} on {formatDay(day)}.</Muted>
-      )}
     </Section>
   )
 }
