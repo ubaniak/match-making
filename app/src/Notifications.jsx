@@ -79,7 +79,7 @@ export function NotificationsProvider({ userId, children }) {
 
 const actionLabels = {
   availability: 'Answer', bout_approval: 'Review bout', bout_review: 'Review bout', join_request: 'Answer', club_invite: 'Answer', late_entry: 'Answer',
-  transfer: 'Answer', member_request: 'Review',
+  transfer: 'Answer', member_request: 'Review', club_request: 'Review',
 }
 
 function timeAgo(iso) {

@@ -654,9 +654,45 @@ export const supabaseApi = {
     await rpc('decide_join_request', { p_event_id: eventId, p_club_id: clubId, p_accept: accept })
   },
 
-  // The event's Owner (or a site Admin) creates a club that joins the event straight away.
+  // A site Admin creates a club that joins the event straight away (migration 60: site Admins only).
   async createEventClub(eventId, name, ownerIds) {
     return rpc('create_event_club', { p_event_id: eventId, p_name: name, p_owner_ids: ownerIds })
+  },
+
+  // Anyone asks a site Admin for a club that isn't in the app yet (migration 60). From an event
+  // they run, the new club is invited to it once approved.
+  async requestClub({ name, contactName, contactEmail, note, eventId }) {
+    return rpc('request_club', {
+      p_name: name, p_contact_name: contactName, p_contact_email: contactEmail,
+      p_note: note || null, p_event_id: eventId ?? null,
+    })
+  },
+
+  // Site Admins see every request; everyone else sees their own.
+  async listClubRequests({ eventId } = {}) {
+    let query = supabase
+      .from('club_requests')
+      .select(`id, name, contact_name, contact_email, note, event_id, status, requested_at, decided_at, decision_note, club_id,
+        event:events(name), requester:profiles!club_requests_requested_by_fkey(name, email)`)
+      .order('requested_at', { ascending: false })
+    if (eventId) query = query.eq('event_id', eventId)
+    const { data, error } = await query
+    if (error) throw error
+    return data
+  },
+
+  // Returns { club_id, email, new_account }.
+  async decideClubRequest(requestId, approve, { name, note } = {}) {
+    return rpc('decide_club_request', { p_request_id: requestId, p_approve: approve, p_name: name || null, p_note: note || null })
+  },
+
+  async withdrawClubRequest(requestId) {
+    await rpc('withdraw_club_request', { p_request_id: requestId })
+  },
+
+  async deleteClubRequest(requestId) {
+    const { error } = await supabase.from('club_requests').delete().eq('id', requestId)
+    if (error) throw error
   },
 
   async addEventClubOwner(eventId, clubId, userId) {

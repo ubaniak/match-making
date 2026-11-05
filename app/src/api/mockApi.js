@@ -1200,6 +1200,7 @@ export const mockApi = {
   // The event's Owner (or a site Admin) creates a club that joins the event straight away.
   async createEventClub(eventId, name, ownerIds) {
     const current = data()
+    requireSiteAdmin('Only a site Admin can add a new club. Use "Request a new club" instead.')
     requireClubManager(current, eventId, 'add clubs')
     if (!name?.trim()) throw new Error('Give the club a name')
     if (!ownerIds?.length) throw new Error('Choose at least one club owner')
@@ -1210,6 +1211,117 @@ export const mockApi = {
     current.eventClubs.push({ event_id: eventId, club_id: club.id, status: 'accepted', requested_at: now() })
     write(DATA_KEY, current)
     return club.id
+  },
+
+  // Mirrors request_club (migration 60).
+  async requestClub({ name, contactName, contactEmail, note, eventId }) {
+    const current = data()
+    const me = currentUserId()
+    if (!me) throw new Error('Sign in to ask for a new club')
+    if (eventId) requireClubManager(current, eventId, 'ask for a club for this event')
+    const clean = (name ?? '').trim()
+    const email = (contactEmail ?? '').trim().toLowerCase()
+    if (!clean) throw new Error('Give the club a name')
+    if (!contactName?.trim()) throw new Error('Give a contact name for the club')
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email address doesn\'t look right')
+    const existing = current.clubs.find((c) => c.name.trim().toLowerCase() === clean.toLowerCase())
+    if (existing) throw new Error(`${existing.name} is already in the app. Invite it instead.`)
+    current.clubRequests ??= []
+    if (current.clubRequests.some((r) => r.status === 'pending' && r.name.trim().toLowerCase() === clean.toLowerCase())) {
+      throw new Error(`Someone has already asked for ${clean}. A site Admin will look at it soon.`)
+    }
+    const request = {
+      id: crypto.randomUUID(), name: clean, contact_name: contactName.trim(), contact_email: email, note: note?.trim() || null,
+      event_id: eventId ?? null, status: 'pending', requested_by: me, requested_at: now(), decided_at: null, decision_note: null, club_id: null,
+    }
+    current.clubRequests.push(request)
+    notify(current, [ADMIN_ID], 'club_request', `${personName(current, me)} asked for a new club: ${clean}`, {
+      body: `Contact: ${request.contact_name} (${email})${eventId ? `. For ${eventName(current, eventId)}` : ''}${request.note ? `. ${request.note}` : ''}`,
+      key: `club-request:${request.id}`,
+    })
+    write(DATA_KEY, current)
+    return request.id
+  },
+
+  async listClubRequests({ eventId } = {}) {
+    const current = data()
+    const me = currentUserId()
+    return (current.clubRequests ?? [])
+      .filter((r) => (isSiteAdmin() || r.requested_by === me) && (!eventId || r.event_id === eventId))
+      .sort((a, b) => b.requested_at.localeCompare(a.requested_at))
+      .map((r) => ({ ...r, event: r.event_id ? { name: eventName(current, r.event_id) } : null, requester: findUser(current, r.requested_by) }))
+  },
+
+  // Mirrors decide_club_request.
+  async decideClubRequest(requestId, approve, { name, note } = {}) {
+    requireSiteAdmin('Only a site Admin can approve new clubs')
+    const current = data()
+    const request = (current.clubRequests ?? []).find((r) => r.id === requestId)
+    if (request?.status !== 'pending') throw new Error('That request isn\'t waiting any more')
+    const decided = { decided_at: now(), decision_note: note?.trim() || null }
+    if (!approve) {
+      Object.assign(request, decided, { status: 'denied' })
+      resolveNotes(current, `club-request:${request.id}`)
+      notify(current, [request.requested_by], 'club_request_answer', `Your request for ${request.name} was declined`, {
+        body: decided.decision_note, eventId: request.event_id, tab: request.event_id ? 'clubs' : null,
+      })
+      write(DATA_KEY, current)
+      return { club_id: null, email: request.contact_email, new_account: false }
+    }
+    const clubName = name?.trim() || request.name
+    if (current.clubs.some((c) => c.name.trim().toLowerCase() === clubName.toLowerCase())) {
+      throw new Error(`There is already a club called ${clubName}. Deny this request, or give the club another name.`)
+    }
+    const club = { id: crypto.randomUUID(), name: clubName }
+    current.clubs.push(club)
+    const user = current.users.find((u) => u.id && u.email?.toLowerCase() === request.contact_email)
+    let newAccount = false
+    if (user) {
+      putClubOwner(current, club.id, user.id)
+    } else {
+      current.clubEmailInvites ??= []
+      current.clubEmailInvites.push({ club_id: club.id, email: request.contact_email, role: 'owner', status: 'active', invited_at: now() })
+      if (!current.users.some((u) => u.email === request.contact_email)) {
+        current.users.push({ id: null, email: request.contact_email, name: request.contact_name, role_id: 'member', state: 'Invited' })
+      }
+      newAccount = true
+    }
+    const invited = Boolean(request.event_id) && eventOpen(findEvent(current, request.event_id))
+    if (invited && !current.eventClubs.some((ec) => ec.event_id === request.event_id && ec.club_id === club.id)) {
+      current.eventClubs.push({ event_id: request.event_id, club_id: club.id, status: 'invited', requested_by: request.requested_by, requested_at: now() })
+      notify(current, clubPeopleIds(current, club.id), 'club_invite', `${clubName} is invited to ${eventName(current, request.event_id)}`, {
+        body: 'Accept to enter athletes. Only the athletes you enter take part.', eventId: request.event_id, clubId: club.id, tab: 'clubs',
+        key: `club-invite:${request.event_id}:${club.id}`,
+      })
+    }
+    Object.assign(request, decided, { status: 'approved', name: clubName, club_id: club.id })
+    resolveNotes(current, `club-request:${request.id}`)
+    notify(current, [request.requested_by], 'club_request_answer', `${clubName} was approved`, {
+      body: (invited
+        ? `It is invited to ${eventName(current, request.event_id)} and is in once ${request.contact_name} accepts.`
+        : `${request.contact_name} is its Owner.`) + (decided.decision_note ? ` ${decided.decision_note}` : ''),
+      eventId: invited ? request.event_id : null, clubId: club.id, tab: invited ? 'clubs' : null,
+    })
+    write(DATA_KEY, current)
+    return { club_id: club.id, email: request.contact_email, new_account: newAccount }
+  },
+
+  async withdrawClubRequest(requestId) {
+    const current = data()
+    const request = (current.clubRequests ?? []).find((r) => r.id === requestId)
+    if (request?.status !== 'pending' || !(isSiteAdmin() || request.requested_by === currentUserId())) {
+      throw new Error('That request isn\'t waiting any more')
+    }
+    Object.assign(request, { status: 'withdrawn', decided_at: now() })
+    resolveNotes(current, `club-request:${request.id}`)
+    write(DATA_KEY, current)
+  },
+
+  async deleteClubRequest(requestId) {
+    requireSiteAdmin('Only a site Admin can delete club requests')
+    const current = data()
+    current.clubRequests = (current.clubRequests ?? []).filter((r) => r.id !== requestId)
+    write(DATA_KEY, current)
   },
 
   async addEventClubOwner(eventId, clubId, userId) {

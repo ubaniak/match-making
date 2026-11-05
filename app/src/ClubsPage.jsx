@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Checkbox, Descriptions, Input, Popconfirm, Space } from 'antd'
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { AdminClubRequests, RequestClub } from './ClubRequests'
 import DataTable from './DataTable'
 import { api } from './api'
 import AthleteForm from './AthleteForm'
@@ -80,6 +81,7 @@ function ClubList({ siteAdmin, profile, onOpen }) {
       <PageHeading title="Clubs" />
       {siteAdmin && <NewClubForm onCreated={onOpen} />}
       {siteAdmin && clubs && <ClubsImport clubs={clubs} onDone={reload} />}
+      {siteAdmin && <AdminClubRequests onChange={reload} />}
       {siteAdmin && <PendingInvites onChange={reload} />}
       <ErrorAlert>{error}</ErrorAlert>
       {clubs === null && !error && <Muted>Loading…</Muted>}
@@ -88,6 +90,12 @@ function ClubList({ siteAdmin, profile, onOpen }) {
       {/* Club owners and coaches only see their own clubs (migration 31). */}
       {siteAdmin && others.length > 0 && <ClubTable title={mine.length ? 'Other clubs' : 'All clubs'} clubs={others} profile={profile} onOpen={onOpen} />}
       {!siteAdmin && clubs?.length > 0 && mine.length === 0 && <Muted>You aren't in a club yet. A site Admin adds you to one.</Muted>}
+      {/* A club that isn't in the app yet needs a site Admin's approval (migration 60). */}
+      {!siteAdmin && (
+        <Section title="Need a club that isn't here?">
+          <RequestClub intro="Ask a site Admin to add a club that isn't in the app yet, with a contact. Once approved, the contact becomes its Owner and the club can be invited to events." />
+        </Section>
+      )}
     </>
   )
 }
