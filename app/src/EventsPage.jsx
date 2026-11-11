@@ -1112,6 +1112,8 @@ const clubStatusLabels = { accepted: 'In', invited: 'Invited, waiting for the cl
 // accept or decline invitations. A club is in (and can enter athletes) only once it has accepted.
 function EventClubs({ event, may, clubs, profile, onChange }) {
   const [choice, setChoice] = useState('')
+  const [notes, setNotes] = useState('') // optional, added to the invitation email
+  const [emailed, setEmailed] = useState(null) // { type, text } about the last invitation email
   const [newClub, setNewClub] = useState({ name: '', owners: [] })
   const [ownersOf, setOwnersOf] = useState(null) // club id whose owners are being changed
   const [error, setError] = useState(null)
@@ -1144,20 +1146,38 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
     }
   }
 
+  // Emails the club's Owners the event's dates, times and notes. The invitation (or, for a club made
+  // here, the club being in) stands either way. `status` says which: 'invited' or 'in'.
+  async function emailOwners(clubId, clubName, status) {
+    const done = status === 'invited' ? `${clubName} is invited (an owner must accept)` : `${clubName} is in`
+    try {
+      await api.emailClubInvitation(event.id, clubId, notes)
+      setEmailed({ type: 'info', text: `${done}. Its owners were emailed the event's dates, weigh-in and bout times${notes.trim() ? ' and your notes' : ''}.` })
+    } catch (err) {
+      setEmailed({ type: 'warning', text: `${done}, but the email to its owners wasn't sent (${err.message}).` })
+    }
+  }
+
   function invite(e) {
     e.preventDefault()
     if (!choice) return
+    const clubId = choice
+    setEmailed(null)
     run(async () => {
-      await api.inviteClub(event.id, choice)
+      await api.inviteClub(event.id, clubId)
       setChoice('')
+      await emailOwners(clubId, clubById[clubId]?.name ?? 'The club', byClub[clubId]?.status === 'requested' ? 'in' : 'invited')
     })
   }
 
   function addClub(e) {
     e.preventDefault()
+    const name = newClub.name.trim()
+    setEmailed(null)
     run(async () => {
-      await api.createEventClub(event.id, newClub.name, newClub.owners)
+      const clubId = await api.createEventClub(event.id, newClub.name, newClub.owners)
       setNewClub({ name: '', owners: [] })
+      if (clubId) await emailOwners(clubId, name, 'in')
     })
   }
 
@@ -1235,7 +1255,21 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
             />
           </Field>
           <FullRow>
-            <Muted>An invited club is in once one of its owners accepts. Only the athletes the club enters take part. A club that asked to join is in straight away.</Muted>
+            <Field label="Notes for the email" hint="optional">
+              <Input.TextArea
+                value={notes}
+                maxLength={2000}
+                autoSize={{ minRows: 2, maxRows: 6 }}
+                placeholder="For example: entries close Friday; bring each boxer's passbook to weigh-in"
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </Field>
+          </FullRow>
+          <FullRow>
+            <Muted>
+              An invited club is in once one of its owners accepts. Only the athletes the club enters take part. A club that asked to join is in straight away.
+              The club's owners get an email with the event's dates, each day's weigh-in and bout times, and these notes. A club added below gets the same email.
+            </Muted>
           </FullRow>
         </FormCard>
       )}
@@ -1278,6 +1312,7 @@ function EventClubs({ event, may, clubs, profile, onChange }) {
           ))}
         </Space>
       )}
+      {emailed && <Alert className="gap" type={emailed.type} showIcon closable={{ onClose: () => setEmailed(null) }} title={emailed.text} />}
       <ErrorAlert>{error}</ErrorAlert>
       {rows.length > 0 && <DataTable rowKey="club_id" columns={columns} dataSource={rows} csvName={`${event.name} clubs`} />}
       <ClubOwnersDialog

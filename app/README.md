@@ -110,7 +110,7 @@ The email wording lives in `supabase/templates/`. In Authentication > Emails, pa
 | `magic_link.html` | Magic Link | Your Match Making sign-in code |
 | `confirm_signup.html` | Confirm signup | Welcome to Match Making |
 
-Each email shows a 6-digit code and a sign-in link. The code is what the sign-in page asks for, and it works when the email is opened on a different device. The link still works too, which is handy in development. If the emails show a link but no code, the templates haven't been pasted in yet. Code length is set under Authentication > Sign In / Providers > Email > Email OTP Length (keep it at 6).
+Every email, these two and the Edge Function's, uses the site's Navy & Gold look with large text and high contrast. Each sign-in email shows a 6-digit code and a sign-in link. The code is what the sign-in page asks for, and it works when the email is opened on a different device. The link still works too, which is handy in development. If the emails show a link but no code, the templates haven't been pasted in yet. Code length is set under Authentication > Sign In / Providers > Email > Email OTP Length (keep it at 6).
 
 ## Google sign-in
 
@@ -155,7 +155,7 @@ Remove the variable and redeploy to go back to OpenStreetMap.
 
 ## Owner emails
 
-When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations, sends bouts for approval, and welcomes people a site Admin adds on Admin > Users or an official adds to an event (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
+When a site Admin creates an event, the app asks the `send-event-email` Edge Function to email the Owner. The same function emails officials their invitations and club Owners that their club is in an event (both with the event's dates, venue, each day's weigh-in and bout times in the event's time zone, and the optional notes typed on the invite form; migration 59), sends bouts for approval, and welcomes people a site Admin adds on Admin > Users or an official adds to an event (the envelope on a user's row sends that again). Adding a user doesn't email them by itself: Supabase only emails someone when they ask for a sign-in code. Until that's set up, the page says the email wasn't sent and offers a "Send it from your email app" link with the message filled in, so nothing is blocked. To send it automatically:
 
 It sends through a Gmail account for now, so no domain is needed:
 

@@ -641,6 +641,12 @@ export const supabaseApi = {
     await rpc('invite_club', { p_event_id: eventId, p_club_id: clubId })
   },
 
+  // Emails a club's Owners its invitation (or that it's in, for a club made on the event), with the
+  // dates, times and optional notes (migration 59 and the send-event-email Edge Function).
+  async emailClubInvitation(eventId, clubId, notes) {
+    await invokeEmail({ event_id: eventId, club_id: clubId, notes: notes?.trim() || undefined })
+  },
+
   // A club Owner (or a site Admin) accepts or declines the club's invitation (migration 36).
   async answerClubInvite(eventId, clubId, accept) {
     await rpc('answer_club_invite', { p_event_id: eventId, p_club_id: clubId, p_accept: accept })
@@ -880,9 +886,10 @@ export const supabaseApi = {
     await rpc('cancel_invitation', { p_invitation_id: invitationId })
   },
 
-  // Emails the official their invitation. Needs the send-event-email Edge Function.
-  async emailOfficialInvitation(invitationId) {
-    await invokeEmail({ invitation_id: invitationId })
+  // Emails the official their invitation, with the event's dates, weigh-in and bout times and the
+  // optional notes. Needs the send-event-email Edge Function.
+  async emailOfficialInvitation(invitationId, notes) {
+    await invokeEmail({ invitation_id: invitationId, notes: notes?.trim() || undefined })
   },
 
   // boutType: 'scored', 'developmental' or 'sparring' (migration 25). blocks: the rule breaks an
