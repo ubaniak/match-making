@@ -172,7 +172,14 @@ export const supabaseApi = {
       // Come back to whatever URL the app is served from (local dev or GitHub Pages).
       options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
     })
-    if (isNotInvitedError(error)) throw new Error(notInvitedMessage(email.trim().toLowerCase()))
+    if (isNotInvitedError(error)) {
+      // The check above said they're invited, so the database refused the account for another
+      // reason. Don't blame the invite; say it's on our side.
+      if (!checkError && invited === true) {
+        throw new Error('You\'re invited, but we couldn\'t create your account. Please tell a site Admin so they can fix it, then try again.')
+      }
+      throw new Error(notInvitedMessage(email.trim().toLowerCase()))
+    }
     if (error) throw error
   },
 
