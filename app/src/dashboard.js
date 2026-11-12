@@ -192,7 +192,7 @@ function officialStats(invitations, officialEvents, me) {
     event,
     role: bouts.officials.find((o) => o.user_id === me)?.role,
     // Bouts still waiting for the official decision; only the Chief Officials give it.
-    toApprove: !bouts.officials.some((o) => o.user_id === me) ? [] : bouts.bouts.filter((b) => b.status === 'pending' && !b.winner && !b.approvals.some((a) => a.side === 'official')),
+    toApprove: !bouts.officials.some((o) => o.user_id === me) ? [] : bouts.bouts.filter((b) => b.status === 'pending' && !b.winner && b.bout_type !== 'sparring' && !b.approvals.some((a) => a.side === 'official')),
     weighIns: bouts.weighIns.length,
     athletes: event.athlete_count ?? event.athletes?.length ?? 0,
   }))

@@ -168,8 +168,10 @@ Every bout is one of three types, picked when it is made (default Scored):
   override a rule break by giving a reason. The bout keeps the reason, who overrode it, when, and
   the rules it broke. It still needs the club owners' and official approvals.
 - **Sparring:** the match rules don't apply (age, weight and experience gaps show only as
-  warnings, no reason needed), and it needs no approval from club owners or officials: it is
-  Approved as soon as it is made, and isn't sent for approval. It needs no weigh-in either: athletes
+  warnings, no reason needed). Both corners' club owners (the coaches) must approve it, but not the
+  Chief Official or Deputy: it is sent for approval to the club owners only. A corner whose club has
+  no owner is skipped, so a Sparring bout with no club owner in either corner is Approved as soon as
+  it is made. It needs no weigh-in either: athletes
   boxing only in Sparring bouts aren't on the weigh-in list, and the weigh-in never marks a Sparring
   bout "Needs discussion".
 - Male against female, a boxer who is too young, or missing details block every type, Sparring
