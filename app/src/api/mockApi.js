@@ -1507,7 +1507,7 @@ export const mockApi = {
       const a = current.athletes.find((x) => x.id === id)
       return a ? { id: a.id, name: a.name } : null
     }
-    // Like migration 20261112010000: clubs only see bouts with their own club in a corner.
+    // Like migration 20261112020000: clubs only see bouts with their own club in a corner.
     const runs = isInBout(current, { event_id: eventId }) || acceptedOfficial(current, eventId)
     const bouts = current.bouts
       .filter((b) => b.event_id === eventId && (runs || isInBout(current, b)))

@@ -58,7 +58,7 @@ export function useEventBouts({ event, may, clubs, profile, onEntriesChange }) {
     seesConflicts: may.siteAdmin || Boolean(officialRole),
     ownedClubs,
     cardOpen: event.status === 'active',
-    // Clubs see only the bouts with their own club in a corner (migration 20261112010000); the
+    // Clubs see only the bouts with their own club in a corner (migration 20261112020000); the
     // people running the event see the whole card.
     seesWholeCard: may.siteAdmin || may.role === 'owner' || Boolean(officialRole) || (data.acceptedDays ?? []).length > 0,
   }

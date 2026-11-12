@@ -14,7 +14,7 @@
 -- The public list of approved bouts (list_public_events, the Show public bouts switch) is not
 -- changed. Weigh-ins were already limited to athletes the club can see (migration 30).
 --
--- Run after 20261112000000 (if that is in). Run it BEFORE deploying the app.
+-- Run after 20261112010000 (PR #116) and 20261112000000 (PR #115), if those are in. Run it BEFORE deploying the app.
 
 -- Can the signed-in user read this bout?
 create or replace function public.can_read_bout(p_event_id uuid, p_red_club_id uuid, p_blue_club_id uuid) returns boolean
