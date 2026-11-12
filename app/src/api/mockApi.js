@@ -1507,8 +1507,10 @@ export const mockApi = {
       const a = current.athletes.find((x) => x.id === id)
       return a ? { id: a.id, name: a.name } : null
     }
+    // Like migration 20261112010000: clubs only see bouts with their own club in a corner.
+    const runs = isInBout(current, { event_id: eventId }) || acceptedOfficial(current, eventId)
     const bouts = current.bouts
-      .filter((b) => b.event_id === eventId)
+      .filter((b) => b.event_id === eventId && (runs || isInBout(current, b)))
       .sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position)
       .map((b) => ({
         ...b,
@@ -1516,6 +1518,8 @@ export const mockApi = {
         red_club: { id: b.red_club_id, name: clubName(current, b.red_club_id) },
         blue_club: { id: b.blue_club_id, name: clubName(current, b.blue_club_id) },
         red_club_has_owner: clubHasOwner(current, b.red_club_id), blue_club_has_owner: clubHasOwner(current, b.blue_club_id),
+        card_number: b.status === 'cancelled' ? null : current.bouts
+          .filter((o) => o.event_id === b.event_id && o.day === b.day && o.status !== 'cancelled' && o.position <= b.position).length,
         comments: isInBout(current, b) ? b.comments.map((c) => ({ ...c, author: findUser(current, c.author_id) })) : [],
         bout_officials: (b.bout_officials ?? []).filter((o) => seesOfficials || o.user_id === me).map((o) => ({ ...o, user: findUser(current, o.user_id) })),
         // Like migration 53: the Chief Officials and site Admins see every conflict, officials their own.
