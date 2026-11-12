@@ -25,12 +25,12 @@ const medicalLabels = { pass: 'Passed', fail: 'Failed', absent: 'No-show' }
 const methodLabels = { points: 'Points', rsc: 'RSC', ko: 'KO', walkover: 'Walkover', dq: 'DQ', abd: 'ABD' }
 // Bout types (migration 25). Scored follows every rule; Developmental lets the Chief Official or
 // Deputy override a rule break with a reason; Sparring skips the match rules (not the hard ones)
-// and needs no approval.
+// and needs only both corners' club owners to approve, not a Chief Official (migration 20261112010000).
 const boutTypeLabels = { scored: 'Scored', developmental: 'Developmental', sparring: 'Sparring' }
 const boutTypeHelp = {
   scored: 'Must follow every match rule. Both corners\' club owners and a Chief Official approve it.',
   developmental: 'The match rules apply, but a Chief Official can override them with a reason. Both corners\' club owners and a Chief Official approve it.',
-  sparring: 'The match rules don\'t apply (only male v female, too young and missing details still block). No approval or weigh-in needed: the bout is approved as soon as it is made.',
+  sparring: 'The match rules don\'t apply (only male v female, too young and missing details still block). Both corners\' club owners approve it; no Chief Official approval or weigh-in needed.',
 }
 const boutTypeOf = (b) => b?.bout_type ?? 'scored'
 const personName = (user) => (user ? user.name || user.email : '—')
@@ -748,7 +748,8 @@ function BoutRow({ bout, index, number = index + 1, count, event, athletes, weig
   const recheck = red && blue ? checkForType(checkMatch(red, blue, event.start_date, weights), type) : null
   const newBlocks = recheck ? recheck.blocks.filter((b) => !(bout.override_blocks ?? []).includes(b)) : []
 
-  // Each corner's club owners and a Chief Official approve (migration 52). A corner whose club has
+  // Each corner's club owners and a Chief Official approve (migration 52); Sparring needs only the
+  // corners (migration 20261112010000). A corner whose club has
   // no owner doesn't need approving. After the weigh-in starts a Chief Official can decide for a
   // corner; a site Admin can decide any side. One club in both corners approves once for both.
   const clubOf = (side) => (side === 'red' ? bout.red_club_id : bout.blue_club_id)
@@ -935,11 +936,9 @@ function BoutRow({ bout, index, number = index + 1, count, event, athletes, weig
       )}
       {bout.result_note && <Muted>Result note: {bout.result_note}</Muted>}
 
-      {sparring ? (
-        <Muted>Sparring: no approval or weigh-in needed.</Muted>
-      ) : (
+      {sparring && <Muted>Sparring: both corners approve. No Chief Official approval or weigh-in needed.</Muted>}
       <ul className="approvals">
-        {['red', 'blue', 'official'].filter((side) => !(sameClub && side === 'blue')).map((side) => {
+        {(sparring ? ['red', 'blue'] : ['red', 'blue', 'official']).filter((side) => !(sameClub && side === 'blue')).map((side) => {
           const a = approval[side]
           const skipped = side !== 'official' && !a && !hasOwner(side)
           const label = sameClub && side === 'red' ? `Both corners (${bout.red_club?.name ?? 'same club'})` : sideLabels[side]
@@ -961,7 +960,6 @@ function BoutRow({ bout, index, number = index + 1, count, event, athletes, weig
           )
         })}
       </ul>
-      )}
 
       <BoutOfficials bout={bout} rights={rights} />
       <BoutConflicts bout={bout} rights={rights} canChange={open && bout.status !== 'cancelled'} busy={busy} run={run} />

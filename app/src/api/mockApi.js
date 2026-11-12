@@ -413,7 +413,8 @@ function waitingApprovers(current, bout) {
   return [
     { side: 'red', ids: owners(bout.red_club_id) },
     { side: 'blue', ids: bout.red_club_id === bout.blue_club_id ? [] : owners(bout.blue_club_id) },
-    { side: 'official', ids: current.eventOfficials.filter((o) => o.event_id === bout.event_id).map((o) => o.user_id) },
+    // Sparring: only the corners approve (migration 20261112010000).
+    { side: 'official', ids: bout.bout_type === 'sparring' ? [] : current.eventOfficials.filter((o) => o.event_id === bout.event_id).map((o) => o.user_id) },
   ].filter((s) => !approved.has(s.side) && s.ids.length)
 }
 
@@ -421,12 +422,9 @@ function waitingApprovers(current, bout) {
 // approve; any rejection rejects.
 function refreshBoutStatus(current, bout) {
   if (bout.status === 'cancelled') return
-  if (bout.bout_type === 'sparring') {
-    bout.status = 'approved'
-    return
-  }
   const approved = (side) => bout.approvals.some((a) => a.side === side && a.decision === 'approved')
-  const needed = ['official', ...['red', 'blue'].filter((side) => clubHasOwner(current, side === 'red' ? bout.red_club_id : bout.blue_club_id))]
+  // Sparring needs only the corners, not a Chief Official (migration 20261112010000).
+  const needed = [...(bout.bout_type === 'sparring' ? [] : ['official']), ...['red', 'blue'].filter((side) => clubHasOwner(current, side === 'red' ? bout.red_club_id : bout.blue_club_id))]
   bout.status = bout.approvals.some((a) => a.decision === 'rejected') ? 'rejected' : needed.every(approved) ? 'approved' : 'pending'
 }
 
@@ -1822,7 +1820,7 @@ export const mockApi = {
       override_by: reason ? currentUserId() : null, override_at: reason ? now() : null,
       red_athlete_id: redId, blue_athlete_id: blueId, red_club_id: red.club_id, blue_club_id: blue.club_id,
       needs_supervisor: Boolean(needsSupervisor), warnings: warnings ?? [], after_weigh_in: weighInStarted(current, eventId, day),
-      status: boutType === 'sparring' ? 'approved' : 'pending', cancel_reason: null, cancelled_at: null, made_by: currentUserId(), made_at: now(), approvals: [],
+      status: 'pending', cancel_reason: null, cancelled_at: null, made_by: currentUserId(), made_at: now(), approvals: [],
       approval_requested_at: null, approval_requested_by: null,
     }
     let bout = old
@@ -1841,14 +1839,12 @@ export const mockApi = {
       current.bouts.push(bout)
     }
     // The maker approves their own corner when they own that club (migration 52).
-    if (boutType !== 'sparring') {
-      for (const side of ['red', 'blue']) {
-        if (clubRole(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) === 'owner') {
-          bout.approvals.push({ side, decision: 'approved', note: null, override: false, decided_by: currentUserId(), decided_at: now() })
-        }
+    for (const side of ['red', 'blue']) {
+      if (clubRole(current, side === 'red' ? bout.red_club_id : bout.blue_club_id) === 'owner') {
+        bout.approvals.push({ side, decision: 'approved', note: null, override: false, decided_by: currentUserId(), decided_at: now() })
       }
-      refreshBoutStatus(current, bout)
     }
+    refreshBoutStatus(current, bout)
     write(DATA_KEY, current)
     return bout.id
   },
@@ -1902,14 +1898,15 @@ export const mockApi = {
   async decideBout(boutId, side, approve, note) {
     const current = data()
     const bout = findBout(current, boutId)
-    if (bout.bout_type === 'sparring') throw new Error('Sparring bouts don\'t need approval')
     if (bout.status === 'cancelled' || bout.winner) throw new Error('This bout can no longer be approved or rejected')
     if (!cardOpen(findEvent(current, bout.event_id))) throw new Error('The event isn\'t Active')
     // Mirrors decide_bout (migration 52): each corner's club owners, and a Chief Official. After the
     // weigh-in starts a Chief Official can decide for a corner; a site Admin can decide any side.
     let override = false
     let sides = [side]
-    if (side === 'official') {
+    if (side === 'official' && bout.bout_type === 'sparring') {
+      throw new Error('Sparring bouts don\'t need the Chief Official\'s approval, only both corners\'')
+    } else if (side === 'official') {
       if (!isOfficial(current, bout.event_id)) throw new Error('Only a Chief Official gives the official approval')
     } else if (side === 'red' || side === 'blue') {
       const club = side === 'red' ? bout.red_club_id : bout.blue_club_id
