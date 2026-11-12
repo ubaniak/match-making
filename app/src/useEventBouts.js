@@ -58,6 +58,9 @@ export function useEventBouts({ event, may, clubs, profile, onEntriesChange }) {
     seesConflicts: may.siteAdmin || Boolean(officialRole),
     ownedClubs,
     cardOpen: event.status === 'active',
+    // Clubs see only the bouts with their own club in a corner (migration 20261112020000); the
+    // people running the event see the whole card.
+    seesWholeCard: may.siteAdmin || may.role === 'owner' || Boolean(officialRole) || (data.acceptedDays ?? []).length > 0,
   }
   const seesBouts = ['active', 'done'].includes(event.status)
     && (rights.owner || rights.official || rights.weighInDays.length > 0 || event.athletes.length > 0)

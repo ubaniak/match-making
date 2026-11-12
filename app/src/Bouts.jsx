@@ -68,7 +68,7 @@ function boutCsvRows(event, data, athletes, days) {
         return a ? `${a.decision === 'approved' ? 'Approved' : 'Rejected'}${a.override ? ' by an official' : ''}${a.note ? `: ${a.note}` : ''}` : ''
       }
       return [
-        day, b.status === 'cancelled' ? '' : live.indexOf(b) + 1, b.session_starts_at?.slice(0, 5) ?? '',
+        day, b.status === 'cancelled' ? '' : b.card_number ?? live.indexOf(b) + 1, b.session_starts_at?.slice(0, 5) ?? '',
         boutTypeLabels[boutTypeOf(b)], statusLabels[b.status] ?? b.status,
         ...side(b, 'red'), ...side(b, 'blue'),
         b.winner ? (b.winner === 'red' ? 'Red' : 'Blue') : '', b.method ? methodLabels[b.method] ?? b.method : '', b.result_note ?? '',
@@ -346,6 +346,7 @@ function Card({ event, data, rights, busy, run, publish }) {
         />
       )}
       {rights.seesConflicts && <ConflictsSummary bouts={shown} />}
+      {!rights.seesWholeCard && <Muted>You see only the bouts with your club's athletes in a corner.</Muted>}
       {weighInStarted && <Muted>The weigh-in for {formatDay(day)} has started, so only a Chief Official can make or change bouts.</Muted>}
 
       {canMatch && !rematch && (
@@ -385,7 +386,7 @@ function Card({ event, data, rights, busy, run, publish }) {
                 <SortableBout key={b.id} id={b.id} disabled={!canOrder || busy}>
                   {(handle) => (
                     <BoutRow
-                      bout={b} index={i} count={shown.length} event={event} athletes={athletes} weights={weights}
+                      bout={b} index={i} number={rights.seesWholeCard ? i + 1 : b.card_number ?? i + 1} count={shown.length} event={event} athletes={athletes} weights={weights}
                       rights={rights} details={details} weighInStarted={weighInStarted} canMatch={canMatch} canSend={canSend} canOrder={canOrder} handle={handle} sessions={sessions} busy={busy} run={run} officials={data.officials}
                       onSend={() => sendForApproval([b])} onMove={(delta) => move(b, delta)} onMoveTo={(to) => moveTo(b, to)}
                       onSession={(s) => setSession(b, s)} onRematch={() => setRematch(b)}
@@ -726,7 +727,7 @@ function SortableBout({ id, disabled, children }) {
   )
 }
 
-function BoutRow({ bout, index, count, event, athletes, weights, details = false, weighInStarted = false, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
+function BoutRow({ bout, index, number = index + 1, count, event, athletes, weights, details = false, weighInStarted = false, rights, canMatch, canSend, canOrder, handle, sessions, busy, run, officials = [], onSend, onMove, onMoveTo, onSession, onRematch }) {
   const [showComments, setShowComments] = useState(false)
   const [comment, setComment] = useState('')
   const [result, setResult] = useState(null) // { winner, method, note } while recording
@@ -874,10 +875,10 @@ function BoutRow({ bout, index, count, event, athletes, weights, details = false
               disabled={busy}
               title="Drag to move this bout"
               {...handle}
-              aria-label={`Drag bout ${index + 1} to move it`}
+              aria-label={`Drag bout ${number} to move it`}
             />
           )}
-          <span>Bout {index + 1}</span>
+          <span>Bout {number}</span>
           <Badge strong={type !== 'scored'}>{boutTypeLabels[type]}</Badge>
           <Badge strong={bout.status === 'approved'} muted={bout.status === 'rejected'}>{statusLabels[bout.status]}</Badge>
           {review && <Badge strong>Needs discussion</Badge>}
